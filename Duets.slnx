@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/build/">
+    <File Path="Directory.Build.props" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="AGENTS.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Duets.Sandbox/Duets.Sandbox.csproj" />
+    <Project Path="src/Duets/Duets.csproj" />
+    <Project Path="src/HttpHarker/HttpHarker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Duets.Tests/Duets.Tests.csproj" />
+  </Folder>
+</Solution>

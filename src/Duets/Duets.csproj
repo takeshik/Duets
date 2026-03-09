@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\HttpHarker\HttpHarker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jint" Version="4.6.0" />
+    <PackageReference Include="Mio" Version="3.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Duets.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\shared\*.cs" Link="(shared)\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\ReplStaticFiles\index.html" />
+    <EmbeddedResource Include="Resources\ReplStaticFiles\language-service.js" />
+  </ItemGroup>
+
+</Project>

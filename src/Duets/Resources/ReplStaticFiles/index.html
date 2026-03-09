@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Duets</title>
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #1e1e1e;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        /* ── Header ── */
+        #header {
+            height: 34px;
+            background: #252526;
+            border-bottom: 1px solid #3c3c3c;
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        #header-title {
+            color: #d4d4d4;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        #header-actions {
+            margin-left: auto;
+        }
+
+        #toggle-split {
+            color: #9cdcfe;
+            font-size: 12px;
+            text-decoration: none;
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 3px;
+        }
+
+        #toggle-split:hover {
+            background: #37373d;
+            color: #ffffff;
+        }
+
+        /* ── Main area ── */
+        #main {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        #editor {
+            flex: 1;
+            min-width: 0;
+            min-height: 0;
+        }
+
+        #resizer {
+            background: #333;
+            flex-shrink: 0;
+            transition: background 0.1s;
+        }
+
+        #resizer:hover, #resizer.dragging {
+            background: #007acc;
+        }
+
+        /* Horizontal split (top-bottom) */
+        #main.split-h {
+            flex-direction: column;
+        }
+
+        #main.split-h #resizer {
+            height: 4px;
+            cursor: ns-resize;
+        }
+
+        #main.split-h #output {
+            height: 220px;
+            flex-shrink: 0;
+        }
+
+        /* Vertical split (left-right) */
+        #main.split-v {
+            flex-direction: row;
+        }
+
+        #main.split-v #resizer {
+            width: 4px;
+            cursor: ew-resize;
+        }
+
+        #main.split-v #output {
+            width: 420px;
+            flex-shrink: 0;
+        }
+
+        /* ── Output pane ── */
+        #output {
+            background: #0c0c0c;
+            color: #cccccc;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            font-size: 13px;
+            overflow-y: auto;
+            padding: 6px 10px;
+        }
+
+        .entry {
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .entry-ok::before {
+            content: '→  ';
+            color: #555;
+        }
+
+        .entry-ok {
+            color: #4fc1ff;
+        }
+
+        .entry-error::before {
+            content: '✕  ';
+            color: #f48771;
+        }
+
+        .entry-error {
+            color: #f48771;
+        }
+    </style>
+</head>
+<body>
+<div id="header">
+    <span id="header-title">Duets</span>
+    <div id="header-actions">
+        <a href="#" id="toggle-split">Split Vertical</a>
+    </div>
+</div>
+<div class="split-h" id="main">
+    <div id="editor"></div>
+    <div id="resizer"></div>
+    <div id="output"></div>
+</div>
+<script src="/monaco-loader.js"></script>
+<script>
+    const main = document.getElementById('main');
+    const resizer = document.getElementById('resizer');
+    const output = document.getElementById('output');
+    const toggleBtn = document.getElementById('toggle-split');
+
+    // ── Layout toggle ──
+    toggleBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        const toVertical = main.classList.contains('split-h');
+        main.classList.toggle('split-h', !toVertical);
+        main.classList.toggle('split-v', toVertical);
+        output.style.height = '';
+        output.style.width = '';
+        toggleBtn.textContent = toVertical ? 'Split Horizontal' : 'Split Vertical';
+    });
+
+    // ── Pane resize ──
+    resizer.addEventListener('mousedown', function (e) {
+        e.preventDefault();
+        resizer.classList.add('dragging');
+        const isVertical = main.classList.contains('split-v');
+        const startPos = isVertical ? e.clientX : e.clientY;
+        const startSize = isVertical ? output.offsetWidth : output.offsetHeight;
+
+        function onMove(e) {
+            const delta = (isVertical ? e.clientX : e.clientY) - startPos;
+            const newSize = Math.max(32, startSize - delta);
+            if (isVertical) output.style.width = newSize + 'px';
+            else output.style.height = newSize + 'px';
+        }
+
+        function onUp() {
+            resizer.classList.remove('dragging');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+        }
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+
+    require.config({paths: {vs: 'https://unpkg.com/monaco-editor@0.52.2/min/vs'}});
+    require(['vs/editor/editor.main'], function () {
+        // allowNonTsExtensions: Monaco default; must be set explicitly as setCompilerOptions fully overwrites the options
+        // skipLibCheck: suppresses errors for references to unregistered types, keeping completions stable
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+            target: monaco.languages.typescript.ScriptTarget.ESNext,
+            allowNonTsExtensions: true,
+            skipLibCheck: true,
+            noImplicitAny: false,
+            strictNullChecks: false,
+        });
+
+        // Receive TypeDeclarations via SSE and register them with Monaco
+        // addExtraLib performs incremental updates so the worker is not reset
+        // TypeScript re-evaluates all files on each completion request, so types registered later are resolved
+        const evtSource = new EventSource('/type-declaration-events');
+        evtSource.onmessage = function (e) {
+            const decl = JSON.parse(e.data);
+            monaco.languages.typescript.typescriptDefaults.addExtraLib(decl.content, decl.fileName);
+            console.log('[Duets] extraLib registered:', decl.fileName);
+        };
+
+        const editor = monaco.editor.create(document.getElementById('editor'), {
+            value: '',
+            language: 'typescript',
+            theme: 'vs-dark',
+            automaticLayout: true,
+        });
+
+        function appendOutput(text, ok) {
+            const el = document.createElement('div');
+            el.className = 'entry ' + (ok ? 'entry-ok' : 'entry-error');
+            el.textContent = text;
+            output.appendChild(el);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            output.innerHTML = '';
+        }
+
+        async function runCode(clear) {
+            const code = editor.getValue();
+            if (!code.trim()) return;
+            if (clear) clearOutput();
+            try {
+                const res = await fetch('/eval', {method: 'POST', body: code});
+                const data = await res.json();
+                appendOutput(data.result, data.ok);
+            } catch (e) {
+                appendOutput(String(e), false);
+            }
+        }
+
+        // Ctrl+Enter: append result
+        editor.addAction({
+            id: 'run-append',
+            label: 'Run (Append)',
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+            run: () => runCode(false),
+        });
+
+        // F5: clear output pane and run
+        editor.addAction({
+            id: 'run-clear',
+            label: 'Run (Clear)',
+            keybindings: [monaco.KeyCode.F5],
+            run: () => runCode(true),
+        });
+
+        // Ctrl+L: clear output pane
+        editor.addAction({
+            id: 'clear-output',
+            label: 'Clear Output',
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL],
+            run: clearOutput,
+        });
+
+        // On startup: evaluate 'help' and display the result (show nothing if undefined)
+        fetch('/eval', {method: 'POST', body: 'help'})
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) appendOutput(data.result, true);
+            })
+            .catch(() => {
+            });
+    });
+</script>
+</body>
+</html>
