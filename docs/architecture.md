@@ -10,12 +10,13 @@ Duets is an embeddable TypeScript console for .NET. It is designed to be added t
 
 ### Duets (core library)
 
-The main library consists of four principal components:
+The main library consists of four principal components plus a built-ins module:
 
 - **TypeScriptService** — Hosts a Jint engine ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) that runs the official TypeScript compiler. Responsible for transpilation (TS → JS), managing type declarations, and streaming `.d.ts` updates via SSE. Downloads and caches `typescript.js` from unpkg at runtime ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). Provides `InjectStdLibAsync()` to optionally inject `lib.es5.d.ts` into the server-side language service for callers that use `GetCompletions` directly ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
 - **ScriptEngine** — Hosts a separate Jint engine for executing user code ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md)). Configured by the consumer to expose .NET assemblies and values. Requires an `ITranspiler` (e.g. `TypeScriptService`) at construction; `Execute`/`Evaluate` always transpile TypeScript before running ([ADR-10](decisions/10_extract-itranspiler-interface-for-scriptengine.md)).
 - **ClrDeclarationGenerator** — Uses reflection to generate TypeScript type declarations (`.d.ts`) from .NET types. Declarations are pushed to the Monaco editor via SSE to enable completions ([ADR-8](decisions/8_use-addextralib-to-inject-dts-declarations-for-completions.md)).
 - **ReplService** — Wires everything together into a web-based REPL ([ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). Serves the Monaco editor UI as embedded resources, provides an SSE endpoint for live type declaration updates, and a `POST /eval` endpoint that transpiles and executes code.
+- **ScriptBuiltins / ScriptTypings** — Provides the `typings` global object to scripts via `ScriptEngine.RegisterTypeBuiltins(TypeScriptService)`. Exposes `use`, `scanAssembly`, `useAssembly`, and `useNamespace` for managing type declarations from within running scripts ([ADR-13](decisions/13_script-built-ins-and-typings-object.md)).
 
 **Important:** TypeScriptService and ScriptEngine each own an independent Jint engine ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md)). The TypeScript compiler engine must not be used to run user code, and vice versa.
 

@@ -20,6 +20,17 @@ internal sealed class BatchRunner(SandboxSession session)
         | `complete` | `source` | `position` (int, default: end) | Completions at position; returns `completions` array |
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
+
+        ## Script built-ins (`typings` object)
+
+        The `typings` global object is available inside `eval` code:
+
+        | Call | Description |
+        |---|---|
+        | `typings.use("Asm.Qualified.TypeName")` | Register a single type by assembly-qualified name |
+        | `typings.scanAssembly("AssemblyName")` | Load assembly; register namespace skeletons for TS completions (no type members) |
+        | `typings.useAssembly("AssemblyName")` | Load assembly; register all public types |
+        | `typings.useNamespace(System.Net.Http)` | Register all public types in the given namespace (pass namespace reference, not string) |
         | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |

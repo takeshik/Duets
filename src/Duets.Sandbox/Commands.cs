@@ -7,9 +7,17 @@ public class Commands
 {
     public async Task Eval([Argument] string code)
     {
-        await using var session = new SandboxSession();
-        await session.EnsureInitializedAsync();
-        OutputJson(EvalOnce(session, code));
+        using var ts = new TypeScriptService();
+        await ts.ResetAsync();
+        using var engine = new ScriptEngine(null, ts);
+        try
+        {
+            OutputJson(new { ok = true, result = engine.Evaluate(code).ToString() });
+        }
+        catch (Exception ex)
+        {
+            OutputJson(new { ok = false, error = ex.Message });
+        }
     }
 
     public async Task Complete([Argument] string source, int? position = null)
@@ -75,6 +83,8 @@ public class Commands
         }
     }
 
-    static void OutputJson(object obj) =>
+    private static void OutputJson(object obj)
+    {
         Console.WriteLine(JsonSerializer.Serialize(obj, BatchRunner.JsonOptions));
+    }
 }

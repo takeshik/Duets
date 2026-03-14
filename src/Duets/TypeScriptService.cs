@@ -11,6 +11,7 @@ public class TypeScriptService : ITranspiler,
     IDisposable
 {
     private readonly HashSet<Type> _registeredTypes = [];
+    private readonly HashSet<string> _registeredNamespaces = [];
     private readonly ClrDeclarationGenerator _declarationGenerator = new();
     private readonly Dictionary<string, TypeDeclaration> _typeDeclarations = new();
     private Engine? _engine;
@@ -25,6 +26,7 @@ public class TypeScriptService : ITranspiler,
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
         this._registeredTypes.Clear();
+        this._registeredNamespaces.Clear();
         this._typeDeclarations.Clear();
         this._engine?.Dispose();
         this._engine = new Engine();
@@ -37,7 +39,6 @@ public class TypeScriptService : ITranspiler,
         await using var stream = typeof(TypeScriptService).Assembly.GetManifestResourceStream("Duets.Resources.ReplStaticFiles.language-service.js")!;
         using var reader = new StreamReader(stream, Encoding.UTF8);
         await this._engine!.ExecuteAsync(await reader.ReadToEndAsync());
-
     }
 
     /// <summary>
@@ -56,6 +57,24 @@ public class TypeScriptService : ITranspiler,
         var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(type.ToString())));
         var fileName = $"clr-{hash}.d.ts";
         var content = this._declarationGenerator.GenerateTypeDefTs(type);
+        var decl = new TypeDeclaration(fileName, content);
+        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
+        this._typeDeclarations[fileName] = decl;
+        this.TypeDeclarationAdded?.Invoke(decl);
+    }
+
+    /// <summary>
+    /// Registers a namespace skeleton declaration so that the namespace appears in TypeScript completions
+    /// without registering any type members. Duplicate registrations are ignored.
+    /// </summary>
+    public void RegisterNamespaceSkeleton(string namespaceName)
+    {
+        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+        if (!this._registeredNamespaces.Add(namespaceName)) return;
+
+        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"ns:{namespaceName}")));
+        var fileName = $"clr-ns-{hash}.d.ts";
+        var content = $"declare namespace {namespaceName} {{ }}\n";
         var decl = new TypeDeclaration(fileName, content);
         this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
         this._typeDeclarations[fileName] = decl;

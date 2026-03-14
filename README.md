@@ -17,38 +17,60 @@ Duets lets you drop a fully-featured TypeScript REPL into **any** .NET applicati
 
 ## Quick Start
 
-Add a project reference to the `Duets` library, then wire up the services:
+### Minimal: transpile and evaluate
+
+The core of Duets is two classes: `TypeScriptService` (transpiler) and `ScriptEngine` (executor).
+
+```csharp
+using Duets;
+
+using var ts = new TypeScriptService();
+await ts.ResetAsync(); // downloads & caches typescript.js on first run
+
+using var engine = new ScriptEngine(null, ts);
+
+var result = engine.Evaluate("Math.sqrt(2)");
+Console.WriteLine(result); // 1.4142135623730951
+```
+
+### With .NET type registration
+
+To expose .NET types to scripts and get IntelliSense-style completions, add `AllowClr` and register the `typings` built-in object:
+
+```csharp
+using Duets;
+
+using var ts = new TypeScriptService();
+await ts.ResetAsync();
+
+using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
+engine.RegisterTypeBuiltins(ts); // registers the typings global
+
+// From a script:
+//   typings.use("System.IO.File, System.IO.FileSystem")
+//   typings.scanAssembly("System.Net.Http")   // namespace skeletons only
+//   typings.useAssembly("System.Net.Http")    // all public types
+//   typings.useNamespace(System.Net.Http)     // types in one namespace
+```
+
+### With web REPL
+
+To serve a browser-based Monaco editor with live completions:
 
 ```csharp
 using Duets;
 using HttpHarker;
 
-// Initialize the TypeScript service (downloads & caches the TS compiler on first run)
 using var ts = new TypeScriptService();
 await ts.ResetAsync();
 
-// Create a script engine with access to selected .NET assemblies and the TypeScript transpiler
-using var scriptEngine = new ScriptEngine(
-    opts => opts.AllowClr(
-        typeof(Math).Assembly,
-        typeof(Enumerable).Assembly
-    ),
-    ts
-);
+using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
+engine.RegisterTypeBuiltins(ts);
 
-// Expose .NET types to the TypeScript editor for completions
-scriptEngine.SetValue("importTypeDefs", new Action<string>(typeName =>
-{
-    var type = Type.GetType(typeName)
-        ?? throw new InvalidOperationException($"Type not found: {typeName}");
-    ts.RegisterType(type);
-}));
-
-// Start the REPL web server
 using var server = new HttpServer("http://127.0.0.1:17375/");
 using var repl = server
     .UseContentTypeDetection()
-    .UseRepl(ts, scriptEngine);
+    .UseRepl(ts, engine);
 
 await server.RunAsync();
 ```

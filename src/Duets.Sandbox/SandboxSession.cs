@@ -19,13 +19,13 @@ internal sealed class SandboxSession : IAsyncDisposable
     private CancellationTokenSource? _webServerCts;
     private Task? _webServerTask;
 
+    private bool _initialized;
+
     public string TypeScriptVersion => this._ts.Version ?? "unknown";
 
     public bool IsServerRunning => this._webServer != null;
 
     public Task WebServerTask => this._webServerTask ?? Task.CompletedTask;
-
-    private bool _initialized;
 
     public async Task EnsureInitializedAsync()
     {
@@ -34,7 +34,7 @@ internal sealed class SandboxSession : IAsyncDisposable
         await this._ts.ResetAsync();
         await this._ts.InjectStdLibAsync();
         Console.Error.WriteLine($" TypeScript {this._ts.Version}");
-        this.RegisterBuiltins();
+        this._scriptEngine.RegisterTypeBuiltins(this._ts);
         this._initialized = true;
     }
 
@@ -125,29 +125,6 @@ internal sealed class SandboxSession : IAsyncDisposable
 
     private static ScriptEngine CreateScriptEngine(TypeScriptService ts)
     {
-        return new ScriptEngine(
-            opts => opts.AllowClr(
-                typeof(Math).Assembly,
-                typeof(Enumerable).Assembly,
-                typeof(HttpClient).Assembly
-            ),
-            ts
-        );
-    }
-
-    private void RegisterBuiltins()
-    {
-        this._ts.RegisterType(typeof(Math));
-        this._ts.RegisterType(typeof(Enumerable));
-        this._scriptEngine.SetValue(
-            "importTypeDefs",
-            new Action<string>(typeName =>
-                {
-                    var type = Type.GetType(typeName)
-                        ?? throw new InvalidOperationException($"Type not found: {typeName}");
-                    this._ts.RegisterType(type);
-                }
-            )
-        );
+        return new ScriptEngine(opts => opts.AllowClr(), ts);
     }
 }
