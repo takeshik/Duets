@@ -37,6 +37,7 @@ public class TypeScriptService : ITranspiler,
         await using var stream = typeof(TypeScriptService).Assembly.GetManifestResourceStream("Duets.Resources.ReplStaticFiles.language-service.js")!;
         using var reader = new StreamReader(stream, Encoding.UTF8);
         await this._engine!.ExecuteAsync(await reader.ReadToEndAsync());
+
     }
 
     /// <summary>
@@ -59,6 +60,19 @@ public class TypeScriptService : ITranspiler,
         this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
         this._typeDeclarations[fileName] = decl;
         this.TypeDeclarationAdded?.Invoke(decl);
+    }
+
+    /// <summary>
+    /// Injects the ES5 standard library into the language service so that JS built-in completions
+    /// (Array, string, Math, Promise, etc.) are available alongside registered .NET types.
+    /// Optional: the Monaco-based web REPL runs its own TypeScript language service client-side
+    /// and does not require this. Call this when using <see cref="GetCompletions"/> directly.
+    /// </summary>
+    public async Task InjectStdLibAsync(bool forceDownload = false)
+    {
+        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+        var content = await FetchLibEs5Async(this.Version!, forceDownload);
+        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), ["lib.es5.d.ts", content]);
     }
 
     /// <summary>Returns all registered TypeDeclarations (for initial SSE delivery).</summary>
@@ -166,6 +180,21 @@ public class TypeScriptService : ITranspiler,
         var code = await new HttpClient().GetStringAsync("https://unpkg.com/typescript@5.9.3/lib/typescript.js");
         await file.AsDestructive().WriteAsync(code);
         return code;
+    }
+
+    private static async Task<string> FetchLibEs5Async(string tsVersion, bool forceFetch = false)
+    {
+        var file = DirectoryPath.GetTempDirectory().ChildFile($"typescript-lib.es5-{tsVersion}.d.ts");
+        if (!forceFetch
+            && file.Exists()
+            && (DateTimeOffset.Now - file.GetCreationTime()).TotalDays < 7)
+        {
+            return await file.ReadAllTextAsync();
+        }
+
+        var content = await new HttpClient().GetStringAsync($"https://unpkg.com/typescript@{tsVersion}/lib/lib.es5.d.ts");
+        await file.AsDestructive().WriteAsync(content);
+        return content;
     }
 
     public record CompletionEntry(string Name, string Kind, string? SortText);
