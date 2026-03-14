@@ -33,7 +33,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
     - `HttpServerExtensions.cs` — Extension methods (C# 14 `extension` blocks)
     - `ActionContext.cs` — Request/response wrapper for route handlers
     - `Middlewares/` — Built-in middleware (routing, embedded resources, errors)
-  - `Duets.Sandbox/` — Sample application
+  - `Duets.Sandbox/` — Sample application and multi-mode debugging CLI
   - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly); place cross-project internal helpers here
 - `docs/`
   - `architecture.md` — Architecture overview (current snapshot)
@@ -76,3 +76,24 @@ dotnet test
 ```
 
 Tests use [xUnit](https://xunit.net/) and live in `tests/Duets.Tests/`.
+
+## End-to-end verification with Duets.Sandbox
+
+`Duets.Sandbox` provides a JSONL batch mode for agent-friendly end-to-end verification of the full stack (transpilation, completions, type registration, web server). Use this to validate changes without writing test code.
+
+```bash
+# Pipe JSONL operations to stdin; one JSON result per line is written to stdout.
+echo '{"op":"eval","code":"1 + 2"}' | dotnet run --project src/Duets.Sandbox -- batch
+
+# Multiple operations in one session (variables persist across eval calls):
+printf '{"op":"eval","code":"const xs = [1,2,3]"}\n{"op":"eval","code":"xs.length"}\n' \
+  | dotnet run --project src/Duets.Sandbox -- batch
+```
+
+Send `{"op":"help"}` to get the full list of supported operations and their fields:
+
+```bash
+echo '{"op":"help"}' | dotnet run --project src/Duets.Sandbox -- batch
+```
+
+Diagnostic output (initialization messages) goes to stderr; stdout contains only JSONL results, making it straightforward to parse with standard tools.
