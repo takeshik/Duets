@@ -11,7 +11,13 @@ public class TypeScriptService : ITranspiler,
     IDisposable
 {
     private readonly HashSet<Type> _registeredTypes = [];
-    private readonly HashSet<string> _registeredNamespaces = [];
+
+    // Tracks namespace skeletons that still carry the $name dummy member (namespace → file name).
+    // Entries are removed when a real type from that namespace is registered.
+    private readonly Dictionary<string, string> _pendingSkeletonNamespaces = new();
+
+    // Tracks namespaces that already have at least one real type registered.
+    private readonly HashSet<string> _coveredNamespaces = [];
     private readonly ClrDeclarationGenerator _declarationGenerator = new();
     private readonly Dictionary<string, TypeDeclaration> _typeDeclarations = new();
     private Engine? _engine;
@@ -26,7 +32,8 @@ public class TypeScriptService : ITranspiler,
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
         this._registeredTypes.Clear();
-        this._registeredNamespaces.Clear();
+        this._pendingSkeletonNamespaces.Clear();
+        this._coveredNamespaces.Clear();
         this._typeDeclarations.Clear();
         this._engine?.Dispose();
         this._engine = new Engine();
@@ -61,23 +68,41 @@ public class TypeScriptService : ITranspiler,
         this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
         this._typeDeclarations[fileName] = decl;
         this.TypeDeclarationAdded?.Invoke(decl);
+
+        // If a skeleton with a $name dummy exists for this namespace, clear it now that a real type is present.
+        if (type.Namespace != null && this._pendingSkeletonNamespaces.TryGetValue(type.Namespace, out var skeletonFile))
+        {
+            var emptyContent = $"declare namespace {type.Namespace} {{ }}\n";
+            this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [skeletonFile, emptyContent]);
+            this._typeDeclarations[skeletonFile] = new TypeDeclaration(skeletonFile, emptyContent);
+            this._pendingSkeletonNamespaces.Remove(type.Namespace);
+            this._coveredNamespaces.Add(type.Namespace);
+        }
+        else if (type.Namespace != null)
+        {
+            this._coveredNamespaces.Add(type.Namespace);
+        }
     }
 
     /// <summary>
     /// Registers a namespace skeleton declaration so that the namespace appears in TypeScript completions
-    /// without registering any type members. Duplicate registrations are ignored.
+    /// without registering any type members. A <c>$name</c> dummy member is included to ensure the namespace
+    /// is visible in completions; it is automatically removed when a real type from the namespace is registered.
+    /// Duplicate registrations and namespaces that already have real types are ignored.
     /// </summary>
     public void RegisterNamespaceSkeleton(string namespaceName)
     {
         if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        if (!this._registeredNamespaces.Add(namespaceName)) return;
+        if (this._coveredNamespaces.Contains(namespaceName)) return;
+        if (this._pendingSkeletonNamespaces.ContainsKey(namespaceName)) return;
 
         var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"ns:{namespaceName}")));
         var fileName = $"clr-ns-{hash}.d.ts";
-        var content = $"declare namespace {namespaceName} {{ }}\n";
+        var content = $"declare namespace {namespaceName} {{ const $name: '{namespaceName}'; }}\n";
         var decl = new TypeDeclaration(fileName, content);
         this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
         this._typeDeclarations[fileName] = decl;
+        this._pendingSkeletonNamespaces[namespaceName] = fileName;
         this.TypeDeclarationAdded?.Invoke(decl);
     }
 
