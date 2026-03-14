@@ -82,6 +82,22 @@ public class TypeScriptService : ITranspiler,
     }
 
     /// <summary>
+    /// Registers an arbitrary TypeScript declaration into the language service.
+    /// The file name is derived from a hash of the content. Duplicate content is ignored.
+    /// </summary>
+    public void RegisterDeclaration(string content)
+    {
+        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(content)));
+        var fileName = $"decl-{hash}.d.ts";
+        if (this._typeDeclarations.ContainsKey(fileName)) return;
+        var decl = new TypeDeclaration(fileName, content);
+        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
+        this._typeDeclarations[fileName] = decl;
+        this.TypeDeclarationAdded?.Invoke(decl);
+    }
+
+    /// <summary>
     /// Injects the ES5 standard library into the language service so that JS built-in completions
     /// (Array, string, Math, Promise, etc.) are available alongside registered .NET types.
     /// Optional: the Monaco-based web REPL runs its own TypeScript language service client-side
