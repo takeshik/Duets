@@ -8,12 +8,16 @@ public static class ScriptBuiltins
 {
     private const string TypingsDeclaration = """
         declare const typings: {
-            /** Registers a single .NET type by assembly-qualified name as a TypeScript declaration target. */
-            use(assemblyQualifiedName: string): void;
-            /** Loads an assembly and registers namespace skeleton declarations so that its namespaces appear in completions (no type members). */
-            scanAssembly(assemblyName: string): void;
-            /** Loads an assembly and registers all public types as TypeScript declaration targets. */
-            useAssembly(assemblyName: string): void;
+            /** Registers a single .NET type. Accepts a CLR type reference (e.g. System.IO.File) or an assembly-qualified name string. */
+            useType(type: any): void;
+            /** Registers namespace skeleton declarations from an assembly (name string or Assembly object), so namespaces appear in completions (no type members). */
+            scanAssembly(assembly: any): void;
+            /** Registers namespace skeleton declarations from the assembly containing the given type reference. */
+            scanAssemblyOf(type: any): void;
+            /** Loads an assembly (name string or Assembly object) and registers all public types as TypeScript declaration targets. */
+            useAssembly(assembly: any): void;
+            /** Registers all public types from the assembly containing the given type reference. */
+            useAssemblyOf(type: any): void;
             /** Registers all public types in the given namespace. Accepts a namespace reference (e.g. System.Net.Http) or a plain string. */
             useNamespace(ns: any): void;
         };

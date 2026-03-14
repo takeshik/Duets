@@ -16,11 +16,19 @@ public sealed class ScriptTypings
 
     private readonly TypeScriptService _ts;
 
-    /// <summary>Registers a single .NET type by assembly-qualified name as a TypeScript declaration target.</summary>
-    public void Use(string typeName)
+    /// <summary>Registers a single .NET type as a TypeScript declaration target.</summary>
+    /// <param name="typeRef">An assembly-qualified type name string, or a CLR type reference (e.g. <c>System.IO.File</c>).</param>
+    public void UseType(JsValue typeRef)
     {
-        var type = Type.GetType(typeName)
-            ?? throw new InvalidOperationException($"Type not found: {typeName}");
+        var type = typeRef switch
+        {
+            TypeReference tr => tr.ReferenceType,
+            _ when typeRef.IsString() => Type.GetType(typeRef.AsString())
+                ?? throw new InvalidOperationException($"Type not found: {typeRef.AsString()}"),
+            _ => throw new ArgumentException(
+                "Expected a CLR type reference (e.g., typings.useType(System.IO.File)) or an assembly-qualified name string."
+            ),
+        };
         this._ts.RegisterType(type);
     }
 
@@ -28,9 +36,10 @@ public sealed class ScriptTypings
     /// Loads an assembly and registers namespace skeleton declarations so that its namespaces
     /// appear in TypeScript completions. No type members are registered.
     /// </summary>
-    public void ScanAssembly(string assemblyName)
+    /// <param name="assemblyRef">An assembly name string or a wrapped <see cref="Assembly"/> object.</param>
+    public void ScanAssembly(JsValue assemblyRef)
     {
-        var asm = Assembly.Load(new AssemblyName(assemblyName));
+        var asm = ResolveAssembly(assemblyRef);
         foreach (var ns in asm.GetExportedTypes()
             .Select(t => t.Namespace)
             .Where(ns => ns != null)
@@ -41,15 +50,33 @@ public sealed class ScriptTypings
     }
 
     /// <summary>
+    /// Scans the assembly containing the given type and registers namespace skeleton declarations.
+    /// No type members are registered.
+    /// </summary>
+    public void ScanAssemblyOf(JsValue typeRef)
+    {
+        this.ScanAssembly(new JsString(ResolveTypeRef(typeRef).Assembly.FullName!));
+    }
+
+    /// <summary>
     /// Loads an assembly and registers all public types as TypeScript declaration targets.
     /// </summary>
-    public void UseAssembly(string assemblyName)
+    /// <param name="assemblyRef">An assembly name string or a wrapped <see cref="Assembly"/> object.</param>
+    public void UseAssembly(JsValue assemblyRef)
     {
-        var asm = Assembly.Load(new AssemblyName(assemblyName));
+        var asm = ResolveAssembly(assemblyRef);
         foreach (var type in TryGetExportedTypes(asm))
         {
             this._ts.RegisterType(type);
         }
+    }
+
+    /// <summary>
+    /// Registers all public types from the assembly containing the given type as TypeScript declaration targets.
+    /// </summary>
+    public void UseAssemblyOf(JsValue typeRef)
+    {
+        this.UseAssembly(new JsString(ResolveTypeRef(typeRef).Assembly.FullName!));
     }
 
     /// <summary>
@@ -75,6 +102,26 @@ public sealed class ScriptTypings
                 this._ts.RegisterType(type);
             }
         }
+    }
+
+    private static Type ResolveTypeRef(JsValue typeRef)
+    {
+        if (typeRef is TypeReference tr) return tr.ReferenceType;
+        throw new ArgumentException(
+            "Expected a CLR type reference (e.g., typings.scanAssemblyOf(System.IO.File))."
+        );
+    }
+
+    private static Assembly ResolveAssembly(JsValue assemblyRef)
+    {
+        return assemblyRef switch
+        {
+            ObjectWrapper { Target: Assembly asm } => asm,
+            _ when assemblyRef.IsString() => Assembly.Load(new AssemblyName(assemblyRef.AsString())),
+            _ => throw new ArgumentException(
+                "Expected an assembly name string or an Assembly object (e.g., typings.scanAssembly(\"System.Net.Http\"))."
+            ),
+        };
     }
 
     private static string GetNamespaceNameFromRef(NamespaceReference nr)
