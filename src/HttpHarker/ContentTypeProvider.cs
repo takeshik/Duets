@@ -1,29 +1,74 @@
+using System.Net;
+
 namespace HttpHarker;
 
-public static class ContentTypeProvider
+public sealed class ContentTypeProvider
 {
-    private static readonly Dictionary<string, string> _map = new(StringComparer.OrdinalIgnoreCase)
+    public ContentTypeProvider(
+        Func<HttpListenerRequest, string?> keySelector,
+        Func<HttpListenerRequest, string>? fallback = null,
+        IEqualityComparer<string>? keyComparer = null)
     {
-        [".html"] = "text/html; charset=utf-8",
-        [".css"] = "text/css; charset=utf-8",
-        [".js"] = "application/javascript; charset=utf-8",
-        [".mjs"] = "application/javascript; charset=utf-8",
-        [".json"] = "application/json; charset=utf-8",
-        [".txt"] = "text/plain; charset=utf-8",
-        [".svg"] = "image/svg+xml",
-        [".png"] = "image/png",
-        [".jpg"] = "image/jpeg",
-        [".jpeg"] = "image/jpeg",
-        [".gif"] = "image/gif",
-        [".ico"] = "image/x-icon",
-        [".woff"] = "font/woff",
-        [".woff2"] = "font/woff2",
-        [".ttf"] = "font/ttf",
-        [".map"] = "application/json; charset=utf-8",
-    };
+        this.KeySelector = keySelector;
+        this.Fallback = fallback ?? (_ => "application/octet-stream");
+        this._mappings = new Dictionary<string, string>(keyComparer ?? StringComparer.OrdinalIgnoreCase);
+    }
 
-    public static string GetContentType(string extension)
+    private readonly Dictionary<string, string> _mappings;
+
+    public Func<HttpListenerRequest, string?> KeySelector { get; set; }
+    public Func<HttpListenerRequest, string> Fallback { get; set; }
+
+    public static ContentTypeProvider CreateDefault()
     {
-        return _map.GetValueOrDefault(extension, "application/octet-stream");
+        return new ContentTypeProvider(static request => Path.GetExtension(request.Url?.AbsolutePath ?? "")
+            )
+            .Add(".html", "text/html; charset=utf-8")
+            .Add(".css", "text/css; charset=utf-8")
+            .Add(".js", "application/javascript; charset=utf-8")
+            .Add(".mjs", "application/javascript; charset=utf-8")
+            .Add(".json", "application/json; charset=utf-8")
+            .Add(".txt", "text/plain; charset=utf-8")
+            .Add(".svg", "image/svg+xml")
+            .Add(".png", "image/png")
+            .Add(".jpg", "image/jpeg")
+            .Add(".jpeg", "image/jpeg")
+            .Add(".gif", "image/gif")
+            .Add(".ico", "image/x-icon")
+            .Add(".woff", "font/woff")
+            .Add(".woff2", "font/woff2")
+            .Add(".ttf", "font/ttf")
+            .Add(".map", "application/json; charset=utf-8");
+    }
+
+    public ContentTypeProvider Add(string key, string contentType)
+    {
+        this._mappings[key] = contentType;
+        return this;
+    }
+
+    public ContentTypeProvider AddRange(IEnumerable<KeyValuePair<string, string>> mappings)
+    {
+        foreach (var (key, contentType) in mappings)
+        {
+            this._mappings[key] = contentType;
+        }
+
+        return this;
+    }
+
+    public string Resolve(HttpListenerRequest request)
+    {
+        return this.Resolve(this.KeySelector(request), request);
+    }
+
+    public string Resolve(string? key, HttpListenerRequest request)
+    {
+        if (key is { Length: > 0 } && this._mappings.TryGetValue(key, out var contentType))
+        {
+            return contentType;
+        }
+
+        return this.Fallback(request);
     }
 }

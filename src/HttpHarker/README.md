@@ -20,12 +20,20 @@ server
             var body = await reader.ReadToEndAsync();
             await ctx.CloseAsync("text/plain", body);
         }))
-    .UseEmbeddedResources(typeof(Program).Assembly, "MyApp.StaticFiles", "/")
+    .UseEmbeddedResources(typeof(Program).Assembly, "MyApp.StaticFiles", "/", options =>
+    {
+        options.EnableSpaFallback = true;
+        options.EnableETag = true;
+        options.CacheControlSelector = suffix =>
+            suffix == "index.html"
+                ? "no-cache"
+                : "public, max-age=31536000, immutable";
+    })
     .UseErrorPages(errors =>
         errors.On(404, async ctx =>
             await ctx.CloseAsync("text/plain", "Not Found")));
 
-await server.RunAsync(workersCount: 4);
+await server.RunAsync(workersCount: 8);
 ```
 
 ## Middleware Pipeline
@@ -55,7 +63,7 @@ Routes are matched in priority order: literal segments first, then parameters, t
 
 ### EmbeddedResourceMiddleware
 
-Serves files from .NET embedded resources. Maps URL paths to resource names by replacing `/` with `.`. Falls back to `index.html` for the root path.
+Serves files from .NET embedded resources. Maps URL paths to resource names by replacing `/` with `.`. Supports root default document, optional SPA fallback, and optional ETag / Cache-Control handling.
 
 ### ErrorPagesMiddleware
 
@@ -63,7 +71,7 @@ Catches unhandled requests (no prior middleware responded) and maps status codes
 
 ### ContentTypeDetection
 
-An inline middleware (via `UseContentTypeDetection()`) that sets `Content-Type` based on the request URL file extension.
+An inline middleware (via `UseContentTypeDetection(...)`) that sets `Content-Type` using a configurable `ContentTypeProvider` (custom key selector, custom map, and fallback function).
 
 ## Key Types
 
@@ -72,7 +80,7 @@ An inline middleware (via `UseContentTypeDetection()`) that sets `Content-Type` 
 | `HttpServer` | Core server — manages `HttpListener`, middleware pipeline, and worker loop |
 | `HttpActionContext` | Wraps `HttpListenerRequest`, `HttpListenerResponse`, and route arguments |
 | `IMiddleware` | Interface for middleware classes |
-| `ContentTypeProvider` | Extension-to-MIME-type mapping |
+| `ContentTypeProvider` | Configurable request key -> `Content-Type` resolver with fallback function |
 
 ## Design Notes
 

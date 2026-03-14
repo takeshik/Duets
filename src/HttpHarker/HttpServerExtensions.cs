@@ -19,16 +19,12 @@ public static class HttpServerExtensions
             return server.Use(new ErrorPagesMiddleware(configure));
         }
 
-        public HttpServer UseContentTypeDetection()
+        public HttpServer UseContentTypeDetection(ContentTypeProvider? contentTypeProvider = null)
         {
+            var provider = contentTypeProvider ?? ContentTypeProvider.CreateDefault();
             server.Use(async (ctx, next) =>
                 {
-                    var ext = Path.GetExtension(ctx.Request.Url?.AbsolutePath ?? "");
-                    if (ext.Length > 0)
-                    {
-                        ctx.Response.ContentType = ContentTypeProvider.GetContentType(ext);
-                    }
-
+                    ctx.Response.ContentType = provider.Resolve(ctx.Request);
                     await next();
                 }
             );
@@ -38,9 +34,12 @@ public static class HttpServerExtensions
         public HttpServer UseEmbeddedResources(
             Assembly assembly,
             string resourcePrefix,
-            string root = "/")
+            string root = "/",
+            Action<EmbeddedResourceOptions>? configure = null)
         {
-            server.Use(new EmbeddedResourceMiddleware(assembly, resourcePrefix, root));
+            var options = new EmbeddedResourceOptions();
+            configure?.Invoke(options);
+            server.Use(new EmbeddedResourceMiddleware(assembly, resourcePrefix, root, options));
             return server;
         }
     }
