@@ -48,6 +48,10 @@ public class TypeScriptService : ITranspiler,
         if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
         if (!this._registeredTypes.Add(type)) return;
 
+        // Register base type first so it's declared before this type references it
+        var baseType = type.BaseType;
+        if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType)) this.RegisterType(baseType);
+
         var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(type.ToString())));
         var fileName = $"clr-{hash}.d.ts";
         var content = this._declarationGenerator.GenerateTypeDefTs(type);

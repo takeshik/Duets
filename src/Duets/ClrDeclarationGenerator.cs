@@ -90,12 +90,6 @@ public class ClrDeclarationGenerator
         WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
 
         sb.AppendLine($"{typeIndent}}}");
-
-        if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
-        {
-            sb.AppendLine();
-            WriteDeclaration(sb, baseType, visited);
-        }
     }
 
     private static void WriteInterfaceDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
@@ -344,7 +338,8 @@ public class ClrDeclarationGenerator
     {
         if (!type.IsGenericType) return type.Name;
         var def = type.IsGenericTypeDefinition ? type : type.GetGenericTypeDefinition();
-        var name = def.Name[..def.Name.IndexOf('`')];
+        var backtickIdx = def.Name.IndexOf('`');
+        var name = backtickIdx >= 0 ? def.Name[..backtickIdx] : def.Name;
         var args = string.Join(", ", type.GetGenericArguments().Select(a => MapType(a, [])));
         return $"{name}<{args}>";
     }

@@ -1,4 +1,4 @@
-const $$host = new (function () {
+var $$host = new (function () {
     this._files = {};
     this.log = function (_) {
     };
@@ -38,4 +38,4 @@ const $$host = new (function () {
         }
     };
 })();
-const $$service = ts.createLanguageService($$host);
+var $$service = ts.createLanguageService($$host);
