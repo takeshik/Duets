@@ -64,7 +64,7 @@ public class HttpServer(string prefix) : IDisposable
                     var ctx = await this._listener.GetContextAsync();
                     await this.HandleAsync(ctx);
                 }
-                catch (HttpListenerException ex) when (ex.ErrorCode == 995) // ERROR_OPERATION_ABORTED
+                catch (HttpListenerException) when (!this._listener.IsListening)
                 {
                     break;
                 }
