@@ -12,7 +12,7 @@ Duets is an embeddable TypeScript console for .NET. It is designed to be added t
 
 The main library consists of four principal components:
 
-- **TypeScriptService** — Hosts a Jint engine ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) that runs the official TypeScript compiler. Responsible for transpilation (TS → JS), managing type declarations, and streaming `.d.ts` updates via SSE. Downloads and caches `typescript.js` from unpkg at runtime ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)).
+- **TypeScriptService** — Hosts a Jint engine ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) that runs the official TypeScript compiler. Responsible for transpilation (TS → JS), managing type declarations, and streaming `.d.ts` updates via SSE. Downloads and caches `typescript.js` from unpkg at runtime ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). Provides `InjectStdLibAsync()` to optionally inject `lib.es5.d.ts` into the server-side language service for callers that use `GetCompletions` directly ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
 - **ScriptEngine** — Hosts a separate Jint engine for executing user code ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md)). Configured by the consumer to expose .NET assemblies and values. Requires an `ITranspiler` (e.g. `TypeScriptService`) at construction; `Execute`/`Evaluate` always transpile TypeScript before running ([ADR-10](decisions/10_extract-itranspiler-interface-for-scriptengine.md)).
 - **ClrDeclarationGenerator** — Uses reflection to generate TypeScript type declarations (`.d.ts`) from .NET types. Declarations are pushed to the Monaco editor via SSE to enable completions ([ADR-8](decisions/8_use-addextralib-to-inject-dts-declarations-for-completions.md)).
 - **ReplService** — Wires everything together into a web-based REPL ([ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). Serves the Monaco editor UI as embedded resources, provides an SSE endpoint for live type declaration updates, and a `POST /eval` endpoint that transpiles and executes code.
@@ -23,9 +23,19 @@ The main library consists of four principal components:
 
 A lightweight HTTP server built on `System.Net.HttpListener` with a middleware pipeline ([ADR-9](decisions/9_wrap-httplistener-in-a-dedicated-middleware-library.md)). It is a separate library with its own namespace and may be extracted into its own repository in the future. See [../src/HttpHarker/README.md](../src/HttpHarker/README.md) for details.
 
-### Duets.Sandbox (sample application)
+### Duets.Sandbox (sample application / debugging CLI)
 
-A minimal console application demonstrating how to wire up TypeScriptService, ScriptEngine, and ReplService with an HttpHarker server.
+A console application that serves both as a working example of how to wire up TypeScriptService, ScriptEngine, and ReplService, and as a multi-mode debugging CLI for end-to-end verification of the Duets stack ([ADR-11](decisions/11_sandbox-multi-mode-debugging-cli.md)). Modes:
+
+| Mode | Invocation | Description |
+|---|---|---|
+| `repl` | *(default)* | Interactive REPL; TypeScript lines are evaluated, `:commands` manage state |
+| `eval` | `eval <code>` | One-shot TypeScript evaluation; outputs a JSON object |
+| `complete` | `complete <src> [pos]` | One-shot completions at position; outputs a JSON object |
+| `serve` | `serve [port]` | Starts the web REPL server; blocks until Ctrl+C |
+| `batch` | `batch` | JSONL in → JSONL out; agent-friendly stateful session |
+
+The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.
 
 ## Data Flow
 
@@ -58,7 +68,7 @@ flowchart LR
 
 ## Runtime Dependencies
 
-TypeScript compiler (`typescript.js`) and Monaco Editor loader (`loader.js`) are fetched from unpkg on first use and cached in the system temp directory for 7 days ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). This avoids bundling large JS files in the library assembly.
+TypeScript compiler (`typescript.js`), Monaco Editor loader (`loader.js`), and optionally the ES5 standard library (`lib.es5.d.ts`) are fetched from unpkg on first use and cached in the system temp directory for 7 days ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). This avoids bundling large JS files in the library assembly. `lib.es5.d.ts` is only fetched when `InjectStdLibAsync()` is called ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
 
 ## Key Dependencies
 

@@ -72,7 +72,7 @@ Open `http://127.0.0.1:17375/` in a browser to access the TypeScript console.
     - `ClrDeclarationGenerator.cs` — .NET → `.d.ts` type declaration generator
     - `ReplService.cs` — Web REPL (Monaco UI, SSE, eval endpoint)
   - `HttpHarker/` — Lightweight `HttpListener`-based HTTP server
-  - `Duets.Sandbox/` — Sample application
+  - `Duets.Sandbox/` — Sample application and multi-mode debugging CLI (run with `--help` or `batch` → `{"op":"help"}` for usage)
 - `docs/` — [Architecture overview](docs/architecture.md) and [design decision records](docs/decisions/)
 - `tests/`
   - `Duets.Tests/` — Unit tests
