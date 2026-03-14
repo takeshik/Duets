@@ -48,6 +48,10 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 
 When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update `docs/architecture.md` to reflect the new state.
 
+## Language
+
+All repository content **must be in English**: source code, comments, commit messages, documentation, ADRs, and any other text files. This applies regardless of the language used in conversation with the agent.
+
 ## Code Style
 
 Code style is enforced mechanically via `jb cleanupcode`. Rules are defined in `.editorconfig` and `.DotSettings` — do not duplicate them here.
