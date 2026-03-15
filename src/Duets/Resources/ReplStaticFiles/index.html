@@ -154,7 +154,7 @@
     <div id="resizer"></div>
     <div id="output"></div>
 </div>
-<script src="/monaco-loader.js"></script>
+<script src="monaco-loader.js"></script>
 <script>
     const main = document.getElementById('main');
     const resizer = document.getElementById('resizer');
@@ -212,7 +212,7 @@
         // Receive TypeDeclarations via SSE and register them with Monaco
         // addExtraLib performs incremental updates so the worker is not reset
         // TypeScript re-evaluates all files on each completion request, so types registered later are resolved
-        const evtSource = new EventSource('/type-declaration-events');
+        const evtSource = new EventSource('type-declaration-events');
         evtSource.onmessage = function (e) {
             const decl = JSON.parse(e.data);
             monaco.languages.typescript.typescriptDefaults.addExtraLib(decl.content, decl.fileName);
@@ -243,7 +243,7 @@
             if (!code.trim()) return;
             if (clear) clearOutput();
             try {
-                const res = await fetch('/eval', {method: 'POST', body: code});
+                const res = await fetch('eval', {method: 'POST', body: code});
                 const data = await res.json();
                 appendOutput(data.result, data.ok);
             } catch (e) {

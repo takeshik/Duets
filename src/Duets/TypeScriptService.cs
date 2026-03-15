@@ -74,9 +74,11 @@ public class TypeScriptService : ITranspiler,
         {
             var emptyContent = $"declare namespace {type.Namespace} {{ }}\n";
             this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [skeletonFile, emptyContent]);
-            this._typeDeclarations[skeletonFile] = new TypeDeclaration(skeletonFile, emptyContent);
+            var updatedSkeleton = new TypeDeclaration(skeletonFile, emptyContent);
+            this._typeDeclarations[skeletonFile] = updatedSkeleton;
             this._pendingSkeletonNamespaces.Remove(type.Namespace);
             this._coveredNamespaces.Add(type.Namespace);
+            this.TypeDeclarationAdded?.Invoke(updatedSkeleton);
         }
         else if (type.Namespace != null)
         {
