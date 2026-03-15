@@ -5,21 +5,6 @@ namespace Duets.Sandbox;
 
 public class Commands
 {
-    public async Task Eval([Argument] string code)
-    {
-        using var ts = new TypeScriptService();
-        await ts.ResetAsync();
-        using var engine = new ScriptEngine(null, ts);
-        try
-        {
-            OutputJson(new { ok = true, result = engine.Evaluate(code).ToString() });
-        }
-        catch (Exception ex)
-        {
-            OutputJson(new { ok = false, error = ex.Message });
-        }
-    }
-
     public async Task Complete([Argument] string source, int? position = null)
     {
         await using var session = new SandboxSession();
@@ -56,18 +41,6 @@ public class Commands
         await using var session = new SandboxSession();
         await session.EnsureInitializedAsync();
         await new InteractiveRepl(session).RunAsync();
-    }
-
-    private static object EvalOnce(SandboxSession s, string code)
-    {
-        try
-        {
-            return new { ok = true, result = s.Evaluate(code) };
-        }
-        catch (Exception ex)
-        {
-            return new { ok = false, error = ex.Message };
-        }
     }
 
     private static object CompleteOnce(SandboxSession s, string source, int position)
