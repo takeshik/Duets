@@ -2,6 +2,11 @@
 
 Guidelines for coding agents when working on the Duets repository.
 
+> **Note:** `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Edits via
+> either path modify `AGENTS.md` on disk. When staging changes, always use
+> `git add AGENTS.md` explicitly — `git add CLAUDE.md` will not work because
+> Git tracks the symlink target, not the symlink itself.
+
 ## Build & Run
 
 ```bash
