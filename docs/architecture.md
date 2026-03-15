@@ -24,19 +24,23 @@ The main library consists of four principal components plus a built-ins module:
 
 A lightweight HTTP server built on `System.Net.HttpListener` with a middleware pipeline ([ADR-9](decisions/9_wrap-httplistener-in-a-dedicated-middleware-library.md)). It is a separate library with its own namespace and may be extracted into its own repository in the future. See [../src/HttpHarker/README.md](../src/HttpHarker/README.md) for details.
 
-### Duets.Sandbox (sample application / debugging CLI)
+### Duets.Sandbox (developer / agent debugging CLI)
 
-A console application that serves both as a working example of how to wire up TypeScriptService, ScriptEngine, and ReplService, and as a multi-mode debugging CLI for end-to-end verification of the Duets stack ([ADR-11](decisions/11_sandbox-multi-mode-debugging-cli.md)). Modes:
+An internal console application for end-to-end verification of the Duets stack.
+It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sandbox-multi-mode-debugging-cli.md), [ADR-16](decisions/16_samples-directory-and-sandbox-role-clarification.md)). All commands use the fully-initialized `SandboxSession` (TypeScript engine, stdlib, `typings` built-ins, `AllowClr`). Modes:
 
 | Mode | Invocation | Description |
 |---|---|---|
 | `repl` | *(default)* | Interactive REPL; TypeScript lines are evaluated, `:commands` manage state |
-| `eval` | `eval <code>` | One-shot TypeScript evaluation; outputs a JSON object |
 | `complete` | `complete <src> [pos]` | One-shot completions at position; outputs a JSON object |
 | `serve` | `serve [port]` | Starts the web REPL server; blocks until Ctrl+C |
 | `batch` | `batch` | JSONL in → JSONL out; agent-friendly stateful session |
 
 The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.
+
+### samples/ (usage examples)
+
+Runnable file-based app examples (`.cs` files at repository root level) showing standard library usage ([ADR-16](decisions/16_samples-directory-and-sandbox-role-clarification.md)). Each file is self-contained and executable via `dotnet run samples/<file>.cs`. These are the recommended starting point for new users.
 
 ## Data Flow
 

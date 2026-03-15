@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR-16](16_samples-directory-and-sandbox-role-clarification.md)
 
 ## Context
 

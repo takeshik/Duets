@@ -33,8 +33,9 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
     - `HttpServerExtensions.cs` — Extension methods (C# 14 `extension` blocks)
     - `ActionContext.cs` — Request/response wrapper for route handlers
     - `Middlewares/` — Built-in middleware (routing, embedded resources, errors)
-  - `Duets.Sandbox/` — Sample application and multi-mode debugging CLI
+  - `Duets.Sandbox/` — Multi-mode debugging CLI (batch, repl, serve, complete); not for end users
   - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly); place cross-project internal helpers here
+- `samples/` — Runnable file-based app examples (`.cs` files; run with `dotnet run samples/<file>.cs`)
 - `docs/`
   - `architecture.md` — Architecture overview (current snapshot)
   - `decisions/` — Architecture Decision Records (ADRs)

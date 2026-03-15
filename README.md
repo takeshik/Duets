@@ -17,13 +17,19 @@ Duets lets you drop a fully-featured TypeScript REPL into **any** .NET applicati
 
 ## Quick Start
 
+Runnable examples live in [`samples/`](samples/). Each file is a self-contained file-based app:
+
+```bash
+dotnet run samples/minimal-eval.cs          # transpile and evaluate
+dotnet run samples/with-type-registration.cs # expose .NET types to scripts
+dotnet run samples/web-repl.cs              # browser-based Monaco editor
+```
+
 ### Minimal: transpile and evaluate
 
-The core of Duets is two classes: `TypeScriptService` (transpiler) and `ScriptEngine` (executor).
+[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — The core of Duets is two classes: `TypeScriptService` (transpiler) and `ScriptEngine` (executor).
 
 ```csharp
-using Duets;
-
 using var ts = new TypeScriptService();
 await ts.ResetAsync(); // downloads & caches typescript.js on first run
 
@@ -35,38 +41,25 @@ Console.WriteLine(result); // 1.4142135623730951
 
 ### With .NET type registration
 
-To expose .NET types to scripts and get IntelliSense-style completions, add `AllowClr` and register the `typings` built-in object:
+[`samples/with-type-registration.cs`](samples/with-type-registration.cs) — Add `AllowClr` and register the `typings` built-in to expose .NET types to scripts and get IntelliSense-style completions:
 
 ```csharp
-using Duets;
-
-using var ts = new TypeScriptService();
-await ts.ResetAsync();
-
 using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
 engine.RegisterTypeBuiltins(ts); // registers the typings global
 
 // From a script:
-//   typings.use("System.IO.File, System.IO.FileSystem")
-//   typings.scanAssembly("System.Net.Http")   // namespace skeletons only
-//   typings.useAssembly("System.Net.Http")    // all public types
-//   typings.useNamespace(System.Net.Http)     // types in one namespace
+//   typings.useType(System.IO.File)                          // single type via CLR reference
+//   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
+//   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
+//   typings.useAssembly("System.Net.Http")                   // all public types
+//   typings.useNamespace(System.Net.Http)                    // types in one namespace
 ```
 
 ### With web REPL
 
-To serve a browser-based Monaco editor with live completions:
+[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions:
 
 ```csharp
-using Duets;
-using HttpHarker;
-
-using var ts = new TypeScriptService();
-await ts.ResetAsync();
-
-using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
-engine.RegisterTypeBuiltins(ts);
-
 using var server = new HttpServer("http://127.0.0.1:17375/");
 using var repl = server
     .UseContentTypeDetection()
@@ -94,7 +87,8 @@ Open `http://127.0.0.1:17375/` in a browser to access the TypeScript console.
     - `ClrDeclarationGenerator.cs` — .NET → `.d.ts` type declaration generator
     - `ReplService.cs` — Web REPL (Monaco UI, SSE, eval endpoint)
   - `HttpHarker/` — Lightweight `HttpListener`-based HTTP server
-  - `Duets.Sandbox/` — Sample application and multi-mode debugging CLI (run with `--help` or `batch` → `{"op":"help"}` for usage)
+  - `Duets.Sandbox/` — Multi-mode debugging CLI (run with `--help` or `batch` → `{"op":"help"}` for usage)
+- `samples/` — Runnable file-based app examples
 - `docs/` — [Architecture overview](docs/architecture.md) and [design decision records](docs/decisions/)
 - `tests/`
   - `Duets.Tests/` — Unit tests
