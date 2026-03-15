@@ -18,8 +18,12 @@ public sealed class ErrorPagesMiddleware : IMiddleware
 
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
-        // Requests that reach this middleware were not handled by any previous middleware.
-        // StatusCode 200 (default, unset) means "no route matched" → treat as 404.
+        await next();
+
+        // If the response was already committed (route handler closed it), nothing left to do.
+        if (!context.Response.OutputStream.CanWrite) return;
+
+        // StatusCode 200 (default, unset) means no route matched → treat as 404.
         var statusCode = context.Response.StatusCode is 200 or 0
             ? 404
             : context.Response.StatusCode;
