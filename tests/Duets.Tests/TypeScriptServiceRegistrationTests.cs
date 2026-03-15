@@ -50,7 +50,7 @@ public sealed class TypeScriptServiceRegistrationTests
     }
 
     [Fact]
-    public void RegisterNamespaceSkeleton_replaces_dummy_member_after_registering_a_real_type()
+    public void RegisterNamespaceSkeleton_notifies_when_dummy_member_is_replaced_after_registering_a_real_type()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
         var added = new List<TypeScriptService.TypeDeclaration>();
@@ -61,7 +61,10 @@ public sealed class TypeScriptServiceRegistrationTests
 
         var declarations = service.GetTypeDeclarations().ToList();
 
-        Assert.Equal(2, added.Count);
+        Assert.Equal(3, added.Count);
+        Assert.Contains(added, x => x.Content.Contains("const $name"));
+        Assert.Contains(added, x => x.Content.Contains("class NamespaceAlpha"));
+        Assert.Contains(added, x => x.Content == "declare namespace Duets.Tests.TestTypes.NamespaceTargets { }\n");
         Assert.Contains(declarations, x => x.Content == "declare namespace Duets.Tests.TestTypes.NamespaceTargets { }\n");
         Assert.Contains(declarations, x => x.Content.Contains("class NamespaceAlpha"));
     }

@@ -26,7 +26,9 @@ public class TypeScriptService : ITranspiler,
 
     public string? Version { get; private set; }
 
-    /// <summary>Fires when a new type declaration is registered. Used for SSE delivery and similar purposes.</summary>
+    /// <summary>
+    /// Fires when a type declaration is added or updated. Used for SSE delivery and similar purposes.
+    /// </summary>
     public event Action<TypeDeclaration>? TypeDeclarationAdded;
 
     public async Task ResetAsync(bool forceDownloadCodes = false)
