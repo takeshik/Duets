@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Threading.Channels;
 using HttpHarker;
 using Mio;
-using Mio.Destructive;
 using Timer = System.Timers.Timer;
 
 namespace Duets;
@@ -13,18 +12,25 @@ public static class ReplServiceExtensions
 {
     public static ReplService UseRepl(
         this HttpServer server,
-        TypeScriptService svc, ScriptEngine scriptEngine, string root = "/")
+        TypeScriptService svc, ScriptEngine scriptEngine, string root = "/",
+        IAssetSource? monacoLoader = null)
     {
-        return new ReplService(svc, scriptEngine, server, root);
+        return new ReplService(svc, scriptEngine, server, root, monacoLoader);
     }
 }
 
 public class ReplService : IDisposable
 {
-    public ReplService(TypeScriptService svc, ScriptEngine scriptEngine, HttpServer server, string root = "/")
+    public ReplService(
+        TypeScriptService svc, ScriptEngine scriptEngine, HttpServer server, string root = "/",
+        IAssetSource? monacoLoader = null)
     {
         this._svc = svc;
         this._scriptEngine = scriptEngine;
+        this._monacoLoaderSource = monacoLoader
+            ?? AssetSources.Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
+                .WithDiskCache(DirectoryPath.GetTempDirectory().ChildFile("monaco-loader.js"));
+        this._monacoLoader = new Lazy<Task<string>>(() => this._monacoLoaderSource.GetAsync());
         svc.TypeDeclarationAdded += this.OnTypeDeclarationAdded;
         server
             .UseSimpleRouting(
@@ -39,27 +45,13 @@ public class ReplService : IDisposable
 
     private readonly TypeScriptService _svc;
     private readonly ScriptEngine _scriptEngine;
+    private readonly IAssetSource _monacoLoaderSource;
     private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeScriptService.TypeDeclaration?>> _sseWriters = new();
-    private readonly Lazy<Task<string>> _monacoLoader = new(FetchMonacoLoaderAsync);
+    private readonly Lazy<Task<string>> _monacoLoader;
 
     public void Dispose()
     {
         this._svc.TypeDeclarationAdded -= this.OnTypeDeclarationAdded;
-    }
-
-    private static async Task<string> FetchMonacoLoaderAsync()
-    {
-        var file = DirectoryPath.GetTempDirectory().ChildFile("monaco-loader.js");
-        if (file.Exists() && (DateTimeOffset.Now - file.GetCreationTime()).TotalDays < 7)
-        {
-            return await file.ReadAllTextAsync();
-        }
-
-        var code = await new HttpClient().GetStringAsync(
-            "https://unpkg.com/monaco-editor@0.55.1/min/vs/loader.js"
-        );
-        await file.AsDestructive().WriteAsync(code);
-        return code;
     }
 
     private void OnTypeDeclarationAdded(TypeScriptService.TypeDeclaration decl)

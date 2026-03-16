@@ -3,13 +3,45 @@ using System.Text;
 using Jint;
 using Jint.Native;
 using Mio;
-using Mio.Destructive;
 
 namespace Duets;
+
+/// <summary>
+/// Configuration options for <see cref="TypeScriptService"/>, controlling how runtime JS assets are fetched.
+/// </summary>
+public record TypeScriptServiceOptions
+{
+    /// <summary>
+    /// Asset source for the TypeScript compiler script (<c>typescript.js</c>).
+    /// Defaults to fetching from unpkg with a 7-day disk cache in the system temp directory.
+    /// </summary>
+    public IAssetSource TypeScriptJs { get; init; } =
+        AssetSources.Unpkg("typescript", "5.9.3", "lib/typescript.js")
+            .WithDiskCache(DirectoryPath.GetTempDirectory().ChildFile("typescript.js"));
+
+    /// <summary>
+    /// Factory that returns an asset source for the TypeScript ES5 standard library declaration file.
+    /// Receives the detected TypeScript version string (e.g. <c>"5.9.3"</c>) and returns an
+    /// <see cref="IAssetSource"/> for the corresponding <c>lib.es5.d.ts</c>.
+    /// Defaults to fetching from unpkg with a version-keyed disk cache.
+    /// </summary>
+    public Func<string, IAssetSource> LibEs5Source { get; init; } =
+        tsVersion => AssetSources.Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
+            .WithDiskCache(
+                DirectoryPath.GetTempDirectory()
+                    .ChildFile($"typescript-lib.es5-{tsVersion}.d.ts")
+            );
+}
 
 public class TypeScriptService : ITranspiler,
     IDisposable
 {
+    public TypeScriptService(TypeScriptServiceOptions? options = null)
+    {
+        this._options = options ?? new TypeScriptServiceOptions();
+    }
+
+    private readonly TypeScriptServiceOptions _options;
     private readonly HashSet<Type> _registeredTypes = [];
 
     // Tracks namespace skeletons that still carry the $name dummy member (namespace → file name).
@@ -39,7 +71,7 @@ public class TypeScriptService : ITranspiler,
         this._typeDeclarations.Clear();
         this._engine?.Dispose();
         this._engine = new Engine();
-        await this._engine.ExecuteAsync(await FetchTypeScriptJsAsync(forceDownloadCodes));
+        await this._engine.ExecuteAsync(await this._options.TypeScriptJs.GetAsync(forceDownloadCodes));
         this._ts = this._engine.GetValue("ts");
         this._tsTranspile = this._ts.Get("transpile");
         this.Version = this._ts.Get("version").AsString();
@@ -135,7 +167,7 @@ public class TypeScriptService : ITranspiler,
     public async Task InjectStdLibAsync(bool forceDownload = false)
     {
         if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        var content = await FetchLibEs5Async(this.Version!, forceDownload);
+        var content = await this._options.LibEs5Source(this.Version!).GetAsync(forceDownload);
         this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), ["lib.es5.d.ts", content]);
     }
 
@@ -229,36 +261,6 @@ public class TypeScriptService : ITranspiler,
         }
 
         return ret;
-    }
-
-    private static async Task<string> FetchTypeScriptJsAsync(bool forceFetch = true)
-    {
-        var file = DirectoryPath.GetTempDirectory().ChildFile("typescript.js");
-        if (!forceFetch
-            && file.Exists()
-            && (DateTimeOffset.Now - file.GetCreationTime()).TotalDays < 7)
-        {
-            return await file.ReadAllTextAsync();
-        }
-
-        var code = await new HttpClient().GetStringAsync("https://unpkg.com/typescript@5.9.3/lib/typescript.js");
-        await file.AsDestructive().WriteAsync(code);
-        return code;
-    }
-
-    private static async Task<string> FetchLibEs5Async(string tsVersion, bool forceFetch = false)
-    {
-        var file = DirectoryPath.GetTempDirectory().ChildFile($"typescript-lib.es5-{tsVersion}.d.ts");
-        if (!forceFetch
-            && file.Exists()
-            && (DateTimeOffset.Now - file.GetCreationTime()).TotalDays < 7)
-        {
-            return await file.ReadAllTextAsync();
-        }
-
-        var content = await new HttpClient().GetStringAsync($"https://unpkg.com/typescript@{tsVersion}/lib/lib.es5.d.ts");
-        await file.AsDestructive().WriteAsync(content);
-        return content;
     }
 
     public record CompletionEntry(string Name, string Kind, string? SortText);
