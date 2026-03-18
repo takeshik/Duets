@@ -2,11 +2,14 @@
 
 This directory contains Architecture Decision Records (ADRs) for the Duets project. Each file documents a single architectural or design decision: the context that prompted it, the alternatives considered, and the rationale for the choice made.
 
+See [index.md](index.md) for a quick-reference table of all ADRs with keywords and abstracts.
+
 ## Adding a New ADR
 
 1. Copy `_template.md` and name it `N_<title>.md` where `N` is the next sequential number and `<title>` is the ADR title converted to lowercase kebab-case (spaces → `-`, special characters removed).
 2. Fill in all sections of the template.
 3. The title in the filename and the `# ADR-N: <Title>` heading must match.
+4. Append a new row to `index.md` with Title, Keywords, and Abstract.
 
 ## File Naming
 
