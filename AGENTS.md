@@ -7,6 +7,12 @@ Guidelines for coding agents when working on the Duets repository.
 > `git add AGENTS.md` explicitly — `git add CLAUDE.md` will not work because
 > Git tracks the symlink target, not the symlink itself.
 
+> **IMPORTANT — Language policy (read before responding):**
+> - **Chat responses** (reviews, explanations, summaries, plans, status updates):
+>   respond in **the same language the user used**. Never default to English.
+> - **Repository content** (source code, comments, commits, docs, ADRs):
+>   always write in **English only**.
+
 ## Build & Run
 
 ```bash
@@ -57,7 +63,11 @@ When a session involves a design decision (new component, technology choice, API
 
 ## Language
 
-All repository content **must be in English**: source code, comments, commit messages, documentation, ADRs, and any other text files. This applies regardless of the language used in conversation with the agent.
+There are two distinct contexts with different language rules:
+
+**Repository content** — source code, comments, commit messages, documentation, ADRs, and any other checked-in text files — **must be in English**.
+
+**Chat responses** — all assistant prose including reviews, explanations, summaries, plans, and status updates — **must be in the same language the user used**. Do not default to English. These are conversational outputs, not repository content, and the distinction must be respected even when the subject matter is code.
 
 ## Code Style
 
