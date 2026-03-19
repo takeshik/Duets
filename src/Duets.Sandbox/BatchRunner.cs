@@ -34,6 +34,7 @@ internal sealed class BatchRunner(SandboxSession session)
         | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |
+        | `set-transpiler` | `transpiler` | | Switch transpiler (`typescript` or `babel`); returns `transpiler` (description string) |
         | `reset` | | | Reset all engines and clear script state |
         | `help` | | | Returns this document as `content` (Markdown string) |
 
@@ -101,6 +102,7 @@ internal sealed class BatchRunner(SandboxSession session)
                         ok = true,
                         types = session.GetTypeDeclarations().Select(d => d.FileName).ToArray(),
                     },
+                    "set-transpiler" => await this.SetTranspilerAsync(cmd.GetProperty("transpiler").GetString()!),
                     "reset" => await this.ResetAsync(),
                     "help" => new { ok = true, content = Help },
                     _ => new { ok = false, error = $"Unknown op: {op}" },
@@ -173,6 +175,12 @@ internal sealed class BatchRunner(SandboxSession session)
         if (!session.IsServerRunning) return new { ok = false, error = "Server is not running" };
         await session.StopWebServerAsync();
         return new { ok = true };
+    }
+
+    private async Task<object> SetTranspilerAsync(string name)
+    {
+        await session.SetTranspilerAsync(name);
+        return new { ok = true, transpiler = session.TranspilerDescription };
     }
 
     private async Task<object> ResetAsync()

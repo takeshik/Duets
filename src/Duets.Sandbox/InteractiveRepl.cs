@@ -4,7 +4,7 @@ internal sealed class InteractiveRepl(SandboxSession session)
 {
     public async Task RunAsync()
     {
-        Console.WriteLine($"Duets Sandbox  [TypeScript {session.TypeScriptVersion}]");
+        Console.WriteLine($"Duets Sandbox  [{session.TranspilerDescription}]");
         Console.WriteLine("Enter TypeScript code to evaluate, or :help for commands.\n");
 
         while (true)
@@ -67,6 +67,7 @@ internal sealed class InteractiveRepl(SandboxSession session)
               :server start [port]          Start web REPL server (default port: 17375)
               :server stop                  Stop web server
               :server status                Show web server status
+              :set transpiler <name>         Switch transpiler (typescript | babel)
               :reset                        Reset all engines to initial state
               :help                         Show this help
               :quit                         Exit
@@ -201,10 +202,32 @@ internal sealed class InteractiveRepl(SandboxSession session)
                 break;
             }
 
+            case "set":
+            {
+                if (tokens.Length < 3 || !tokens[1].Equals("transpiler", StringComparison.OrdinalIgnoreCase))
+                {
+                    PrintError("Usage: :set transpiler <typescript|babel>");
+                    break;
+                }
+
+                try
+                {
+                    Console.Error.Write($"  Switching to {tokens[2]} transpiler...");
+                    await session.SetTranspilerAsync(tokens[2]);
+                    Console.Error.WriteLine($" done. {session.TranspilerDescription}");
+                }
+                catch (Exception ex)
+                {
+                    PrintError(ex.Message);
+                }
+
+                break;
+            }
+
             case "reset":
                 Console.Error.Write("  Resetting engines...");
                 await session.ResetAsync();
-                Console.Error.WriteLine($" done. TypeScript {session.TypeScriptVersion}");
+                Console.Error.WriteLine($" done. {session.TranspilerDescription}");
                 break;
 
             default:

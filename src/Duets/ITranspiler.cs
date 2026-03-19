@@ -6,6 +6,12 @@ namespace Duets;
 /// </summary>
 public interface ITranspiler
 {
+    /// <summary>
+    /// Human-readable description of this transpiler, including name and version where available.
+    /// Defaults to the implementation type name.
+    /// </summary>
+    string Description => GetType().Name;
+
     string Transpile(
         string input,
         CompilerOptions? compilerOptions = null,

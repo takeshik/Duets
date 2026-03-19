@@ -58,6 +58,9 @@ public class TypeScriptService : ITranspiler,
 
     public string? Version { get; private set; }
 
+    /// <inheritdoc/>
+    public string Description => $"TypeScript {this.Version ?? "unknown"}";
+
     /// <summary>
     /// Fires when a type declaration is added or updated. Used for SSE delivery and similar purposes.
     /// </summary>
