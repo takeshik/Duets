@@ -31,8 +31,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 ## Project Structure
 
 - `Duets.slnx` — Solution file (XML-based slnx format)
-- `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects; do not duplicate in
-  individual project files
+- `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects
 - `src/`
   - `Duets/` — Core library (public API)
     - `Resources/ReplStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `ReplService` at
@@ -95,7 +94,7 @@ dotnet jb cleanupcode Duets.slnx --include="<changed files>"
 dotnet test
 ```
 
-Tests use [xUnit v3](https://xunit.net/) / Microsoft.Testing.Platform CLI and live in `tests/Duets.Tests/`.
+Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`.
 
 ## End-to-end verification with Duets.Sandbox
 
