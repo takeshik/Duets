@@ -14,26 +14,50 @@ public class ScriptEngine : IDisposable
 
     private readonly Engine _engine;
     private readonly ITranspiler _transpiler;
+    private readonly object _sync = new();
+    private bool _disposed;
 
     public void SetValue(string name, object value)
     {
-        this._engine.SetValue(name, value);
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            this._engine.SetValue(name, value);
+        }
     }
 
     /// <summary>Transpiles the TypeScript source to JavaScript and executes it.</summary>
     public void Execute(string tsCode)
     {
-        this._engine.Execute(this._transpiler.Transpile(tsCode));
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            this._engine.Execute(this._transpiler.Transpile(tsCode));
+        }
     }
 
     /// <summary>Transpiles the TypeScript source to JavaScript and evaluates it.</summary>
     public JsValue Evaluate(string tsCode)
     {
-        return this._engine.Evaluate(this._transpiler.Transpile(tsCode));
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            return this._engine.Evaluate(this._transpiler.Transpile(tsCode));
+        }
     }
 
     public void Dispose()
     {
-        this._engine.Dispose();
+        lock (this._sync)
+        {
+            if (this._disposed) return;
+            this._engine.Dispose();
+            this._disposed = true;
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(this._disposed, this);
     }
 }
