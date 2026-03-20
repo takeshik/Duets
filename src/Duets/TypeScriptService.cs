@@ -42,6 +42,7 @@ public class TypeScriptService : ITranspiler,
     }
 
     private readonly TypeScriptServiceOptions _options;
+    private readonly object _sync = new();
     private readonly HashSet<Type> _registeredTypes = [];
 
     // Tracks namespace skeletons that still carry the $name dummy member (namespace → file name).
@@ -68,21 +69,43 @@ public class TypeScriptService : ITranspiler,
 
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
-        this._registeredTypes.Clear();
-        this._pendingSkeletonNamespaces.Clear();
-        this._coveredNamespaces.Clear();
-        this._typeDeclarations.Clear();
-        this._engine?.Dispose();
-        this._engine = new Engine();
-        await this._engine.ExecuteAsync(await this._options.TypeScriptJs.GetAsync(forceDownloadCodes));
-        this._ts = this._engine.GetValue("ts");
-        this._tsTranspile = this._ts.Get("transpile");
-        this.Version = this._ts.Get("version").AsString();
-
-        // Initialize language services
+        var typeScriptJs = await this._options.TypeScriptJs.GetAsync(forceDownloadCodes);
         await using var stream = typeof(TypeScriptService).Assembly.GetManifestResourceStream("Duets.Resources.ReplStaticFiles.language-service.js")!;
         using var reader = new StreamReader(stream, Encoding.UTF8);
-        await this._engine!.ExecuteAsync(await reader.ReadToEndAsync());
+        var languageServiceJs = await reader.ReadToEndAsync();
+
+        var newEngine = new Engine();
+        try
+        {
+            await newEngine.ExecuteAsync(typeScriptJs);
+            var ts = newEngine.GetValue("ts");
+            var tsTranspile = ts.Get("transpile");
+            var version = ts.Get("version").AsString();
+
+            // Initialize language services
+            await newEngine.ExecuteAsync(languageServiceJs);
+
+            Engine? previousEngine;
+            lock (this._sync)
+            {
+                this._registeredTypes.Clear();
+                this._pendingSkeletonNamespaces.Clear();
+                this._coveredNamespaces.Clear();
+                this._typeDeclarations.Clear();
+                previousEngine = this._engine;
+                this._engine = newEngine;
+                this._ts = ts;
+                this._tsTranspile = tsTranspile;
+                this.Version = version;
+            }
+
+            previousEngine?.Dispose();
+        }
+        catch
+        {
+            newEngine.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -91,35 +114,45 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public void RegisterType(Type type)
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        if (!this._registeredTypes.Add(type)) return;
-
-        // Register base type first so it's declared before this type references it
-        var baseType = type.BaseType;
-        if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType)) this.RegisterType(baseType);
-
-        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(type.ToString())));
-        var fileName = $"clr-{hash}.d.ts";
-        var content = this._declarationGenerator.GenerateTypeDefTs(type);
-        var decl = new TypeDeclaration(fileName, content);
-        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
-        this._typeDeclarations[fileName] = decl;
-        this.TypeDeclarationAdded?.Invoke(decl);
-
-        // If a skeleton with a $name dummy exists for this namespace, clear it now that a real type is present.
-        if (type.Namespace != null && this._pendingSkeletonNamespaces.TryGetValue(type.Namespace, out var skeletonFile))
+        List<TypeDeclaration> notifications = [];
+        lock (this._sync)
         {
-            var emptyContent = $"declare namespace {type.Namespace} {{ }}\n";
-            this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [skeletonFile, emptyContent]);
-            var updatedSkeleton = new TypeDeclaration(skeletonFile, emptyContent);
-            this._typeDeclarations[skeletonFile] = updatedSkeleton;
-            this._pendingSkeletonNamespaces.Remove(type.Namespace);
-            this._coveredNamespaces.Add(type.Namespace);
-            this.TypeDeclarationAdded?.Invoke(updatedSkeleton);
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            if (!this._registeredTypes.Add(type)) return;
+
+            // Register base type first so it's declared before this type references it
+            var baseType = type.BaseType;
+            if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType)) this.RegisterType(baseType);
+
+            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(type.ToString())));
+            var fileName = $"clr-{hash}.d.ts";
+            var content = this._declarationGenerator.GenerateTypeDefTs(type);
+            var decl = new TypeDeclaration(fileName, content);
+            var host = this._engine.GetValue("$$host");
+            host.Get("addFile").Call(host, [fileName, content]);
+            this._typeDeclarations[fileName] = decl;
+            notifications.Add(decl);
+
+            // If a skeleton with a $name dummy exists for this namespace, clear it now that a real type is present.
+            if (type.Namespace != null && this._pendingSkeletonNamespaces.TryGetValue(type.Namespace, out var skeletonFile))
+            {
+                var emptyContent = $"declare namespace {type.Namespace} {{ }}\n";
+                host.Get("addFile").Call(host, [skeletonFile, emptyContent]);
+                var updatedSkeleton = new TypeDeclaration(skeletonFile, emptyContent);
+                this._typeDeclarations[skeletonFile] = updatedSkeleton;
+                this._pendingSkeletonNamespaces.Remove(type.Namespace);
+                this._coveredNamespaces.Add(type.Namespace);
+                notifications.Add(updatedSkeleton);
+            }
+            else if (type.Namespace != null)
+            {
+                this._coveredNamespaces.Add(type.Namespace);
+            }
         }
-        else if (type.Namespace != null)
+
+        foreach (var decl in notifications)
         {
-            this._coveredNamespaces.Add(type.Namespace);
+            this.TypeDeclarationAdded?.Invoke(decl);
         }
     }
 
@@ -131,18 +164,28 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public void RegisterNamespaceSkeleton(string namespaceName)
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        if (this._coveredNamespaces.Contains(namespaceName)) return;
-        if (this._pendingSkeletonNamespaces.ContainsKey(namespaceName)) return;
+        TypeDeclaration? notification = null;
+        lock (this._sync)
+        {
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            if (this._coveredNamespaces.Contains(namespaceName)) return;
+            if (this._pendingSkeletonNamespaces.ContainsKey(namespaceName)) return;
 
-        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"ns:{namespaceName}")));
-        var fileName = $"clr-ns-{hash}.d.ts";
-        var content = $"declare namespace {namespaceName} {{ const $name: '{namespaceName}'; }}\n";
-        var decl = new TypeDeclaration(fileName, content);
-        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
-        this._typeDeclarations[fileName] = decl;
-        this._pendingSkeletonNamespaces[namespaceName] = fileName;
-        this.TypeDeclarationAdded?.Invoke(decl);
+            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"ns:{namespaceName}")));
+            var fileName = $"clr-ns-{hash}.d.ts";
+            var content = $"declare namespace {namespaceName} {{ const $name: '{namespaceName}'; }}\n";
+            var decl = new TypeDeclaration(fileName, content);
+            var host = this._engine.GetValue("$$host");
+            host.Get("addFile").Call(host, [fileName, content]);
+            this._typeDeclarations[fileName] = decl;
+            this._pendingSkeletonNamespaces[namespaceName] = fileName;
+            notification = decl;
+        }
+
+        if (notification != null)
+        {
+            this.TypeDeclarationAdded?.Invoke(notification);
+        }
     }
 
     /// <summary>
@@ -151,14 +194,24 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public void RegisterDeclaration(string content)
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(content)));
-        var fileName = $"decl-{hash}.d.ts";
-        if (this._typeDeclarations.ContainsKey(fileName)) return;
-        var decl = new TypeDeclaration(fileName, content);
-        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, content]);
-        this._typeDeclarations[fileName] = decl;
-        this.TypeDeclarationAdded?.Invoke(decl);
+        TypeDeclaration? notification = null;
+        lock (this._sync)
+        {
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(content)));
+            var fileName = $"decl-{hash}.d.ts";
+            if (this._typeDeclarations.ContainsKey(fileName)) return;
+            var decl = new TypeDeclaration(fileName, content);
+            var host = this._engine.GetValue("$$host");
+            host.Get("addFile").Call(host, [fileName, content]);
+            this._typeDeclarations[fileName] = decl;
+            notification = decl;
+        }
+
+        if (notification != null)
+        {
+            this.TypeDeclarationAdded?.Invoke(notification);
+        }
     }
 
     /// <summary>
@@ -169,15 +222,30 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public async Task InjectStdLibAsync(bool forceDownload = false)
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        var content = await this._options.LibEs5Source(this.Version!).GetAsync(forceDownload);
-        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), ["lib.es5.d.ts", content]);
+        string version;
+        lock (this._sync)
+        {
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            version = this.Version ?? throw new InvalidOperationException("TypeScript version is not initialized.");
+        }
+
+        var content = await this._options.LibEs5Source(version).GetAsync(forceDownload);
+
+        lock (this._sync)
+        {
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            var host = this._engine.GetValue("$$host");
+            host.Get("addFile").Call(host, ["lib.es5.d.ts", content]);
+        }
     }
 
     /// <summary>Returns all registered TypeDeclarations (for initial SSE delivery).</summary>
     public IReadOnlyCollection<TypeDeclaration> GetTypeDeclarations()
     {
-        return this._typeDeclarations.Values;
+        lock (this._sync)
+        {
+            return this._typeDeclarations.Values.ToArray();
+        }
     }
 
     /// <summary>
@@ -189,37 +257,50 @@ public class TypeScriptService : ITranspiler,
         int position,
         string fileName = "script.ts")
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-
-        // Add user code as a virtual file
-        this._engine.GetValue("$$host").Get("addFile").Call(this._engine.GetValue("$$host"), [fileName, source]);
-
-        var completions = this._engine.GetValue("$$service").Get("getCompletionsAtPosition").Call(this._engine.GetValue("$$service"), [fileName, position, new JsObject(this._engine)]);
-
-        if (completions.IsNull() || completions.IsUndefined())
+        lock (this._sync)
         {
-            return [];
-        }
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
 
-        var entries = completions.Get("entries");
-        if (entries.IsNull() || entries.IsUndefined())
-        {
-            return [];
-        }
+            var host = this._engine.GetValue("$$host");
+            // Add user code as a virtual file
+            host.Get("addFile").Call(host, [fileName, source]);
 
-        return ((JsArray) entries)
-            .Select(v => new CompletionEntry(
-                    v.Get("name").AsString(),
-                    v.Get("kind").AsString(),
-                    v.Get("sortText").IsUndefined() ? null : v.Get("sortText").AsString()
+            var service = this._engine.GetValue("$$service");
+            var completions = service.Get("getCompletionsAtPosition")
+                .Call(service, [fileName, position, new JsObject(this._engine)]);
+
+            if (completions.IsNull() || completions.IsUndefined())
+            {
+                return [];
+            }
+
+            var entries = completions.Get("entries");
+            if (entries.IsNull() || entries.IsUndefined())
+            {
+                return [];
+            }
+
+            return ((JsArray) entries)
+                .Select(v => new CompletionEntry(
+                        v.Get("name").AsString(),
+                        v.Get("kind").AsString(),
+                        v.Get("sortText").IsUndefined() ? null : v.Get("sortText").AsString()
+                    )
                 )
-            )
-            .ToList();
+                .ToList();
+        }
     }
 
     public void Dispose()
     {
-        this._engine?.Dispose();
+        lock (this._sync)
+        {
+            this._engine?.Dispose();
+            this._engine = null;
+            this._ts = null;
+            this._tsTranspile = null;
+            this.Version = null;
+        }
     }
 
     public string Transpile(
@@ -229,41 +310,44 @@ public class TypeScriptService : ITranspiler,
         IList<Diagnostic>? diagnostics = null,
         string? moduleName = null)
     {
-        if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-        var diagsArray = new JsArray(this._engine);
-        var ret = ((JsString) this._engine.Call(
-                    this._tsTranspile!,
-                    this._ts!,
-                    [
-                        input,
-                        compilerOptions == null
-                            ? JsValue.Null
-                            : JsValue.FromObject(this._engine, compilerOptions),
-                        fileName,
-                        diagnostics == null
-                            ? JsValue.Null
-                            : diagsArray,
-                        moduleName,
-                    ]
-                )
-            ).ToString();
-
-        if (diagnostics != null)
+        lock (this._sync)
         {
-            foreach (var x in diagsArray.Select(v => new Diagnostic(
-                        (int) v.Get("start").AsNumber(),
-                        (int) v.Get("length").AsNumber(),
-                        v.Get("messageText").AsString(),
-                        (int) v.Get("category").AsNumber(),
-                        (int) v.Get("code").AsNumber()
+            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            var diagsArray = new JsArray(this._engine);
+            var ret = ((JsString) this._engine.Call(
+                        this._tsTranspile!,
+                        this._ts!,
+                        [
+                            input,
+                            compilerOptions == null
+                                ? JsValue.Null
+                                : JsValue.FromObject(this._engine, compilerOptions),
+                            fileName,
+                            diagnostics == null
+                                ? JsValue.Null
+                                : diagsArray,
+                            moduleName,
+                        ]
                     )
-                ))
-            {
-                diagnostics.Add(x);
-            }
-        }
+                ).ToString();
 
-        return ret;
+            if (diagnostics != null)
+            {
+                foreach (var x in diagsArray.Select(v => new Diagnostic(
+                            (int) v.Get("start").AsNumber(),
+                            (int) v.Get("length").AsNumber(),
+                            v.Get("messageText").AsString(),
+                            (int) v.Get("category").AsNumber(),
+                            (int) v.Get("code").AsNumber()
+                        )
+                    ))
+                {
+                    diagnostics.Add(x);
+                }
+            }
+
+            return ret;
+        }
     }
 
     public record CompletionEntry(string Name, string Kind, string? SortText);

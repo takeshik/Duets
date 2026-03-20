@@ -95,4 +95,17 @@ public sealed class TypeScriptServiceRegistrationTests
 
         Assert.Throws<InvalidOperationException>(() => service.RegisterType(typeof(string)));
     }
+
+    [Fact]
+    public void GetTypeDeclarations_returns_a_snapshot()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+
+        service.RegisterDeclaration("declare const first: number;");
+        var snapshot = service.GetTypeDeclarations();
+        service.RegisterDeclaration("declare const second: number;");
+
+        Assert.Single(snapshot);
+        Assert.Equal(2, service.GetTypeDeclarations().Count);
+    }
 }
