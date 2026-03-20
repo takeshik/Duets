@@ -20,6 +20,12 @@ internal sealed class BatchRunner(SandboxSession session)
         | `complete` | `source` | `position` (int, default: end) | Completions at position; returns `completions` array |
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
+        | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
+        | `server-stop` | | | Stop the web server |
+        | `server-status` | | | Returns `running` (boolean) |
+        | `set-transpiler` | `transpiler` | | Switch transpiler (`typescript` or `babel`); returns `transpiler` (description string) |
+        | `reset` | | | Reset all engines and clear script state |
+        | `help` | | | Returns this document as `content` (Markdown string) |
 
         ## Script built-ins (`typings` object)
 
@@ -27,16 +33,14 @@ internal sealed class BatchRunner(SandboxSession session)
 
         | Call | Description |
         |---|---|
-        | `typings.use("Asm.Qualified.TypeName")` | Register a single type by assembly-qualified name |
+        | `typings.useType("Asm.Qualified.TypeName")` | Register a single type by assembly-qualified name |
+        | `typings.useType(System.IO.File)` | Register a single type via CLR type reference |
         | `typings.scanAssembly("AssemblyName")` | Load assembly; register namespace skeletons for TS completions (no type members) |
+        | `typings.scanAssemblyOf(System.IO.File)` | Scan the assembly containing the given CLR type reference |
         | `typings.useAssembly("AssemblyName")` | Load assembly; register all public types |
-        | `typings.useNamespace(System.Net.Http)` | Register all public types in the given namespace (pass namespace reference, not string) |
-        | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
-        | `server-stop` | | | Stop the web server |
-        | `server-status` | | | Returns `running` (boolean) |
-        | `set-transpiler` | `transpiler` | | Switch transpiler (`typescript` or `babel`); returns `transpiler` (description string) |
-        | `reset` | | | Reset all engines and clear script state |
-        | `help` | | | Returns this document as `content` (Markdown string) |
+        | `typings.useAssemblyOf(System.IO.File)` | Register all public types from the containing assembly |
+        | `typings.useNamespace(System.Net.Http)` | Register all public types in a namespace (namespace reference form) |
+        | `typings.useNamespace("System.Net.Http")` | Register all public types in a namespace (string form) |
 
         ## Completion entry fields
 
