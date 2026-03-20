@@ -3,6 +3,9 @@ using HttpHarker.Middlewares;
 
 namespace HttpHarker;
 
+/// <summary>
+/// Extension methods for configuring common middleware on <see cref="HttpServer"/>.
+/// </summary>
 public static class HttpServerExtensions
 {
     extension(HttpServer server)

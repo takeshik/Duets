@@ -3,6 +3,9 @@ using System.Text;
 
 namespace Duets;
 
+/// <summary>
+/// Generates TypeScript declaration (<c>.d.ts</c>) source from .NET types via reflection.
+/// </summary>
 public class ClrDeclarationGenerator
 {
     private static readonly HashSet<Type> _numericTypes =

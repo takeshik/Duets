@@ -3,6 +3,10 @@ using System.Security.Cryptography;
 
 namespace HttpHarker;
 
+/// <summary>
+/// Options for <see cref="EmbeddedResourceMiddleware.EmbeddedResourceMiddleware"/>, controlling
+/// content-type resolution, SPA fallback, ETag generation, and cache headers.
+/// </summary>
 public sealed class EmbeddedResourceOptions
 {
     public ContentTypeProvider ContentTypeProvider { get; set; } = ContentTypeProvider.CreateDefault();

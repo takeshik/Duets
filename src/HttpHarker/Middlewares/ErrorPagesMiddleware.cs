@@ -2,6 +2,9 @@ using System.Net;
 
 namespace HttpHarker.Middlewares;
 
+/// <summary>
+/// Middleware that intercepts responses with configured status codes and delegates rendering to registered error-page handlers.
+/// </summary>
 public sealed class ErrorPagesMiddleware : IMiddleware
 {
     public ErrorPagesMiddleware(Action<Builder>? configure = null)

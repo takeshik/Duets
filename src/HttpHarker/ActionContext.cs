@@ -4,6 +4,9 @@ using System.Text;
 
 namespace HttpHarker;
 
+/// <summary>
+/// Request/response context passed to route handler delegates.
+/// </summary>
 public sealed record HttpActionContext(
     HttpListenerRequest Request,
     HttpListenerResponse Response,

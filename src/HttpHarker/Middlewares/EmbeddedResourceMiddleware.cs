@@ -4,6 +4,9 @@ using System.Reflection;
 
 namespace HttpHarker.Middlewares;
 
+/// <summary>
+/// Serves assembly manifest embedded resources as static files, with optional ETag caching and SPA fallback support.
+/// </summary>
 public sealed class EmbeddedResourceMiddleware : IMiddleware
 {
     public EmbeddedResourceMiddleware(

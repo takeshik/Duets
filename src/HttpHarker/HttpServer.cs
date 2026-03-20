@@ -3,6 +3,9 @@ using HttpHarker.Middlewares;
 
 namespace HttpHarker;
 
+/// <summary>
+/// <see cref="System.Net.HttpListener"/>-based HTTP server with a composable middleware pipeline.
+/// </summary>
 public class HttpServer(string prefix) : IDisposable
 {
     private readonly HttpListener _listener = new()

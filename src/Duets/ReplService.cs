@@ -8,6 +8,9 @@ using Timer = System.Timers.Timer;
 
 namespace Duets;
 
+/// <summary>
+/// Extension methods for attaching <see cref="ReplService"/> to an <see cref="HttpHarker.HttpServer"/>.
+/// </summary>
 public static class ReplServiceExtensions
 {
     public static ReplService UseRepl(
@@ -19,6 +22,10 @@ public static class ReplServiceExtensions
     }
 }
 
+/// <summary>
+/// Web-based TypeScript REPL service. Serves the Monaco editor UI, proxies eval requests to
+/// <see cref="ScriptEngine"/>, and streams type declaration updates to the browser via SSE.
+/// </summary>
 public class ReplService : IDisposable
 {
     public ReplService(

@@ -2,6 +2,9 @@ using System.Net;
 
 namespace HttpHarker;
 
+/// <summary>
+/// Maps HTTP requests to <c>Content-Type</c> values via a configurable key selector and extension-based lookup table.
+/// </summary>
 public sealed class ContentTypeProvider
 {
     public ContentTypeProvider(

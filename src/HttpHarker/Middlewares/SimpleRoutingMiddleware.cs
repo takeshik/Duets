@@ -2,6 +2,10 @@ using System.Net;
 
 namespace HttpHarker.Middlewares;
 
+/// <summary>
+/// Pattern-based HTTP router middleware; matches method and path template, extracts route parameters,
+/// and dispatches to registered handlers.
+/// </summary>
 public sealed class SimpleRoutingMiddleware : IMiddleware
 {
     public SimpleRoutingMiddleware(string root, Action<Builder>? configure = null)

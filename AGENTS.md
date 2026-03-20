@@ -9,9 +9,9 @@ Guidelines for coding agents when working on the Duets repository.
 
 > **IMPORTANT — Language policy (read before responding):**
 > - **Chat responses** (reviews, explanations, summaries, plans, status updates):
->   respond in **the same language the user used**. Never default to English.
+    > respond in **the same language the user used**. Never default to English.
 > - **Repository content** (source code, comments, commits, docs, ADRs):
->   always write in **English only**.
+    > always write in **English only**.
 
 ## Build & Run
 
@@ -31,47 +31,50 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 ## Project Structure
 
 - `Duets.slnx` — Solution file (XML-based slnx format)
-- `Directory.Build.props` — Shared build properties (TFM, nullable, etc.)
+- `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects; do not duplicate in
+  individual project files
 - `src/`
-  - `Duets/` — Core library: TypeScript REPL for .NET
-    - `TypeScriptService.cs` — Runs TS compiler on Jint; transpile + completions
-    - `ScriptEngine.cs` — Jint wrapper for executing transpiled user code
-    - `ClrDeclarationGenerator.cs` — Generates `.d.ts` from .NET types via reflection
-    - `ReplService.cs` — Web REPL: Monaco UI, SSE type updates, `/eval` endpoint
-    - `Resources/ReplStaticFiles/` — Embedded web assets (`index.html`, `language-service.js`)
+  - `Duets/` — Core library (public API)
+    - `Resources/ReplStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `ReplService` at
+      runtime
   - `HttpHarker/` — Standalone lightweight HTTP server library (may be extracted to its own repo)
-    - `HttpServer.cs` — `HttpListener`-based server with middleware pipeline
-    - `HttpServerExtensions.cs` — Extension methods (C# 14 `extension` blocks)
-    - `ActionContext.cs` — Request/response wrapper for route handlers
-    - `Middlewares/` — Built-in middleware (routing, embedded resources, errors)
-  - `Duets.Sandbox/` — Multi-mode debugging CLI (batch, repl, serve, complete); not for end users
-  - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly); place cross-project internal helpers here
+  - `Duets.Sandbox/` — Multi-mode debugging CLI (batch, repl, serve, complete); not part of the public API
+  - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly);
+    place cross-project internal helpers here
 - `samples/` — Runnable file-based app examples (`.cs` files; run with `dotnet run samples/<file>.cs`)
 - `docs/`
   - `architecture.md` — Architecture overview (current snapshot)
   - `decisions/` — Architecture Decision Records (ADRs)
 - `tests/`
-  - `Duets.Tests/` — Unit tests (xUnit)
+  - `Duets.Tests/` — Unit tests (xUnit v3)
 
 ## Architecture & Design
 
-- [docs/architecture.md](docs/architecture.md) — Current architecture snapshot. Read this before making structural changes.
-- [docs/decisions/index.md](docs/decisions/index.md) — ADR index: Title, Keywords, and Abstract for all ADRs. Read this to identify relevant decisions before reading full ADRs.
+- [docs/architecture.md](docs/architecture.md) — Current architecture snapshot. Read this before making structural
+  changes.
+- [docs/decisions/index.md](docs/decisions/index.md) — ADR index: Title, Keywords, and Abstract for all ADRs. Read this
+  to identify relevant decisions before reading full ADRs.
 - [docs/decisions/](docs/decisions/) — Architecture Decision Records (ADRs). ADR-N is at `docs/decisions/<N>_*.md`.
 
-When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update `docs/architecture.md` to reflect the new state.
+When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR
+in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
+`docs/architecture.md` to reflect the new state.
 
 ## Language
 
 There are two distinct contexts with different language rules:
 
-**Repository content** — source code, comments, commit messages, documentation, ADRs, and any other checked-in text files — **must be in English**.
+**Repository content** — source code, comments, commit messages, documentation, ADRs, and any other checked-in text
+files — **must be in English**.
 
-**Chat responses** — all assistant prose including reviews, explanations, summaries, plans, and status updates — **must be in the same language the user used**. Do not default to English. These are conversational outputs, not repository content, and the distinction must be respected even when the subject matter is code.
+**Chat responses** — all assistant prose including reviews, explanations, summaries, plans, and status updates — **must
+be in the same language the user used**. Do not default to English. These are conversational outputs, not repository
+content, and the distinction must be respected even when the subject matter is code.
 
 ## Code Style
 
-Code style is enforced mechanically via `jb cleanupcode`. Rules are defined in `.editorconfig` and `.DotSettings` — do not duplicate them here.
+Code style is enforced mechanically via `jb cleanupcode`. Rules are defined in `.editorconfig` and `.DotSettings` — do
+not duplicate them here.
 
 After modifying code, run:
 
@@ -92,11 +95,12 @@ dotnet jb cleanupcode Duets.slnx --include="<changed files>"
 dotnet test
 ```
 
-Tests use [xUnit](https://xunit.net/) and live in `tests/Duets.Tests/`.
+Tests use [xUnit v3](https://xunit.net/) / Microsoft.Testing.Platform CLI and live in `tests/Duets.Tests/`.
 
 ## End-to-end verification with Duets.Sandbox
 
-`Duets.Sandbox` provides a JSONL batch mode for agent-friendly end-to-end verification of the full stack (transpilation, completions, type registration, web server). Use this to validate changes without writing test code.
+`Duets.Sandbox` provides a JSONL batch mode for agent-friendly end-to-end verification of the full stack (transpilation,
+completions, type registration, web server). Use this to validate changes without writing test code.
 
 ```bash
 # Pipe JSONL operations to stdin; one JSON result per line is written to stdout.
@@ -113,4 +117,5 @@ Send `{"op":"help"}` to get the full list of supported operations and their fiel
 echo '{"op":"help"}' | dotnet run --project src/Duets.Sandbox -- batch
 ```
 
-Diagnostic output (initialization messages) goes to stderr; stdout contains only JSONL results, making it straightforward to parse with standard tools.
+Diagnostic output (initialization messages) goes to stderr; stdout contains only JSONL results, making it
+straightforward to parse with standard tools.
