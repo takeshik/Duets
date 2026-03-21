@@ -134,7 +134,19 @@ internal sealed class SandboxSession : IAsyncDisposable
     public void StartWebServer(int port = 17375)
     {
         this.RequireTranspiler(TranspilerKind.TypeScript, "The web server");
-        if (this._webServer != null) return;
+        if (this.IsServerRunning) return;
+
+        // Clean up any previously faulted server state before restarting.
+        if (this._webServer != null)
+        {
+            this._replService?.Dispose();
+            this._replService = null;
+            this._webServer.Dispose();
+            this._webServer = null;
+            this._webServerCts = null;
+            this._webServerTask = null;
+        }
+
         this._webServerCts = new CancellationTokenSource();
         this._webServer = new HttpServer($"http://127.0.0.1:{port}/");
         this._replService = this._webServer.UseContentTypeDetection().UseRepl(this._ts, this._scriptEngine);
@@ -150,8 +162,10 @@ internal sealed class SandboxSession : IAsyncDisposable
         {
             await this._webServerTask!;
         }
-        catch (OperationCanceledException)
+        catch
         {
+            // Ignore both OperationCanceledException (normal cancellation) and any
+            // fault the task may have accumulated before Stop() was called.
         }
 
         this._replService?.Dispose();

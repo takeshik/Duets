@@ -218,7 +218,15 @@ internal sealed class InteractiveRepl(SandboxSession session)
 
                         break;
                     case "stop":
-                        await session.StopWebServerAsync();
+                        try
+                        {
+                            await session.StopWebServerAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintError(ex.Message);
+                        }
+
                         break;
                     case "status":
                         Console.WriteLine(session.IsServerRunning ? "  Server: running" : "  Server: stopped");
