@@ -10,6 +10,40 @@ public static class HttpServerExtensions
 {
     extension(HttpServer server)
     {
+        public HttpServer UseStaticFiles(
+            IFileProvider fileProvider,
+            string root = "/",
+            Action<EmbeddedResourceOptions>? configure = null)
+        {
+            var options = new EmbeddedResourceOptions();
+            configure?.Invoke(options);
+            return server.Use(new StaticFileMiddleware(fileProvider, root, options));
+        }
+
+        public HttpServer UseZipArchive(
+            Stream zipStream,
+            string root = "/",
+            Action<EmbeddedResourceOptions>? configure = null)
+        {
+            var options = new EmbeddedResourceOptions();
+            configure?.Invoke(options);
+            return server.Use(new ZipArchiveMiddleware(zipStream, root, options));
+        }
+
+        public HttpServer UseZipArchive(
+            Assembly assembly,
+            string resourceName,
+            string root = "/",
+            Action<EmbeddedResourceOptions>? configure = null)
+        {
+            var stream = assembly.GetManifestResourceStream(resourceName)
+                ?? throw new ArgumentException(
+                    $"Embedded resource '{resourceName}' not found in assembly '{assembly.FullName}'.",
+                    nameof(resourceName)
+                );
+            return server.UseZipArchive(stream, root, configure);
+        }
+
         public HttpServer UseSimpleRouting(
             string root = "/",
             Action<SimpleRoutingMiddleware.Builder>? configure = null)
