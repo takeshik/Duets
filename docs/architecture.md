@@ -33,8 +33,8 @@ It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sand
 | Mode | Invocation | Description |
 |---|---|---|
 | `repl` | *(default)* | Interactive REPL; TypeScript lines are evaluated, `:commands` manage state |
-| `complete` | `complete <src> [pos]` | One-shot completions at position; outputs a JSON object |
-| `serve` | `serve [port]` | Starts the web REPL server; blocks until Ctrl+C |
+| `complete` | `complete <src> [--position n]` | One-shot completions at position; outputs a JSON object |
+| `serve` | `serve [--port n]` | Starts the web REPL server; blocks until Ctrl+C |
 | `batch` | `batch` | JSONL in → JSONL out; agent-friendly stateful session |
 
 The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.

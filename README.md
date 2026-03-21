@@ -51,8 +51,11 @@ engine.RegisterTypeBuiltins(ts); // registers the typings global
 //   typings.useType(System.IO.File)                          // single type via CLR reference
 //   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
 //   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
+//   typings.scanAssemblyOf(System.IO.File)                   // namespace skeletons from the type's assembly
 //   typings.useAssembly("System.Net.Http")                   // all public types
-//   typings.useNamespace(System.Net.Http)                    // types in one namespace
+//   typings.useAssemblyOf(System.IO.File)                    // all public types from the type's assembly
+//   typings.useNamespace(System.Net.Http)                    // types in one namespace (namespace reference)
+//   typings.useNamespace("System.Net.Http")                  // types in one namespace (string form)
 ```
 
 ### With web REPL

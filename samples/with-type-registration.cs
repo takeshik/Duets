@@ -16,11 +16,14 @@ engine.RegisterTypeBuiltins(ts);
 
 // From a script, use `typings` to register types for CLR interop and completions:
 //
-//   typings.useType(System.IO.File)                 // single type via CLR reference
+//   typings.useType(System.IO.File)                          // single type via CLR reference
 //   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
-//   typings.scanAssembly("System.Net.Http")         // namespace skeletons only
-//   typings.useAssembly("System.Net.Http")          // all public types
-//   typings.useNamespace(System.Net.Http)           // types in one namespace
+//   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
+//   typings.scanAssemblyOf(System.IO.File)                   // namespace skeletons from the type's assembly
+//   typings.useAssembly("System.Net.Http")                   // all public types
+//   typings.useAssemblyOf(System.IO.File)                    // all public types from the type's assembly
+//   typings.useNamespace(System.Net.Http)                    // types in one namespace (namespace reference)
+//   typings.useNamespace("System.Net.Http")                  // types in one namespace (string form)
 
 // Register System.Environment and read a property from a script
 var result = engine.Evaluate("""
