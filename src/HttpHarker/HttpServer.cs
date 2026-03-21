@@ -71,6 +71,10 @@ public class HttpServer(string prefix) : IDisposable
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
                 catch
                 {
                     // ignored

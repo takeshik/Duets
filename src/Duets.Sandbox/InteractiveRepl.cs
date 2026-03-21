@@ -74,7 +74,6 @@ internal sealed class InteractiveRepl(SandboxSession session)
 
             CLI modes (dotnet run --project src/Duets.Sandbox -- <mode>):
 
-              eval <code>                   One-shot TypeScript eval (JSON output)
               complete <src> [--position n] One-shot completions (JSON output)
               serve [--port n]              Start web server (blocks until Ctrl+C)
               batch                         JSONL batch mode — send {"op":"help"} for details
@@ -139,7 +138,15 @@ internal sealed class InteractiveRepl(SandboxSession session)
                     pos = src.Length;
                 }
 
-                PrintCompletions(session.GetCompletions(src, pos));
+                try
+                {
+                    PrintCompletions(session.GetCompletions(src, pos));
+                }
+                catch (Exception ex)
+                {
+                    PrintError(ex.Message);
+                }
+
                 break;
             }
 
@@ -164,11 +171,18 @@ internal sealed class InteractiveRepl(SandboxSession session)
 
             case "types":
             {
-                var decls = session.GetTypeDeclarations();
-                Console.WriteLine($"  {decls.Count} type declaration(s) registered.");
-                foreach (var d in decls)
+                try
                 {
-                    Console.WriteLine($"  • {d.FileName}");
+                    var decls = session.GetTypeDeclarations();
+                    Console.WriteLine($"  {decls.Count} type declaration(s) registered.");
+                    foreach (var d in decls)
+                    {
+                        Console.WriteLine($"  • {d.FileName}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PrintError(ex.Message);
                 }
 
                 break;
@@ -186,7 +200,22 @@ internal sealed class InteractiveRepl(SandboxSession session)
                             break;
                         }
 
-                        session.StartWebServer(tokens.Length > 2 ? int.Parse(tokens[2]) : 17375);
+                        var startPort = 17375;
+                        if (tokens.Length > 2 && !int.TryParse(tokens[2], out startPort))
+                        {
+                            PrintError($"Invalid port number: {tokens[2]}");
+                            break;
+                        }
+
+                        try
+                        {
+                            session.StartWebServer(startPort);
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintError(ex.Message);
+                        }
+
                         break;
                     case "stop":
                         await session.StopWebServerAsync();

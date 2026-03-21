@@ -35,7 +35,7 @@ internal sealed class SandboxSession : IAsyncDisposable
 
     public string TranspilerDescription => this._activeTranspiler.Description;
 
-    public bool IsServerRunning => this._webServer != null;
+    public bool IsServerRunning => this._webServer != null && this._webServerTask is { IsCompleted: false };
 
     public Task WebServerTask => this._webServerTask ?? Task.CompletedTask;
 
