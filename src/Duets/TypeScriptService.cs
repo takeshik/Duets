@@ -305,7 +305,6 @@ public class TypeScriptService : ITranspiler,
 
     public string Transpile(
         string input,
-        CompilerOptions? compilerOptions = null,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
         string? moduleName = null)
@@ -319,9 +318,7 @@ public class TypeScriptService : ITranspiler,
                         this._ts!,
                         [
                             input,
-                            compilerOptions == null
-                                ? JsValue.Null
-                                : JsValue.FromObject(this._engine, compilerOptions),
+                            JsValue.Null,
                             fileName,
                             diagnostics == null
                                 ? JsValue.Null

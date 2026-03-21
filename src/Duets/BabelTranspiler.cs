@@ -84,7 +84,6 @@ public class BabelTranspiler : ITranspiler,
     /// </remarks>
     public string Transpile(
         string input,
-        CompilerOptions? compilerOptions = null,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
         string? moduleName = null)

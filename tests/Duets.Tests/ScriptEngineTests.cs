@@ -6,7 +6,6 @@ public sealed class ScriptEngineTests
     {
         public string Transpile(
             string input,
-            CompilerOptions? compilerOptions = null,
             string? fileName = null,
             IList<Diagnostic>? diagnostics = null,
             string? moduleName = null)
@@ -21,7 +20,6 @@ public sealed class ScriptEngineTests
 
         public string Transpile(
             string input,
-            CompilerOptions? compilerOptions = null,
             string? fileName = null,
             IList<Diagnostic>? diagnostics = null,
             string? moduleName = null)
@@ -55,6 +53,21 @@ public sealed class ScriptEngineTests
     }
 
     [Fact]
+    public async Task Execute_is_safe_to_call_from_multiple_threads()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        engine.Execute("var counter = 0;");
+
+        await Task.WhenAll(
+            Enumerable.Range(0, 200)
+                .Select(_ => Task.Run(() => engine.Execute("counter += 1;")))
+        );
+
+        var result = engine.Evaluate("counter");
+        Assert.Equal("200", result.ToString());
+    }
+
+    [Fact]
     public void Execute_state_persists_across_multiple_calls()
     {
         using var engine = new ScriptEngine(null, new IdentityTranspiler());
@@ -76,20 +89,5 @@ public sealed class ScriptEngineTests
         var result = engine.Evaluate("offset + 7");
 
         Assert.Equal("12", result.ToString());
-    }
-
-    [Fact]
-    public async Task Execute_is_safe_to_call_from_multiple_threads()
-    {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
-        engine.Execute("var counter = 0;");
-
-        await Task.WhenAll(
-            Enumerable.Range(0, 200)
-                .Select(_ => Task.Run(() => engine.Execute("counter += 1;")))
-        );
-
-        var result = engine.Evaluate("counter");
-        Assert.Equal("200", result.ToString());
     }
 }

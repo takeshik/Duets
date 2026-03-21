@@ -100,7 +100,6 @@ public sealed class ScriptTypingsAndBuiltinsTests
     {
         public string Transpile(
             string input,
-            CompilerOptions? compilerOptions = null,
             string? fileName = null,
             IList<Diagnostic>? diagnostics = null,
             string? moduleName = null)
