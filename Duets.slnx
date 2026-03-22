@@ -13,5 +13,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Duets.Tests/Duets.Tests.csproj" />
+    <Project Path="tests/HttpHarker.Tests/HttpHarker.Tests.csproj" />
   </Folder>
 </Solution>

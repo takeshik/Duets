@@ -24,7 +24,14 @@ public sealed class ErrorPagesMiddleware : IMiddleware
         await next();
 
         // If the response was already committed (route handler closed it), nothing left to do.
-        if (!context.Response.OutputStream.CanWrite) return;
+        try
+        {
+            if (!context.Response.OutputStream.CanWrite) return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
 
         // StatusCode 200 (default, unset) means no route matched → treat as 404.
         var statusCode = context.Response.StatusCode is 200 or 0

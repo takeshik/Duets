@@ -95,6 +95,7 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                     ? part.Length > 2 && part[1] == '*' ? 0 : 1
                     : 2
             );
+            _ = this.Segments; // Validate template eagerly; throws ArgumentException for invalid templates.
         }
 
         private HttpMethod Method { get; }

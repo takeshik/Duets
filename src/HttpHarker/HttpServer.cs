@@ -109,6 +109,24 @@ public class HttpServer(string prefix) : IDisposable
             {
                 /* ignore */
             }
+
+            return;
+        }
+
+        // Close the response if no middleware committed it.
+        // If status was never changed from the default (200), treat as 404.
+        try
+        {
+            if (ctx.Response.StatusCode == 200)
+            {
+                ctx.Response.StatusCode = 404;
+            }
+
+            ctx.Response.Close();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already closed by middleware — nothing to do.
         }
 
         return;
@@ -117,8 +135,7 @@ public class HttpServer(string prefix) : IDisposable
         {
             if (index >= this._middleware.Count)
             {
-                ctx.Response.StatusCode = 404;
-                ctx.Response.Close();
+                // Do not close here; let HandleAsync close after the full pipeline returns.
                 return Task.CompletedTask;
             }
 
