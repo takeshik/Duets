@@ -13,9 +13,9 @@ public static class HttpServerExtensions
         public HttpServer UseStaticFiles(
             IFileProvider fileProvider,
             string root = "/",
-            Action<EmbeddedResourceOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null)
         {
-            var options = new EmbeddedResourceOptions();
+            var options = new StaticFileOptions();
             configure?.Invoke(options);
             return server.Use(new StaticFileMiddleware(fileProvider, root, options));
         }
@@ -23,9 +23,9 @@ public static class HttpServerExtensions
         public HttpServer UseZipArchive(
             Stream zipStream,
             string root = "/",
-            Action<EmbeddedResourceOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null)
         {
-            var options = new EmbeddedResourceOptions();
+            var options = new StaticFileOptions();
             configure?.Invoke(options);
             return server.Use(new ZipArchiveMiddleware(zipStream, root, options));
         }
@@ -34,7 +34,7 @@ public static class HttpServerExtensions
             Assembly assembly,
             string resourceName,
             string root = "/",
-            Action<EmbeddedResourceOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null)
         {
             var stream = assembly.GetManifestResourceStream(resourceName)
                 ?? throw new ArgumentException(
@@ -72,9 +72,9 @@ public static class HttpServerExtensions
             Assembly assembly,
             string resourcePrefix,
             string root = "/",
-            Action<EmbeddedResourceOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null)
         {
-            var options = new EmbeddedResourceOptions();
+            var options = new StaticFileOptions();
             configure?.Invoke(options);
             server.Use(new EmbeddedResourceMiddleware(assembly, resourcePrefix, root, options));
             return server;

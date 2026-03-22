@@ -10,15 +10,15 @@ namespace HttpHarker.Middlewares;
 public sealed class StaticFileMiddleware(
     IFileProvider fileProvider,
     string root = "/",
-    EmbeddedResourceOptions? options = null) : IMiddleware
+    StaticFileOptions? options = null) : IMiddleware
 {
-    public StaticFileMiddleware(IFileProvider fileProvider, EmbeddedResourceOptions options)
+    public StaticFileMiddleware(IFileProvider fileProvider, StaticFileOptions options)
         : this(fileProvider, "/", options)
     {
     }
 
     private readonly string _prefix = root.TrimEnd('/');
-    private readonly EmbeddedResourceOptions _options = options ?? new EmbeddedResourceOptions();
+    private readonly StaticFileOptions _options = options ?? new StaticFileOptions();
     private readonly ConcurrentDictionary<string, CachedResource> _cache = new(StringComparer.Ordinal);
 
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)

@@ -7,7 +7,7 @@ namespace HttpHarker.Middlewares;
 /// </summary>
 public sealed class ZipArchiveMiddleware : IMiddleware
 {
-    public ZipArchiveMiddleware(Stream zipStream, string root = "/", EmbeddedResourceOptions? options = null)
+    public ZipArchiveMiddleware(Stream zipStream, string root = "/", StaticFileOptions? options = null)
     {
         this._inner = new StaticFileMiddleware(new ZipFileProvider(zipStream), root, options);
     }
