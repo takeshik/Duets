@@ -64,6 +64,46 @@ public sealed class ErrorPagesMiddlewareTests
     }
 
     // ---------------------------------------------------------------------------
+    // Ordering: ErrorPages placed AFTER routing is not invoked for matched routes
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ErrorPages_after_routing_not_invoked_for_matched_route()
+    {
+        // SimpleRoutingMiddleware does NOT call next() after handling a matched route,
+        // so ErrorPagesMiddleware registered after it is unreachable for those requests.
+        // Correct usage: UseErrorPages must be registered BEFORE UseSimpleRouting.
+        await RunAsync(
+            s =>
+            {
+                s.UseSimpleRouting(
+                    "/",
+                    b =>
+                        b.MapGet(
+                            "/forbidden",
+                            ctx =>
+                            {
+                                ctx.Response.StatusCode = 403;
+                                return Task.CompletedTask;
+                            }
+                        )
+                );
+                // ErrorPages registered AFTER routing: unreachable for matched routes.
+                s.UseErrorPages(b =>
+                    b.On(403, ctx => ctx.CloseAsync("text/plain", "forbidden page"))
+                );
+            },
+            async (client, prefix) =>
+            {
+                var resp = await client.GetAsync(prefix + "forbidden");
+                Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+                // Error page body is NOT written; routing returned without invoking next().
+                Assert.Empty(await resp.Content.ReadAsByteArrayAsync());
+            }
+        );
+    }
+
+    // ---------------------------------------------------------------------------
     // Multiple handlers
     // ---------------------------------------------------------------------------
 

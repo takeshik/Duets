@@ -6,6 +6,12 @@ namespace HttpHarker.Middlewares;
 /// Pattern-based HTTP router middleware; matches method and path template, extracts route parameters,
 /// and dispatches to registered handlers.
 /// </summary>
+/// <remarks>
+/// This middleware is <b>terminal</b> for matched routes: once a handler is invoked,
+/// <c>next()</c> is not called. Middleware registered after this in the pipeline is therefore
+/// unreachable for any matched request. For requests that do not match any route, <c>next()</c>
+/// is called normally.
+/// </remarks>
 public sealed class SimpleRoutingMiddleware : IMiddleware
 {
     public SimpleRoutingMiddleware(string root, Action<Builder>? configure = null)

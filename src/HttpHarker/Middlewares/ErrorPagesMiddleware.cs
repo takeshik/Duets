@@ -5,6 +5,19 @@ namespace HttpHarker.Middlewares;
 /// <summary>
 /// Middleware that intercepts responses with configured status codes and delegates rendering to registered error-page handlers.
 /// </summary>
+/// <remarks>
+/// <para>
+/// This middleware must be registered <b>before</b> any terminal middleware (such as
+/// <see cref="SimpleRoutingMiddleware"/>) in the pipeline. It works by calling <c>next()</c>
+/// and inspecting the response status code after the rest of the pipeline has completed.
+/// If it is placed after a terminal middleware, it is unreachable for requests handled by that
+/// middleware — analogous to placing <c>UseStatusCodePages</c> after <c>UseEndpoints</c> in ASP.NET Core.
+/// </para>
+/// <para>
+/// A status code of 200 (the default unset value) is treated as 404, so unmatched requests
+/// are handled without upstream middleware having to set the code explicitly.
+/// </para>
+/// </remarks>
 public sealed class ErrorPagesMiddleware : IMiddleware
 {
     public ErrorPagesMiddleware(Action<Builder>? configure = null)
