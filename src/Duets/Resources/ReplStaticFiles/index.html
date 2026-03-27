@@ -110,37 +110,26 @@
 
         /* ── Output pane ── */
         #output {
-            background: #0c0c0c;
-            color: #cccccc;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            font-size: 13px;
-            overflow-y: auto;
-            padding: 6px 10px;
+            min-width: 0;
+            min-height: 0;
         }
 
-        .entry {
-            white-space: pre-wrap;
-            line-height: 1.5;
+        /* Output pane background override (Monaco themes are global) */
+        #output .monaco-editor,
+        #output .monaco-editor-background,
+        #output .monaco-editor .margin {
+            background-color: #0c0c0c !important;
         }
 
-        .entry-ok::before {
-            content: '→  ';
-            color: #555;
-        }
-
-        .entry-ok {
-            color: #4fc1ff;
-        }
-
-        .entry-error::before {
-            content: '✕  ';
-            color: #f48771;
-        }
-
-        .entry-error {
-            color: #f48771;
-        }
-    </style>
+        /* Log level colors applied via Monaco decorations */
+        .monaco-editor .out-entry-result    { color: #4fc1ff !important; }
+        .monaco-editor .out-entry-exception { color: #f48771 !important; }
+        .monaco-editor .out-entry-log       { color: #cccccc !important; }
+        .monaco-editor .out-entry-info      { color: #9cdcfe !important; }
+        .monaco-editor .out-entry-warn      { color: #dcdcaa !important; }
+        .monaco-editor .out-entry-error     { color: #f48771 !important; }
+        .monaco-editor .out-entry-debug     { color: #888    !important; }
+</style>
 </head>
 <body>
 <div id="header">
@@ -158,7 +147,7 @@
 <script>
     const main = document.getElementById('main');
     const resizer = document.getElementById('resizer');
-    const output = document.getElementById('output');
+    const outputEl = document.getElementById('output');
     const toggleBtn = document.getElementById('toggle-split');
 
     // ── Layout toggle ──
@@ -167,8 +156,8 @@
         const toVertical = main.classList.contains('split-h');
         main.classList.toggle('split-h', !toVertical);
         main.classList.toggle('split-v', toVertical);
-        output.style.height = '';
-        output.style.width = '';
+        outputEl.style.height = '';
+        outputEl.style.width = '';
         toggleBtn.textContent = toVertical ? 'Split Horizontal' : 'Split Vertical';
     });
 
@@ -178,13 +167,13 @@
         resizer.classList.add('dragging');
         const isVertical = main.classList.contains('split-v');
         const startPos = isVertical ? e.clientX : e.clientY;
-        const startSize = isVertical ? output.offsetWidth : output.offsetHeight;
+        const startSize = isVertical ? outputEl.offsetWidth : outputEl.offsetHeight;
 
         function onMove(e) {
             const delta = (isVertical ? e.clientX : e.clientY) - startPos;
             const newSize = Math.max(32, startSize - delta);
-            if (isVertical) output.style.width = newSize + 'px';
-            else output.style.height = newSize + 'px';
+            if (isVertical) outputEl.style.width = newSize + 'px';
+            else outputEl.style.height = newSize + 'px';
         }
 
         function onUp() {
@@ -226,16 +215,100 @@
             automaticLayout: true,
         });
 
-        function appendOutput(text, ok) {
-            const el = document.createElement('div');
-            el.className = 'entry ' + (ok ? 'entry-ok' : 'entry-error');
-            el.textContent = text;
-            output.appendChild(el);
-            output.scrollTop = output.scrollHeight;
+        // ── Output editor ──
+        // Provides read-only output with native copy, selection, and JSON folding.
+
+        // Fold regions are detected by matching lines that end with { or [ against
+        // lines whose trimmed content starts with } or ].
+        monaco.languages.registerFoldingRangeProvider('plaintext', {
+            provideFoldingRanges(model) {
+                const ranges = [];
+                const lines = model.getLinesContent();
+                const stack = [];
+                for (let i = 0; i < lines.length; i++) {
+                    const trimEnd = lines[i].trimEnd();
+                    const last = trimEnd[trimEnd.length - 1];
+                    if (last === '{' || last === '[') {
+                        stack.push(i + 1); // 1-based
+                    } else {
+                        const trimStart = trimEnd.trimStart();
+                        if (trimStart[0] === '}' || trimStart[0] === ']') {
+                            if (stack.length > 0) {
+                                const start = stack.pop();
+                                if (i + 1 > start) {
+                                    ranges.push({start, end: i + 1});
+                                }
+                            }
+                        }
+                    }
+                }
+                return ranges;
+            },
+        });
+
+        const outputEditor = monaco.editor.create(outputEl, {
+            value: '',
+            language: 'plaintext',
+            theme: 'vs-dark',
+            readOnly: true,
+            automaticLayout: true,
+            folding: true,
+            lineNumbers: 'off',
+            minimap: {enabled: false},
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            glyphMargin: false,
+            lineDecorationsWidth: 0,
+            renderLineHighlight: 'none',
+            overviewRulerLanes: 0,
+            hideCursorInOverviewRuler: true,
+            fontSize: 13,
+            fontFamily: "Consolas, 'Cascadia Code', monospace",
+        });
+
+        const PREFIXES = {
+            'entry-result':    '→ ',
+            'entry-exception': '✕ ',
+            'entry-log':       '· ',
+            'entry-info':      'i ',
+            'entry-warn':      '⚠ ',
+            'entry-error':     '✕ ',
+            'entry-debug':     '· ',
+        };
+
+        const decorCollections = [];
+
+        function appendOutput(text, cssClass) {
+            const model = outputEditor.getModel();
+            const lineCount = model.getLineCount();
+            const lastCol = model.getLineMaxColumn(lineCount);
+            const isEmpty = lineCount === 1 && lastCol === 1;
+
+            const prefix = PREFIXES[cssClass] ?? '';
+            const fullText = (isEmpty ? '' : '\n') + prefix + text;
+            const insertLine = isEmpty ? 1 : lineCount + 1;
+
+            model.applyEdits([{
+                range: new monaco.Range(lineCount, lastCol, lineCount, lastCol),
+                text: fullText,
+            }]);
+
+            const newLineCount = model.getLineCount();
+            decorCollections.push(outputEditor.createDecorationsCollection([{
+                range: new monaco.Range(insertLine, 1, newLineCount, model.getLineMaxColumn(newLineCount)),
+                options: {
+                    inlineClassName: 'out-' + cssClass,
+                    stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+                },
+            }]));
+
+            outputEditor.revealLine(newLineCount);
         }
 
         function clearOutput() {
-            output.innerHTML = '';
+            outputEditor.getModel().setValue('');
+            decorCollections.forEach(c => c.clear());
+            decorCollections.length = 0;
         }
 
         async function runCode(clear) {
@@ -245,9 +318,14 @@
             try {
                 const res = await fetch('eval', {method: 'POST', body: code});
                 const data = await res.json();
-                appendOutput(data.result, data.ok);
+                if (data.logs) {
+                    for (const log of data.logs) {
+                        appendOutput(log.text, 'entry-' + log.level);
+                    }
+                }
+                appendOutput(data.result, data.ok ? 'entry-result' : 'entry-exception');
             } catch (e) {
-                appendOutput(String(e), false);
+                appendOutput(String(e), 'entry-exception');
             }
         }
 
@@ -279,7 +357,7 @@
         fetch('/eval', {method: 'POST', body: 'help'})
             .then(res => res.json())
             .then(data => {
-                if (data.ok) appendOutput(data.result, true);
+                if (data.ok) appendOutput(data.result, 'entry-result');
             })
             .catch(() => {
             });

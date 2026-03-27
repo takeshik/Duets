@@ -129,6 +129,14 @@ public class ReplService : IDisposable
         var code = await reader.ReadToEndAsync();
         string resultStr;
         bool ok;
+        var logs = new List<ScriptConsoleEntry>();
+
+        void OnLog(ScriptConsoleEntry e)
+        {
+            logs.Add(e);
+        }
+
+        this._scriptEngine.ConsoleLogged += OnLog;
         try
         {
             resultStr = this._scriptEngine.Evaluate(code).ToString();
@@ -139,10 +147,27 @@ public class ReplService : IDisposable
             resultStr = ex.Message;
             ok = false;
         }
+        finally
+        {
+            this._scriptEngine.ConsoleLogged -= OnLog;
+        }
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
-            JsonSerializer.Serialize(new { result = resultStr, ok })
+            JsonSerializer.Serialize(
+                new
+                {
+                    result = resultStr,
+                    ok,
+                    logs = logs.Select(l => new
+                            {
+                                level = l.Level.ToString().ToLowerInvariant(),
+                                text = l.Text,
+                            }
+                        )
+                        .ToArray(),
+                }
+            )
         );
     }
 }
