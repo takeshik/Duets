@@ -16,7 +16,7 @@ internal sealed class BatchRunner(SandboxSession session)
 
         | `op` | Required fields | Optional fields | Description |
         |---|---|---|---|
-        | `eval` | `code` | | Evaluate TypeScript code; returns `result` (string) |
+        | `eval` | `code` | | Evaluate TypeScript code; returns `result` (string) and `logs` (array of `{level, text}`, omitted when empty) |
         | `complete` | `source` | `position` (int, default: end) | Completions at position; returns `completions` array |
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
@@ -131,7 +131,17 @@ internal sealed class BatchRunner(SandboxSession session)
     {
         try
         {
-            return new { ok = true, result = session.Evaluate(code) };
+            var (result, logs) = session.Evaluate(code);
+            var logEntries = logs.Count > 0
+                ? logs.Select(l => new
+                        {
+                            level = l.Level.ToString().ToLowerInvariant(),
+                            text = l.Text,
+                        }
+                    )
+                    .ToArray()
+                : null;
+            return new { ok = true, result, logs = logEntries };
         }
         catch (Exception ex)
         {

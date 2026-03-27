@@ -105,9 +105,24 @@ internal sealed class SandboxSession : IAsyncDisposable
         await this.EnsureInitializedAsync();
     }
 
-    public string Evaluate(string code)
+    public (string Result, IReadOnlyList<ScriptConsoleEntry> Logs) Evaluate(string code)
     {
-        return this._scriptEngine.Evaluate(code).ToString();
+        var logs = new List<ScriptConsoleEntry>();
+
+        void OnLog(ScriptConsoleEntry e)
+        {
+            logs.Add(e);
+        }
+
+        this._scriptEngine.ConsoleLogged += OnLog;
+        try
+        {
+            return (this._scriptEngine.Evaluate(code).ToString(), logs);
+        }
+        finally
+        {
+            this._scriptEngine.ConsoleLogged -= OnLog;
+        }
     }
 
     public IReadOnlyList<TypeScriptService.CompletionEntry> GetCompletions(string source, int position)

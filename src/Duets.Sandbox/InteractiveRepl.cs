@@ -86,7 +86,20 @@ internal sealed class InteractiveRepl(SandboxSession session)
     {
         try
         {
-            var result = session.Evaluate(line);
+            var (result, logs) = session.Evaluate(line);
+            foreach (var log in logs)
+            {
+                Console.ForegroundColor = log.Level switch
+                {
+                    ConsoleLogLevel.Error => ConsoleColor.Red,
+                    ConsoleLogLevel.Warn => ConsoleColor.Yellow,
+                    ConsoleLogLevel.Info => ConsoleColor.Blue,
+                    _ => ConsoleColor.DarkGray,
+                };
+                Console.WriteLine($"   {log.Text}");
+                Console.ResetColor();
+            }
+
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine($"=> {result}");
             Console.ResetColor();
