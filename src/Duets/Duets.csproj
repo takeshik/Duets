@@ -18,6 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\ScriptEngineInit.js" />
+    <EmbeddedResource Include="Resources\ScriptEngineInit.d.ts" />
     <EmbeddedResource Include="Resources\ReplStaticFiles\index.html" />
     <EmbeddedResource Include="Resources\ReplStaticFiles\language-service.js" />
   </ItemGroup>

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Jint;
 using Jint.Native;
 
@@ -10,12 +11,16 @@ public class ScriptEngine : IDisposable
     {
         this._engine = new Engine(configure);
         this._transpiler = transpiler;
+        this.InitConsole();
     }
 
     private readonly Engine _engine;
     private readonly ITranspiler _transpiler;
     private readonly object _sync = new();
     private bool _disposed;
+
+    /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
+    public event Action<ScriptConsoleEntry>? ConsoleLogged;
 
     public void SetValue(string name, object value)
     {
@@ -54,6 +59,31 @@ public class ScriptEngine : IDisposable
             this._engine.Dispose();
             this._disposed = true;
         }
+    }
+
+    private void InitConsole()
+    {
+        this._engine.SetValue(
+            "__consoleImpl__",
+            new Action<string, string>((levelStr, text) =>
+                {
+                    var level = levelStr switch
+                    {
+                        "info" => ConsoleLogLevel.Info,
+                        "warn" => ConsoleLogLevel.Warn,
+                        "error" => ConsoleLogLevel.Error,
+                        "debug" => ConsoleLogLevel.Debug,
+                        _ => ConsoleLogLevel.Log,
+                    };
+                    this.ConsoleLogged?.Invoke(new ScriptConsoleEntry(level, text));
+                }
+            )
+        );
+
+        using var stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream("Duets.Resources.ScriptEngineInit.js")!;
+        using var reader = new StreamReader(stream);
+        this._engine.Execute(reader.ReadToEnd());
     }
 
     private void ThrowIfDisposed()
