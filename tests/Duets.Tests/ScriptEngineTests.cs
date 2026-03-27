@@ -30,6 +30,52 @@ public sealed class ScriptEngineTests
     }
 
     [Fact]
+    public void Console_log_multiple_args_are_space_joined()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        ScriptConsoleEntry? entry = null;
+        engine.ConsoleLogged += e => entry = e;
+
+        engine.Execute("console.log('result:', 42)");
+
+        Assert.NotNull(entry);
+        Assert.Equal("result: 42", entry.Text);
+    }
+
+    [Fact]
+    public void Console_log_object_is_formatted()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        ScriptConsoleEntry? entry = null;
+        engine.ConsoleLogged += e => entry = e;
+
+        engine.Execute("console.log({x: 1})");
+
+        Assert.NotNull(entry);
+        Assert.Equal(
+            """
+                {
+                  "x": 1
+                }
+                """.Trim(),
+            entry.Text
+        );
+    }
+
+    [Fact]
+    public void Console_log_string_is_not_quoted()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        ScriptConsoleEntry? entry = null;
+        engine.ConsoleLogged += e => entry = e;
+
+        engine.Execute("console.log('hello')");
+
+        Assert.NotNull(entry);
+        Assert.Equal("hello", entry.Text);
+    }
+
+    [Fact]
     public void Execute_and_evaluate_transpile_source_before_running_it()
     {
         var transpiler = new RecordingTranspiler(
