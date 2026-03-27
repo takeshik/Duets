@@ -94,7 +94,7 @@ dotnet jb cleanupcode Duets.slnx --include="<changed files>"
 dotnet test
 ```
 
-Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`.
+Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`. xUnit v3 runs on Microsoft.Testing.Platform; use `--filter-class`/`--filter-method` instead of `--filter`.
 
 ## End-to-end verification with Duets.Sandbox
 
