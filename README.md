@@ -22,6 +22,8 @@ Runnable examples live in [`samples/`](samples/). Each file is a self-contained 
 ```bash
 dotnet run samples/minimal-eval.cs          # transpile and evaluate
 dotnet run samples/with-type-registration.cs # expose .NET types to scripts
+dotnet run samples/console.cs              # script console output via ConsoleLogged
+dotnet run samples/inspect-and-dump.cs     # util.inspect and dump
 dotnet run samples/web-repl.cs              # browser-based Monaco editor
 ```
 
@@ -48,6 +50,8 @@ using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
 engine.RegisterTypeBuiltins(ts); // registers the typings global
 
 // From a script:
+//   typings.importNamespace("System.IO")                     // import namespace: runtime + completions (recommended)
+//   typings.importNamespace(System.IO)                       //   same, but with a namespace reference
 //   typings.useType(System.IO.File)                          // single type via CLR reference
 //   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
 //   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
