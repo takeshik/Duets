@@ -1,18 +1,42 @@
+/**
+ * Returns a namespace reference that lets you access CLR types within the given namespace.
+ * This function is provided by Jint's CLR interop layer when the engine is configured with `AllowClr`.
+ *
+ * Indexing the returned object by type name gives a CLR type reference, which can be passed to
+ * `typings.useType()`, `typings.scanAssemblyOf()`, `typings.useAssemblyOf()`, or `clrTypeOf()`.
+ *
+ * ```ts
+ * var IO = importNamespace('System.IO');
+ * IO.File.ReadAllText('/path/to/file')   // call static methods
+ * new IO.StreamReader('/path/to/file')   // construct instances
+ * typings.useType(IO.File)               // pass as a type reference
+ * clrTypeOf(IO.File).FullName            // => "System.IO.File"
+ * ```
+ *
+ * **Note:** This function provides runtime access only. It does **not** register types for
+ * TypeScript completions. Use `typings.importNamespace()` instead when you want both
+ * runtime access and editor completions in one call.
+ */
+declare function importNamespace(ns: string): any;
+
 declare const typings: {
     /**
      * Registers a single .NET type so its members appear in TypeScript completions.
      *
-     * **Calling styles**
-     * - CLR type reference — use the type directly after importing its namespace:
+     * **Accepted argument forms**
+     * - CLR type reference — index a namespace reference obtained from `importNamespace`:
      *   ```ts
      *   var IO = importNamespace('System.IO');
      *   typings.useType(IO.File);
      *   // Now: IO.File.ReadAllText(...)  ← completions available
      *   ```
-     * - Assembly-qualified name string — useful when the type is not yet accessible as a reference:
+     * - Assembly-qualified name string — the format accepted by .NET's `Type.GetType()`:
+     *   `"FullTypeName, AssemblyName"` (version/culture/token are optional for most BCL types):
      *   ```ts
      *   typings.useType('System.IO.File, System.Runtime');
      *   ```
+     *   A bare type name without an assembly qualifier only resolves types in the core runtime
+     *   assembly, so always include the assembly name for non-trivial types.
      *
      * Use `useType` when you need completions for one specific type.
      * Use `useNamespace` or `useAssembly` to register many types at once.
@@ -27,16 +51,20 @@ declare const typings: {
      * and see sub-namespaces, but classes, methods, and properties are not listed.
      * Use `useAssembly` instead when you need full type members.
      *
-     * **Calling styles**
-     * - Assembly name string (the value of `Assembly.FullName`):
+     * **Accepted argument forms**
+     * - Simple assembly name string — the short name without version or public key token:
+     *   ```ts
+     *   typings.scanAssembly('System.Net.Http');
+     *   ```
+     * - Full assembly name string — the value of `Assembly.FullName`:
      *   ```ts
      *   typings.scanAssembly('System.Net.Http, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a');
      *   ```
-     * - `Assembly` object obtained at runtime:
+     * - `Assembly` object — obtain one from `clrTypeOf(type).Assembly` when you already
+     *   have a type reference in hand:
      *   ```ts
-     *   var clr = importNamespace('System.Reflection');
-     *   var asm = clr.Assembly.Load('System.Net.Http');
-     *   typings.scanAssembly(asm);
+     *   var NetHttp = importNamespace('System.Net.Http');
+     *   typings.scanAssembly(clrTypeOf(NetHttp.HttpClient).Assembly);
      *   ```
      *
      * Prefer `scanAssembly` / `scanAssemblyOf` over `useAssembly` for large assemblies
@@ -48,14 +76,15 @@ declare const typings: {
      * Registers namespace skeletons from the assembly that contains the given type —
      * a shorthand for `scanAssembly` when you already have a type reference in hand.
      *
-     * ```ts
-     * var NetHttp = importNamespace('System.Net.Http');
-     * typings.scanAssemblyOf(NetHttp.HttpClient);
-     * // Navigating System.Net.Http. now shows sub-namespaces
-     * ```
+     * **Accepted argument forms**
+     * - CLR type reference only — strings are **not** accepted:
+     *   ```ts
+     *   var NetHttp = importNamespace('System.Net.Http');
+     *   typings.scanAssemblyOf(NetHttp.HttpClient);
+     *   // Navigating System.Net.Http. now shows sub-namespaces
+     *   ```
      *
-     * Only type references (CLR objects) are accepted; strings are not supported here.
-     * Use `scanAssembly('Assembly.FullName, ...')` if you only have a name string.
+     * If you only have an assembly name string, use `scanAssembly('AssemblyName')` instead.
      */
     scanAssemblyOf(type: any): void;
 
@@ -63,16 +92,20 @@ declare const typings: {
      * Registers **all public types** from an assembly so their members appear in
      * TypeScript completions.
      *
-     * **Calling styles**
-     * - Assembly name string:
+     * **Accepted argument forms**
+     * - Simple assembly name string — the short name without version or public key token:
+     *   ```ts
+     *   typings.useAssembly('System.Net.Http');
+     *   ```
+     * - Full assembly name string — the value of `Assembly.FullName`:
      *   ```ts
      *   typings.useAssembly('System.Net.Http, Version=9.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a');
      *   ```
-     * - `Assembly` object:
+     * - `Assembly` object — obtain one from `clrTypeOf(type).Assembly` when you already
+     *   have a type reference in hand:
      *   ```ts
-     *   var clr = importNamespace('System.Reflection');
-     *   var asm = clr.Assembly.Load('System.Net.Http');
-     *   typings.useAssembly(asm);
+     *   var NetHttp = importNamespace('System.Net.Http');
+     *   typings.useAssembly(clrTypeOf(NetHttp.HttpClient).Assembly);
      *   ```
      *
      * This registers every exported type, so it may be slow for large assemblies
@@ -85,29 +118,55 @@ declare const typings: {
      * Registers all public types from the assembly that contains the given type —
      * a shorthand for `useAssembly` when you already have a type reference in hand.
      *
-     * ```ts
-     * var NetHttp = importNamespace('System.Net.Http');
-     * typings.useAssemblyOf(NetHttp.HttpClient);
-     * // All public types in System.Net.Http.dll are now available with full completions
-     * ```
+     * **Accepted argument forms**
+     * - CLR type reference only — strings are **not** accepted:
+     *   ```ts
+     *   var NetHttp = importNamespace('System.Net.Http');
+     *   typings.useAssemblyOf(NetHttp.HttpClient);
+     *   // All public types in System.Net.Http.dll are now available with full completions
+     *   ```
      *
-     * Only type references (CLR objects) are accepted; strings are not supported here.
-     * Use `useAssembly('Assembly.FullName, ...')` if you only have a name string.
+     * If you only have an assembly name string, use `useAssembly('AssemblyName')` instead.
      */
     useAssemblyOf(type: any): void;
+
+    /**
+     * Imports a .NET namespace into the script environment and registers its public types
+     * for TypeScript completions — combining `importNamespace` and `useNamespace` in one call.
+     *
+     * **Accepted argument forms**
+     * - Namespace name string:
+     *   ```ts
+     *   var IO = typings.importNamespace('System.IO');
+     *   // IO.File, IO.StreamReader, ... now have completions
+     *   ```
+     * - Namespace reference — when you already have one (e.g. from a prior `importNamespace` call):
+     *   ```ts
+     *   typings.importNamespace(System.Net.Http);
+     *   ```
+     *
+     * Only types whose `Namespace` exactly matches the given string are registered;
+     * nested namespaces are **not** included automatically — call `importNamespace` again
+     * for each sub-namespace you need:
+     * ```ts
+     * typings.importNamespace('System.Net.Http');
+     * typings.importNamespace('System.Net.Http.Headers');
+     * ```
+     */
+    importNamespace(ns: any): any;
 
     /**
      * Registers all public types in the given namespace so their members appear in
      * TypeScript completions.
      *
-     * **Calling styles**
-     * - Namespace reference — use after importing the namespace with `importNamespace`:
+     * **Accepted argument forms**
+     * - Namespace reference — the object returned by `importNamespace`:
      *   ```ts
      *   var NetHttp = importNamespace('System.Net.Http');
      *   typings.useNamespace(NetHttp);
      *   // Now: new NetHttp.HttpClient()  ← completions available
      *   ```
-     * - Plain string — use when you have not imported the namespace yet:
+     * - Plain string — the namespace name as a string literal:
      *   ```ts
      *   typings.useNamespace('System.Net.Http');
      *   ```
@@ -117,9 +176,10 @@ declare const typings: {
      * Call `useNamespace` again for each sub-namespace you need.
      *
      * Types are searched across all assemblies already loaded in the current AppDomain.
-     * If the target assembly has not been loaded yet, load it first:
+     * If the target assembly has not been loaded yet, trigger a load first — for example,
+     * by calling `importNamespace` or referencing a type from that assembly:
      * ```ts
-     * importNamespace('System.Net.Http');  // triggers assembly load
+     * importNamespace('System.Net.Http');        // triggers assembly load
      * typings.useNamespace('System.Net.Http');
      * ```
      */
@@ -129,10 +189,24 @@ declare const typings: {
 /**
  * Returns the underlying `System.Type` object for a CLR type reference.
  *
+ * **Accepted argument forms**
+ * - CLR type reference — index a namespace reference obtained from `importNamespace`.
+ *   Strings are **not** accepted:
+ *   ```ts
+ *   var IO = importNamespace('System.IO');
+ *   clrTypeOf(IO.File).FullName      // => "System.IO.File"
+ *   clrTypeOf(IO.File).Namespace     // => "System.IO"
+ *   clrTypeOf(IO.File).Assembly      // => Assembly object for System.Runtime
+ *   ```
+ *
+ * The returned `System.Type` object exposes the full .NET reflection API — you can
+ * read `FullName`, `Assembly`, `IsAbstract`, call `GetMethods()`, and so on.
+ *
+ * To pass the assembly to `typings.scanAssembly` or `typings.useAssembly`, read
+ * the `Assembly` property:
  * ```ts
  * var IO = importNamespace('System.IO');
- * clrTypeOf(IO.File).FullName   // => "System.IO.File"
- * clrTypeOf(IO.File).Assembly   // => the assembly object
+ * typings.useAssembly(clrTypeOf(IO.File).Assembly);
  * ```
  */
 declare function clrTypeOf(type: any): any;

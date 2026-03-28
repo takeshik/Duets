@@ -9,12 +9,53 @@ namespace Duets;
 /// <summary>Provides script-accessible built-in functions for managing TypeScript type declarations.</summary>
 public sealed class ScriptTypings
 {
-    public ScriptTypings(TypeScriptService ts)
+    public ScriptTypings(TypeScriptService ts, Func<JsValue, JsValue>? importNamespace = null)
     {
         this._ts = ts;
+        this._importNamespace = importNamespace;
     }
 
     private readonly TypeScriptService _ts;
+    private readonly Func<JsValue, JsValue>? _importNamespace;
+
+    /// <summary>
+    /// Imports a .NET namespace into the script environment and registers its types as TypeScript declaration targets.
+    /// Accepts either a namespace name string or an existing namespace reference (e.g. <c>System.IO</c>).
+    /// When passed a string, delegates to the Jint-provided <c>importNamespace</c> to obtain the reference,
+    /// then calls <see cref="UseNamespace"/> to register type declarations.
+    /// </summary>
+    /// <param name="nsRef">
+    /// A namespace name string (e.g. <c>"System.IO"</c>), or a namespace reference
+    /// (e.g. <c>System.IO</c> — requires <c>AllowClr</c> on the engine).
+    /// </param>
+    /// <returns>The namespace reference returned by <c>importNamespace</c>, or the original value if already a reference.</returns>
+    public JsValue ImportNamespace(JsValue nsRef)
+    {
+        if (nsRef is NamespaceReference)
+        {
+            this.UseNamespace(nsRef);
+            return nsRef;
+        }
+
+        if (nsRef.IsString())
+        {
+            if (this._importNamespace is null)
+            {
+                throw new InvalidOperationException(
+                    "typings.importNamespace with a string argument requires AllowClr to be configured on the engine."
+                );
+            }
+
+            var result = this._importNamespace(nsRef);
+            this.UseNamespace(result);
+            return result;
+        }
+
+        throw new ArgumentException(
+            "Expected a namespace name string (e.g. typings.importNamespace('System.IO')) " +
+            "or a namespace reference (e.g. typings.importNamespace(System.IO))."
+        );
+    }
 
     /// <summary>Registers a single .NET type as a TypeScript declaration target.</summary>
     /// <param name="typeRef">An assembly-qualified type name string, or a CLR type reference (e.g. <c>System.IO.File</c>).</param>

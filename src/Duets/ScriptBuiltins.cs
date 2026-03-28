@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
 
@@ -12,7 +13,16 @@ public static class ScriptBuiltins
     /// </summary>
     public static ScriptEngine RegisterTypeBuiltins(this ScriptEngine engine, TypeScriptService ts)
     {
-        engine.SetValue("typings", new ScriptTypings(ts));
+        // Capture the Jint-provided importNamespace before overriding it.
+        var jintEngine = engine.JintEngine;
+        var originalImportNs = engine.GetValue("importNamespace");
+        Func<JsValue, JsValue>? importNsFn = !originalImportNs.IsUndefined()
+            ? ns => jintEngine.Call(originalImportNs, ns)
+            : null;
+
+        var typings = new ScriptTypings(ts, importNsFn);
+        engine.SetValue("typings", typings);
+
         engine.SetValue(
             "clrTypeOf",
             new Func<JsValue, object>(jsValue =>

@@ -79,6 +79,22 @@ public sealed class ScriptTypingsAndBuiltinsTests
         Assert.Contains(declarations, x => x.Contains("class NamespaceBeta"));
     }
 
+    [Theory]
+    [InlineData("typings.importNamespace('Duets.Tests.TestTypes.NamespaceTargets')")]
+    [InlineData("typings.importNamespace(NamespaceTargetsNs)")]
+    public void ImportNamespace_registers_types_and_returns_usable_namespace_reference(string code)
+    {
+        using var harness = CreateHarness();
+
+        // The call must return a usable namespace reference.
+        harness.Engine.Execute($"var ns = {code}");
+        harness.Engine.Execute("typings.useType(ns.NamespaceAlpha)");
+
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.Contains(declarations, x => x.Contains("class NamespaceAlpha"));
+        Assert.Contains(declarations, x => x.Contains("class NamespaceBeta"));
+    }
+
     private static TestHarness CreateHarness()
     {
         var service = TypeScriptServiceTestFactory.CreateInitializedService();
@@ -136,6 +152,53 @@ public sealed class ScriptTypingsAndBuiltinsTests
         var exception = Assert.ThrowsAny<Exception>(() => harness.Engine.Evaluate("clrTypeOf(123)"));
 
         Assert.Contains("Expected a CLR type reference", exception.ToString());
+    }
+
+    /// <summary>
+    /// Verifies that the global <c>importNamespace</c> does NOT register type declarations for completions.
+    /// Only <c>typings.importNamespace</c> does. This test guards against a silent override
+    /// that would change this intentional design.
+    /// </summary>
+    [Fact]
+    public void GlobalImportNamespace_does_not_register_types_for_completions()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var engine = new ScriptEngine(
+            options => options.AllowClr(Assembly.GetExecutingAssembly()),
+            new IdentityTranspiler()
+        );
+        engine.RegisterTypeBuiltins(service);
+
+        engine.Execute("importNamespace('Duets.Tests.TestTypes.NamespaceTargets')");
+
+        var declarations = service.GetTypeDeclarations()
+            .Where(x => !x.Content.Contains("declare const typings:"))
+            .Select(x => x.Content)
+            .ToList();
+        Assert.DoesNotContain(declarations, x => x.Contains("class NamespaceAlpha"));
+        Assert.DoesNotContain(declarations, x => x.Contains("class NamespaceBeta"));
+    }
+
+    [Fact]
+    public void ImportNamespace_throws_for_unsupported_value()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service);
+
+        var exception = Assert.Throws<ArgumentException>(() => typings.ImportNamespace(JsNumber.Create(123)));
+
+        Assert.Contains("Expected a namespace name string", exception.Message);
+    }
+
+    [Fact]
+    public void ImportNamespace_throws_when_AllowClr_not_configured()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service, null);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => typings.ImportNamespace(new JsString("System.IO")));
+
+        Assert.Contains("AllowClr", exception.Message);
     }
 
     [Fact]

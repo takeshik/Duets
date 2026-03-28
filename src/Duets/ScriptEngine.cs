@@ -9,25 +9,35 @@ public class ScriptEngine : IDisposable
 {
     public ScriptEngine(Action<Options>? configure, ITranspiler transpiler)
     {
-        this._engine = new Engine(configure);
+        this.JintEngine = new Engine(configure);
         this._transpiler = transpiler;
         this.InitConsole();
     }
 
-    private readonly Engine _engine;
     private readonly ITranspiler _transpiler;
     private readonly object _sync = new();
     private bool _disposed;
 
+    internal Engine JintEngine { get; }
+
     /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
+
+    internal JsValue GetValue(string name)
+    {
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            return this.JintEngine.GetValue(name);
+        }
+    }
 
     public void SetValue(string name, object value)
     {
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this._engine.SetValue(name, value);
+            this.JintEngine.SetValue(name, value);
         }
     }
 
@@ -37,7 +47,7 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this._engine.Execute(this._transpiler.Transpile(tsCode));
+            this.JintEngine.Execute(this._transpiler.Transpile(tsCode));
         }
     }
 
@@ -47,7 +57,7 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            return this._engine.Evaluate(this._transpiler.Transpile(tsCode));
+            return this.JintEngine.Evaluate(this._transpiler.Transpile(tsCode));
         }
     }
 
@@ -56,14 +66,14 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             if (this._disposed) return;
-            this._engine.Dispose();
+            this.JintEngine.Dispose();
             this._disposed = true;
         }
     }
 
     private void InitConsole()
     {
-        this._engine.SetValue(
+        this.JintEngine.SetValue(
             "__consoleImpl__",
             new Action<string, string>((levelStr, text) =>
                 {
@@ -83,7 +93,7 @@ public class ScriptEngine : IDisposable
         using var stream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream("Duets.Resources.ScriptEngineInit.js")!;
         using var reader = new StreamReader(stream);
-        this._engine.Execute(reader.ReadToEnd());
+        this.JintEngine.Execute(reader.ReadToEnd());
     }
 
     private void ThrowIfDisposed()
