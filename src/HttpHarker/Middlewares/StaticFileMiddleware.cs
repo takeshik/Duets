@@ -123,7 +123,7 @@ public sealed class StaticFileMiddleware(
 
     private static bool IsEtagMatch(string ifNoneMatch, string etag)
     {
-        foreach (var token in ifNoneMatch.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        foreach (var token in ifNoneMatch.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()))
         {
             if (token == "*")
             {

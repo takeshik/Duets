@@ -84,7 +84,7 @@ public class ReplService : IDisposable
         res.SendChunked = true;
 
         var channel = Channel.CreateUnbounded<TypeScriptService.TypeDeclaration?>();
-        var id = Guid.CreateVersion7();
+        var id = Guid.NewGuid();
         this._sseWriters[id] = channel.Writer;
 
         // Send already-registered TypeDeclarations first

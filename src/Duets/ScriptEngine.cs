@@ -98,6 +98,10 @@ public class ScriptEngine : IDisposable
 
     private void ThrowIfDisposed()
     {
+#if NETSTANDARD2_1
+        if (this._disposed) throw new ObjectDisposedException(this.GetType().FullName);
+#else
         ObjectDisposedException.ThrowIf(this._disposed, this);
+#endif
     }
 }

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 
 namespace HttpHarker;
@@ -37,7 +36,7 @@ public sealed record HttpActionContext(
 
     public Task CloseAsync(string contentType, string body)
     {
-        return this.CloseAsync(new StringContent(body, Encoding.UTF8, MediaTypeHeaderValue.Parse(contentType)));
+        return this.CloseAsync(new StringContent(body, Encoding.UTF8, contentType));
     }
 
     public async Task CloseAsync(string body)

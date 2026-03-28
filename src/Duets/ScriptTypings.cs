@@ -1,8 +1,10 @@
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
+#if !NETSTANDARD2_1
+using System.Runtime.CompilerServices;
+#endif
 
 namespace Duets;
 
@@ -182,9 +184,29 @@ public sealed class ScriptTypings
     }
 
     // NamespaceReference does not expose the namespace string via a public API.
+#if NETSTANDARD2_1
+    // Use reflection as a fallback on platforms where UnsafeAccessor is unavailable (.NET 8+).
+    private static string GetPath(NamespaceReference nr)
+    {
+        try
+        {
+            var field = typeof(NamespaceReference).GetField("_path", BindingFlags.NonPublic | BindingFlags.Instance);
+            return (string) field!.GetValue(nr)!;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. " +
+                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.useNamespace(\"System.Net.Http\").",
+                ex
+            );
+        }
+    }
+#else
     // Access the backing field directly via UnsafeAccessor (AOT-safe, no reflection).
     [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "_path")]
     private static extern ref string GetPath(NamespaceReference nr);
+#endif
 
     private static IEnumerable<Type> TryGetExportedTypes(Assembly asm)
     {

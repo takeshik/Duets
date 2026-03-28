@@ -42,6 +42,11 @@ public sealed class StaticFileOptions
 
     private static string DefaultEtagFactory(byte[] bytes)
     {
+#if NETSTANDARD2_1
+        using var sha256 = SHA256.Create();
+        return $"\"{BitConverter.ToString(sha256.ComputeHash(bytes)).Replace("-", string.Empty)}\"";
+#else
         return $"\"{Convert.ToHexString(SHA256.HashData(bytes))}\"";
+#endif
     }
 }

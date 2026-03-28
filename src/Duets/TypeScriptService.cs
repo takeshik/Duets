@@ -120,7 +120,7 @@ public class TypeScriptService : ITranspiler,
             var baseType = type.BaseType;
             if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType)) this.RegisterType(baseType);
 
-            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(type.ToString())));
+            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes(type.ToString()));
             var fileName = $"clr-{hash}.d.ts";
             var content = this._declarationGenerator.GenerateTypeDefTs(type);
             var decl = new TypeDeclaration(fileName, content);
@@ -167,7 +167,7 @@ public class TypeScriptService : ITranspiler,
             if (this._coveredNamespaces.Contains(namespaceName)) return;
             if (this._pendingSkeletonNamespaces.ContainsKey(namespaceName)) return;
 
-            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes($"ns:{namespaceName}")));
+            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes($"ns:{namespaceName}"));
             var fileName = $"clr-ns-{hash}.d.ts";
             var content = $"declare namespace {namespaceName} {{ const $name: '{namespaceName}'; }}\n";
             var decl = new TypeDeclaration(fileName, content);
@@ -194,7 +194,7 @@ public class TypeScriptService : ITranspiler,
         lock (this._sync)
         {
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            var hash = Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(content)));
+            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes(content));
             var fileName = $"decl-{hash}.d.ts";
             if (this._typeDeclarations.ContainsKey(fileName)) return;
             var decl = new TypeDeclaration(fileName, content);
@@ -341,6 +341,16 @@ public class TypeScriptService : ITranspiler,
 
             return ret;
         }
+    }
+
+    private static string ComputeSha1Hex(byte[] bytes)
+    {
+#if NETSTANDARD2_1
+        using var sha1 = SHA1.Create();
+        return BitConverter.ToString(sha1.ComputeHash(bytes)).Replace("-", string.Empty);
+#else
+        return Convert.ToHexString(SHA1.HashData(bytes));
+#endif
     }
 
     public record CompletionEntry(string Name, string Kind, string? SortText);

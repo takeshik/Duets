@@ -111,7 +111,12 @@ public class ClrDeclarationGenerator
         var keyword = typeIndent.Length == 0 ? "declare enum" : "enum";
         sb.AppendLine($"{typeIndent}{keyword} {type.Name} {{");
         var names = Enum.GetNames(type);
+#if NETSTANDARD2_1
+        var underlyingType = Enum.GetUnderlyingType(type);
+        var values = Enum.GetValues(type).Cast<object>().Select(v => Convert.ChangeType(v, underlyingType)).ToArray();
+#else
         var values = Enum.GetValuesAsUnderlyingType(type).Cast<object>().ToArray();
+#endif
         var memberIndent = typeIndent + "  ";
         for (var i = 0; i < names.Length; i++)
         {
