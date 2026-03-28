@@ -66,10 +66,9 @@ not skip items without explicit justification.
 
 | Condition | Required action |
 |-----------|-----------------|
-| Any source change in `src/Duets/` or `src/HttpHarker/` | `dotnet test` passes with no failures |
+| Any source change | `dotnet test` passes with no failures |
 | New public API or behavior change | Test added or updated in `tests/Duets.Tests/` |
 | New feature visible to script authors | `samples/` updated or new sample added |
-| New sample added or removed | `README.md` sample list updated |
 | Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
 | ADR added or updated | Row added/updated in `docs/decisions/index.md` |
 | Architecture change (new layer, dependency, or data flow) | `docs/architecture.md` updated |
