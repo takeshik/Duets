@@ -59,6 +59,21 @@ When a session involves a design decision (new component, technology choice, API
 in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
 `docs/architecture.md` to reflect the new state.
 
+## End-of-Session Checklist
+
+Before committing, verify each item that applies to the changes made in this session. This checklist is mandatory — do
+not skip items without explicit justification.
+
+| Condition | Required action |
+|-----------|-----------------|
+| Any source change in `src/Duets/` or `src/HttpHarker/` | `dotnet test` passes with no failures |
+| New public API or behavior change | Test added or updated in `tests/Duets.Tests/` |
+| New feature visible to script authors | `samples/` updated or new sample added |
+| New sample added or removed | `README.md` sample list updated |
+| Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
+| ADR added or updated | Row added/updated in `docs/decisions/index.md` |
+| Architecture change (new layer, dependency, or data flow) | `docs/architecture.md` updated |
+
 ## Language
 
 There are two distinct contexts with different language rules:
