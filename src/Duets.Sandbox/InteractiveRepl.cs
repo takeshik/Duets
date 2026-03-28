@@ -7,6 +7,8 @@ internal sealed class InteractiveRepl(SandboxSession session)
         Console.WriteLine($"Duets Sandbox  [{session.TranspilerDescription}]");
         Console.WriteLine("Enter TypeScript code to evaluate, or :help for commands.\n");
 
+        await this.HandleCommandAsync("server start");
+
         while (true)
         {
             Console.Write("> ");
