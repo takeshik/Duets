@@ -61,6 +61,13 @@ var util = Object.freeze({
     inspect: function (value, opts) { return inspect(value, opts); },
 });
 
+// dump(value): outputs the value to the REPL output pane and returns it unchanged,
+// enabling use in the middle of an expression chain.
+var dump = function (value, opts) {
+    __consoleImpl__('log', inspect(value, opts));
+    return value;
+};
+
 var console = (() => {
     // Top-level strings are not quoted (matching console.log behavior);
     // non-strings are formatted with inspect.

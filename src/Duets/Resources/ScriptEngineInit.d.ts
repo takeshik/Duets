@@ -20,3 +20,6 @@ declare const util: {
     /** Formats a value as a string for inspection, similar to Node.js util.inspect. */
     inspect(value: unknown, opts?: { depth?: number; compact?: boolean }): string;
 };
+
+/** Outputs `value` to the REPL output pane and returns it unchanged, enabling use in the middle of an expression chain. */
+declare function dump<T>(value: T, opts?: { depth?: number; compact?: boolean }): T;

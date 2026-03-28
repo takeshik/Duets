@@ -76,6 +76,34 @@ public sealed class ScriptEngineTests
     }
 
     [Fact]
+    public void Dump_emits_console_log_entry_and_returns_value()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        ScriptConsoleEntry? entry = null;
+        engine.ConsoleLogged += e => entry = e;
+
+        var result = engine.Evaluate("dump(42)");
+
+        Assert.NotNull(entry);
+        Assert.Equal(ConsoleLogLevel.Log, entry.Level);
+        Assert.Equal("42", entry.Text);
+        Assert.Equal("42", result.ToString());
+    }
+
+    [Fact]
+    public void Dump_returns_value_unchanged_enabling_expression_chaining()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        var entries = new List<ScriptConsoleEntry>();
+        engine.ConsoleLogged += e => entries.Add(e);
+
+        var result = engine.Evaluate("dump({x: 1}).x");
+
+        Assert.Single(entries);
+        Assert.Equal("1", result.ToString());
+    }
+
+    [Fact]
     public void Execute_and_evaluate_transpile_source_before_running_it()
     {
         var transpiler = new RecordingTranspiler(
