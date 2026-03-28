@@ -69,7 +69,7 @@ not skip items without explicit justification.
 | Any source change | `dotnet test` passes with no failures |
 | New public API or behavior change | Test added or updated in `tests/Duets.Tests/` |
 | New feature visible to script authors | `samples/` updated or new sample added |
-| `README.md` content becomes inaccurate or noticeably incomplete due to changes | `README.md` updated; do not add content that does not pull its weight |
+| New user-facing feature or API added, or existing one changed | Review `README.md` and update if necessary; do not add content that does not pull its weight |
 | Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
 | ADR added or updated | Row added/updated in `docs/decisions/index.md` |
 | Architecture change (new layer, dependency, or data flow) | `docs/architecture.md` updated |
