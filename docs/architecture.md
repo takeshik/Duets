@@ -85,5 +85,4 @@ Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdb
 | Package | Role |
 |---|---|
 | [Jint](https://github.com/sebastienros/jint) | JavaScript engine for running the TypeScript compiler and user scripts ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) |
-| [Mio](https://github.com/takeshik/Mio) | File/directory path utilities for temp file caching |
 | [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated versioning from Git history and tags ([ADR-17](decisions/17_versioning-strategy-and-ci.md)) |
