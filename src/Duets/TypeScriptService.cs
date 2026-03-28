@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Jint;
 using Jint.Native;
-using Mio;
 
 namespace Duets;
 
@@ -17,7 +16,7 @@ public record TypeScriptServiceOptions
     /// </summary>
     public IAssetSource TypeScriptJs { get; init; } =
         AssetSources.Unpkg("typescript", "5.9.3", "lib/typescript.js")
-            .WithDiskCache(DirectoryPath.GetTempDirectory().ChildFile("typescript.js"));
+            .WithDiskCache(Path.Combine(Path.GetTempPath(), "typescript.js"));
 
     /// <summary>
     /// Factory that returns an asset source for the TypeScript ES5 standard library declaration file.
@@ -27,10 +26,7 @@ public record TypeScriptServiceOptions
     /// </summary>
     public Func<string, IAssetSource> LibEs5Source { get; init; } =
         tsVersion => AssetSources.Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
-            .WithDiskCache(
-                DirectoryPath.GetTempDirectory()
-                    .ChildFile($"typescript-lib.es5-{tsVersion}.d.ts")
-            );
+            .WithDiskCache(Path.Combine(Path.GetTempPath(), $"typescript-lib.es5-{tsVersion}.d.ts"));
 }
 
 public class TypeScriptService : ITranspiler,

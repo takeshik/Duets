@@ -6,7 +6,6 @@
 
   <ItemGroup>
     <PackageReference Include="Jint" Version="4.6.0" />
-    <PackageReference Include="Mio" Version="3.0.1" />
   </ItemGroup>
 
   <ItemGroup>

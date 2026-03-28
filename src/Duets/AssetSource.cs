@@ -1,7 +1,5 @@
 using System.Reflection;
 using System.Text;
-using Mio;
-using Mio.Destructive;
 
 namespace Duets;
 
@@ -59,7 +57,7 @@ public static class AssetSources
     /// <summary>
     /// Wraps an asset source with a disk-based cache at the given file path using a 7-day TTL.
     /// </summary>
-    public static IAssetSource WithDiskCache(this IAssetSource inner, FilePath cacheFilePath)
+    public static IAssetSource WithDiskCache(this IAssetSource inner, string cacheFilePath)
     {
         return new CachedAssetSource(inner, cacheFilePath, TimeSpan.FromDays(7));
     }
@@ -68,7 +66,7 @@ public static class AssetSources
     /// Wraps an asset source with a disk-based cache at the given file path using the specified TTL.
     /// </summary>
     public static IAssetSource WithDiskCache(
-        this IAssetSource inner, FilePath cacheFilePath,
+        this IAssetSource inner, string cacheFilePath,
         TimeSpan ttl)
     {
         return new CachedAssetSource(inner, cacheFilePath, ttl);
@@ -93,19 +91,19 @@ public static class AssetSources
         }
     }
 
-    private sealed class CachedAssetSource(IAssetSource inner, FilePath cacheFile, TimeSpan ttl) : IAssetSource
+    private sealed class CachedAssetSource(IAssetSource inner, string cacheFile, TimeSpan ttl) : IAssetSource
     {
         public async Task<string> GetAsync(bool force = false)
         {
             if (!force
-                && cacheFile.Exists()
-                && DateTimeOffset.Now - cacheFile.GetCreationTime() < ttl)
+                && File.Exists(cacheFile)
+                && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < ttl)
             {
-                return await cacheFile.ReadAllTextAsync();
+                return await File.ReadAllTextAsync(cacheFile);
             }
 
             var content = await inner.GetAsync(force);
-            await cacheFile.AsDestructive().WriteAsync(content);
+            await File.WriteAllTextAsync(cacheFile, content);
             return content;
         }
     }

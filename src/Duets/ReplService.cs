@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using HttpHarker;
-using Mio;
 using Timer = System.Timers.Timer;
 
 namespace Duets;
@@ -36,7 +35,7 @@ public class ReplService : IDisposable
         this._scriptEngine = scriptEngine;
         this._monacoLoaderSource = monacoLoader
             ?? AssetSources.Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
-                .WithDiskCache(DirectoryPath.GetTempDirectory().ChildFile("monaco-loader.js"));
+                .WithDiskCache(Path.Combine(Path.GetTempPath(), "monaco-loader.js"));
         this._monacoLoader = new Lazy<Task<string>>(() => this._monacoLoaderSource.GetAsync());
         svc.TypeDeclarationAdded += this.OnTypeDeclarationAdded;
         server

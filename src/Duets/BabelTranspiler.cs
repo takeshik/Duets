@@ -1,6 +1,5 @@
 using Jint;
 using Jint.Native;
-using Mio;
 
 namespace Duets;
 
@@ -15,7 +14,7 @@ public record BabelTranspilerOptions
     /// </summary>
     public IAssetSource BabelJs { get; init; } =
         AssetSources.Unpkg("@babel/standalone", "7.29.2", "babel.js")
-            .WithDiskCache(DirectoryPath.GetTempDirectory().ChildFile("babel-standalone.js"));
+            .WithDiskCache(Path.Combine(Path.GetTempPath(), "babel-standalone.js"));
 }
 
 /// <summary>
