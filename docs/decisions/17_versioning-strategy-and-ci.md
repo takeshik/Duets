@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-23](23_ci-and-package-publishing.md)
 
 ## Context
 
