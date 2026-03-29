@@ -2,6 +2,23 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>HttpHarker</PackageId>
+    <Authors>takeshik</Authors>
+    <Description>A minimal HTTP server library built on System.Net.HttpListener with a middleware pipeline.</Description>
+    <Copyright>Copyright © Takeshi KIRIYA (aka takeshik) &lt;takeshik@tksk.io&gt;</Copyright>
+    <PackageProjectUrl>https://github.com/takeshik/Duets/tree/main/src/HttpHarker</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/takeshik/Duets</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>HTTP server HttpListener</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
