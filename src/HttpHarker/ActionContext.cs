@@ -36,7 +36,9 @@ public sealed record HttpActionContext(
 
     public Task CloseAsync(string contentType, string body)
     {
-        return this.CloseAsync(new StringContent(body, Encoding.UTF8, contentType));
+        // StringContent only accepts the media type without parameters; charset is provided via Encoding.
+        var mediaType = contentType.Split(';')[0].Trim();
+        return this.CloseAsync(new StringContent(body, Encoding.UTF8, mediaType));
     }
 
     public async Task CloseAsync(string body)
