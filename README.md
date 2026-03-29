@@ -13,7 +13,8 @@ Duets lets you drop a fully-featured TypeScript REPL into **any** .NET applicati
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/) or later
+The library targets .NET Standard 2.1 and .NET 8.0 or later.
+This repository requires [.NET 10 SDK](https://dotnet.microsoft.com/) or later.
 
 ## Quick Start
 
