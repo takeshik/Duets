@@ -194,7 +194,7 @@ public sealed class ScriptTypingsAndBuiltinsTests
     public void ImportNamespace_throws_when_AllowClr_not_configured()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-        var typings = new ScriptTypings(service, null);
+        var typings = new ScriptTypings(service);
 
         var exception = Assert.Throws<InvalidOperationException>(() => typings.ImportNamespace(new JsString("System.IO")));
 

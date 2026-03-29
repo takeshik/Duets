@@ -40,7 +40,7 @@ public sealed class EmbeddedResourceFileProviderTests
         var bytes = provider.GetFileContent("sub/page.html");
 
         Assert.NotNull(bytes);
-        Assert.Equal("<p>sub page</p>", Encoding.UTF8.GetString(bytes));
+        Assert.Equal("<p>sub page</p>\n", Encoding.UTF8.GetString(bytes));
     }
 
     [Fact]

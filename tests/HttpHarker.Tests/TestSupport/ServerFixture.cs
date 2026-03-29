@@ -14,17 +14,17 @@ internal static class ServerFixture
         Func<HttpClient, string, Task> test)
     {
         var port = PickPort();
-        var prefix = $"http://localhost:{port}/";
+        var prefix = $"http://127.0.0.1:{port}/";
 
         using var server = new HttpServer(prefix);
         configure(server);
 
-        using var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var serverTask = server.RunAsync(cancellationToken: cts.Token);
 
         await Task.Delay(50); // allow listener to start
 
-        using var client = new HttpClient();
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         try
         {
             await test(client, prefix);

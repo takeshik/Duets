@@ -7,6 +7,19 @@ namespace Duets.Tests;
 public sealed class TypeScriptServiceRegistrationTests
 {
     [Fact]
+    public void GetTypeDeclarations_returns_a_snapshot()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+
+        service.RegisterDeclaration("declare const first: number;");
+        var snapshot = service.GetTypeDeclarations();
+        service.RegisterDeclaration("declare const second: number;");
+
+        Assert.Single(snapshot);
+        Assert.Equal(2, service.GetTypeDeclarations().Count);
+    }
+
+    [Fact]
     public void RegisterDeclaration_ignores_duplicate_content()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
@@ -94,18 +107,5 @@ public sealed class TypeScriptServiceRegistrationTests
         using var service = new TypeScriptService();
 
         Assert.Throws<InvalidOperationException>(() => service.RegisterType(typeof(string)));
-    }
-
-    [Fact]
-    public void GetTypeDeclarations_returns_a_snapshot()
-    {
-        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-
-        service.RegisterDeclaration("declare const first: number;");
-        var snapshot = service.GetTypeDeclarations();
-        service.RegisterDeclaration("declare const second: number;");
-
-        Assert.Single(snapshot);
-        Assert.Equal(2, service.GetTypeDeclarations().Count);
     }
 }
