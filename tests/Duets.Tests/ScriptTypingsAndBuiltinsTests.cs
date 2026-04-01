@@ -146,6 +146,11 @@ public sealed class ScriptTypingsAndBuiltinsTests
     [Theory]
     [InlineData("System.IO", "File")]
     [InlineData("System.IO", "Directory")]
+    // System.Collections.Generic contains generic types (List`1, Dictionary`2, etc.) —
+    // exercises the GetScriptName path that strips backtick arity suffixes in the global name
+    // and declare var declaration.
+    [InlineData("System.Collections.Generic", "List")]
+    [InlineData("System.Collections.Generic", "Dictionary")]
     public void UsingNamespace_exposes_bcl_type_as_global(string ns, string typeName)
     {
         using var harness = CreateHarness();
