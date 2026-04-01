@@ -18,6 +18,17 @@ public class ClrDeclarationGenerator
     ];
 
     /// <summary>
+    /// Returns the bare TypeScript identifier name for a CLR type — the simple name with any
+    /// backtick arity suffix removed (e.g. <c>List`1</c> → <c>List</c>).
+    /// This is the name used in global variable bindings and <c>declare var</c> declarations.
+    /// </summary>
+    internal static string GetScriptName(Type type)
+    {
+        var backtickIdx = type.Name.IndexOf('`');
+        return backtickIdx >= 0 ? type.Name[..backtickIdx] : type.Name;
+    }
+
+    /// <summary>
     /// Generates TypeScript type declaration (.d.ts) source for the specified .NET type.
     /// Types with a namespace are wrapped in a declare namespace block.
     /// Unsupported types and members fall back to any or are omitted from the output.
@@ -336,8 +347,7 @@ public class ClrDeclarationGenerator
     private static string BuildTypeHeader(Type type)
     {
         if (!type.IsGenericTypeDefinition) return type.Name;
-        var backtickIdx = type.Name.IndexOf('`');
-        var name = backtickIdx >= 0 ? type.Name[..backtickIdx] : type.Name;
+        var name = GetScriptName(type);
         var typeParams = string.Join(", ", type.GetGenericArguments().Select(a => a.Name));
         return $"{name}<{typeParams}>";
     }
@@ -347,8 +357,7 @@ public class ClrDeclarationGenerator
     {
         if (!type.IsGenericType) return type.Name;
         var def = type.IsGenericTypeDefinition ? type : type.GetGenericTypeDefinition();
-        var backtickIdx = def.Name.IndexOf('`');
-        var name = backtickIdx >= 0 ? def.Name[..backtickIdx] : def.Name;
+        var name = GetScriptName(def);
         var args = string.Join(", ", type.GetGenericArguments().Select(a => MapType(a, [])));
         return $"{name}<{args}>";
     }

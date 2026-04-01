@@ -118,8 +118,9 @@ public sealed class ScriptTypings
             var sb = new StringBuilder();
             foreach (var type in types)
             {
-                this._exposeGlobal(type.Name, type);
-                sb.AppendLine($"declare var {type.Name}: typeof {ns}.{type.Name};");
+                var scriptName = ClrDeclarationGenerator.GetScriptName(type);
+                this._exposeGlobal(scriptName, type);
+                sb.AppendLine($"declare var {scriptName}: typeof {ns}.{scriptName};");
             }
 
             if (sb.Length > 0)
