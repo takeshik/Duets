@@ -14,16 +14,14 @@ public static class ScriptBuiltins
     public static ScriptEngine RegisterTypeBuiltins(this ScriptEngine engine, TypeScriptService ts)
     {
         // Capture the Jint-provided importNamespace before overriding it.
-        var jintEngine = engine.JintEngine;
         var originalImportNs = engine.GetValue("importNamespace");
         Func<JsValue, JsValue>? importNsFn = !originalImportNs.IsUndefined()
-            ? ns => jintEngine.Call(originalImportNs, ns)
+            ? ns => engine.Call(originalImportNs, ns)
             : null;
 
         Action<string, Type> exposeGlobal = (name, type) =>
         {
-            var typeRef = TypeReference.CreateTypeReference(jintEngine, type);
-            jintEngine.SetValue(name, typeRef);
+            engine.SetTypeReferenceValue(name, type);
         };
 
         var typings = new ScriptTypings(ts, importNsFn, exposeGlobal);

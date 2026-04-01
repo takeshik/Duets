@@ -1,6 +1,7 @@
 using System.Reflection;
 using Jint;
 using Jint.Native;
+using Jint.Runtime.Interop;
 
 namespace Duets;
 
@@ -9,16 +10,15 @@ public class ScriptEngine : IDisposable
 {
     public ScriptEngine(Action<Options>? configure, ITranspiler transpiler)
     {
-        this.JintEngine = new Engine(configure);
+        this._jintEngine = new Engine(configure);
         this._transpiler = transpiler;
         this.InitConsole();
     }
 
+    private readonly Engine _jintEngine;
     private readonly ITranspiler _transpiler;
     private readonly object _sync = new();
     private bool _disposed;
-
-    internal Engine JintEngine { get; }
 
     /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
@@ -28,7 +28,7 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            return this.JintEngine.GetValue(name);
+            return this._jintEngine.GetValue(name);
         }
     }
 
@@ -37,7 +37,26 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this.JintEngine.SetValue(name, value);
+            this._jintEngine.SetValue(name, value);
+        }
+    }
+
+    internal JsValue Call(JsValue callee, JsValue arg)
+    {
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            return this._jintEngine.Call(callee, arg);
+        }
+    }
+
+    internal void SetTypeReferenceValue(string name, Type type)
+    {
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            var typeRef = TypeReference.CreateTypeReference(this._jintEngine, type);
+            this._jintEngine.SetValue(name, typeRef);
         }
     }
 
@@ -47,7 +66,7 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this.JintEngine.Execute(this._transpiler.Transpile(tsCode));
+            this._jintEngine.Execute(this._transpiler.Transpile(tsCode));
         }
     }
 
@@ -57,7 +76,7 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            return this.JintEngine.Evaluate(this._transpiler.Transpile(tsCode));
+            return this._jintEngine.Evaluate(this._transpiler.Transpile(tsCode));
         }
     }
 
@@ -66,14 +85,14 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             if (this._disposed) return;
-            this.JintEngine.Dispose();
+            this._jintEngine.Dispose();
             this._disposed = true;
         }
     }
 
     private void InitConsole()
     {
-        this.JintEngine.SetValue(
+        this._jintEngine.SetValue(
             "__consoleImpl__",
             new Action<string, string>((levelStr, text) =>
                 {
@@ -93,7 +112,7 @@ public class ScriptEngine : IDisposable
         using var stream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream("Duets.Resources.ScriptEngineInit.js")!;
         using var reader = new StreamReader(stream);
-        this.JintEngine.Execute(reader.ReadToEnd());
+        this._jintEngine.Execute(reader.ReadToEnd());
     }
 
     private void ThrowIfDisposed()
