@@ -116,7 +116,7 @@ public sealed class ScriptTypings
         if (this._exposeGlobal != null)
         {
             var sb = new StringBuilder();
-            foreach (var type in types)
+            foreach (var type in types.Where(t => !t.IsNested))
             {
                 var scriptName = ClrDeclarationGenerator.GetScriptName(type);
                 this._exposeGlobal(scriptName, type);
