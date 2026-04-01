@@ -48,6 +48,30 @@ public sealed class ClrDeclarationGeneratorTests
     }
 
     [Fact]
+    public void GenerateTypeDefTs_generates_generic_method_signatures_without_backtick_arity()
+    {
+        var generator = new ClrDeclarationGenerator();
+
+        // System.Array has many generic static methods: Sort<T>, Find<T>, Reverse<T>, etc.
+        var actual = generator.GenerateTypeDefTs(typeof(Array));
+
+        // MethodInfo.Name has no backtick arity suffix — method names must use clean identifiers
+        Assert.Contains("Sort<T>(", actual);
+        Assert.Contains("Find<T>(", actual);
+        Assert.Contains("Reverse<T>(", actual);
+        // The TypeScript declarations themselves must not contain backtick arity suffixes.
+        // JSDoc comment lines (/** ... */ or * ...) may contain raw CLR names, so exclude them.
+        var declarationLines = actual.Split('\n')
+            .Where(l =>
+                {
+                    var t = l.TrimStart();
+                    return !t.StartsWith("//") && !t.StartsWith("/*") && !t.StartsWith("*");
+                }
+            );
+        Assert.DoesNotContain(declarationLines, l => l.Contains('`'));
+    }
+
+    [Fact]
     public void GenerateTypeDefTs_generates_interface_enum_and_generic_headers()
     {
         var generator = new ClrDeclarationGenerator();
