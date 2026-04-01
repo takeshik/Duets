@@ -336,7 +336,8 @@ public class ClrDeclarationGenerator
     private static string BuildTypeHeader(Type type)
     {
         if (!type.IsGenericTypeDefinition) return type.Name;
-        var name = type.Name[..type.Name.IndexOf('`')];
+        var backtickIdx = type.Name.IndexOf('`');
+        var name = backtickIdx >= 0 ? type.Name[..backtickIdx] : type.Name;
         var typeParams = string.Join(", ", type.GetGenericArguments().Select(a => a.Name));
         return $"{name}<{typeParams}>";
     }

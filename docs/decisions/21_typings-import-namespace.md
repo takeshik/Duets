@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+~~Accepted~~ — **Superseded by ADR-24**
 
 ## Context
 

@@ -20,7 +20,13 @@ public static class ScriptBuiltins
             ? ns => jintEngine.Call(originalImportNs, ns)
             : null;
 
-        var typings = new ScriptTypings(ts, importNsFn);
+        Action<string, Type> exposeGlobal = (name, type) =>
+        {
+            var typeRef = TypeReference.CreateTypeReference(jintEngine, type);
+            jintEngine.SetValue(name, typeRef);
+        };
+
+        var typings = new ScriptTypings(ts, importNsFn, exposeGlobal);
         engine.SetValue("typings", typings);
 
         engine.SetValue(

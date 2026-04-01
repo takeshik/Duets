@@ -24,23 +24,23 @@ engine.RegisterTypeBuiltins(ts);
 
 // From a script, use `typings` to register types for runtime access AND completions:
 //
-//   typings.importNamespace("System.IO")                     // import namespace: runtime + completions (recommended)
+//   typings.usingNamespace("System.IO")                      // C# `using` semantics: scatter types as globals + completions
+//   typings.usingNamespace(System.IO)                        //   same, but with a namespace reference
+//   typings.importNamespace("System.IO")                     // import namespace: runtime + completions, keeps namespace prefix
 //   typings.importNamespace(System.IO)                       //   same, but with a namespace reference
-//   typings.useType(System.IO.File)                          // single type via CLR reference
-//   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
+//   typings.importType(System.IO.File)                       // single type via CLR reference
+//   typings.importType("System.IO.File, System.IO.FileSystem") // via assembly-qualified name
 //   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
 //   typings.scanAssemblyOf(System.IO.File)                   // namespace skeletons from the type's assembly
-//   typings.useAssembly("System.Net.Http")                   // all public types
-//   typings.useAssemblyOf(System.IO.File)                    // all public types from the type's assembly
-//   typings.useNamespace(System.Net.Http)                    // types in one namespace (namespace reference)
-//   typings.useNamespace("System.Net.Http")                  // types in one namespace (string form)
+//   typings.importAssembly("System.Net.Http")                // all public types
+//   typings.importAssemblyOf(System.IO.File)                 // all public types from the type's assembly
 //
 // Note: the global importNamespace() provided by AllowClr gives runtime access only.
-// Use typings.importNamespace() when you also want IntelliSense completions.
+// Use typings.importNamespace() or typings.usingNamespace() when you also want IntelliSense completions.
 
-// Import System.IO and read a file listing from a script
+// Use usingNamespace to bring types into scope like C#'s `using System.IO;`
 var result = engine.Evaluate("""
-    var IO = typings.importNamespace("System.IO");
-    IO.Directory.GetCurrentDirectory()
+    typings.usingNamespace("System.IO");
+    Directory.GetCurrentDirectory()
     """);
 Console.WriteLine(result); // e.g. /home/user/myproject

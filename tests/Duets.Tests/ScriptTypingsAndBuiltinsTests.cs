@@ -8,15 +8,15 @@ namespace Duets.Tests;
 
 public sealed class ScriptTypingsAndBuiltinsTests
 {
-    public static IEnumerable<object[]> UseTypeCases()
+    public static IEnumerable<object[]> ImportTypeCases()
     {
-        yield return [$"typings.useType('{typeof(NamespaceAlpha).AssemblyQualifiedName}')"];
-        yield return ["typings.useType(NamespaceTargetsNs.NamespaceAlpha)"];
+        yield return [$"typings.importType('{typeof(NamespaceAlpha).AssemblyQualifiedName}')"];
+        yield return ["typings.importType(NamespaceTargetsNs.NamespaceAlpha)"];
     }
 
     [Theory]
-    [MemberData(nameof(UseTypeCases))]
-    public void UseType_registers_type_definitions(string code)
+    [MemberData(nameof(ImportTypeCases))]
+    public void ImportType_registers_type_definitions(string code)
     {
         using var harness = CreateHarness();
 
@@ -43,14 +43,14 @@ public sealed class ScriptTypingsAndBuiltinsTests
         Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);
     }
 
-    public static IEnumerable<object[]> UseAssemblyCases()
+    public static IEnumerable<object[]> ImportAssemblyCases()
     {
-        yield return [$"typings.useAssembly('{typeof(ScriptEngine).Assembly.FullName}')"];
+        yield return [$"typings.importAssembly('{typeof(ScriptEngine).Assembly.FullName}')"];
     }
 
     [Theory]
-    [MemberData(nameof(UseAssemblyCases))]
-    public void UseAssembly_registers_public_types_from_an_assembly(string code)
+    [MemberData(nameof(ImportAssemblyCases))]
+    public void ImportAssembly_registers_public_types_from_an_assembly(string code)
     {
         using var harness = CreateHarness();
 
@@ -64,22 +64,6 @@ public sealed class ScriptTypingsAndBuiltinsTests
     }
 
     [Theory]
-    [InlineData("typings.useNamespace('Duets.Tests.TestTypes.NamespaceTargets')")]
-    [InlineData("typings.useNamespace(NamespaceTargetsNs)")]
-    public void UseNamespace_registers_all_public_types_in_the_namespace(string code)
-    {
-        using var harness = CreateHarness();
-
-        harness.Engine.Execute(code);
-
-        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
-
-        Assert.Equal(2, declarations.Count);
-        Assert.Contains(declarations, x => x.Contains("class NamespaceAlpha"));
-        Assert.Contains(declarations, x => x.Contains("class NamespaceBeta"));
-    }
-
-    [Theory]
     [InlineData("typings.importNamespace('Duets.Tests.TestTypes.NamespaceTargets')")]
     [InlineData("typings.importNamespace(NamespaceTargetsNs)")]
     public void ImportNamespace_registers_types_and_returns_usable_namespace_reference(string code)
@@ -88,11 +72,93 @@ public sealed class ScriptTypingsAndBuiltinsTests
 
         // The call must return a usable namespace reference.
         harness.Engine.Execute($"var ns = {code}");
-        harness.Engine.Execute("typings.useType(ns.NamespaceAlpha)");
+        harness.Engine.Execute("typings.importType(ns.NamespaceAlpha)");
 
         var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
         Assert.Contains(declarations, x => x.Contains("class NamespaceAlpha"));
         Assert.Contains(declarations, x => x.Contains("class NamespaceBeta"));
+    }
+
+    [Theory]
+    [InlineData("typings.usingNamespace('Duets.Tests.TestTypes.NamespaceTargets')")]
+    [InlineData("typings.usingNamespace(NamespaceTargetsNs)")]
+    public void UsingNamespace_exposes_types_as_globals_and_registers_declare_var(string code)
+    {
+        using var harness = CreateHarness();
+
+        harness.Engine.Execute(code);
+
+        // Types are registered for completions
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.Contains(declarations, x => x.Contains("class NamespaceAlpha"));
+        Assert.Contains(declarations, x => x.Contains("class NamespaceBeta"));
+
+        // declare var entries are registered so completions work without namespace prefix
+        Assert.Contains(declarations, x => x.Contains("declare var NamespaceAlpha:"));
+        Assert.Contains(declarations, x => x.Contains("declare var NamespaceBeta:"));
+
+        // Types are accessible as globals at runtime
+        var result = harness.Engine.Evaluate("new NamespaceAlpha()");
+        Assert.True(result.IsObject());
+    }
+
+    public static IEnumerable<object[]> BclImportNamespaceCases()
+    {
+        // "System" exercises generic type definitions heavily: Nullable<T>, Action<T>, Func<T,TResult>, etc.
+        // This was the namespace that exposed the IndexOf('`') == -1 crash in BuildTypeHeader.
+        yield return ["System", "Exception"];
+        yield return ["System.IO", "File"];
+        // System.Collections.Generic is dense with IsGenericTypeDefinition types: List<T>, Dictionary<TKey,TValue>, etc.
+        yield return ["System.Collections.Generic", "List"];
+        yield return ["System.Text", "StringBuilder"];
+    }
+
+    [Theory]
+    [MemberData(nameof(BclImportNamespaceCases))]
+    public void ImportNamespace_registers_bcl_namespace_types(string ns, string expectedTypeName)
+    {
+        using var harness = CreateHarness();
+
+        harness.Engine.Execute($"typings.importNamespace('{ns}')");
+
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.Contains(declarations, x => x.Contains(expectedTypeName));
+    }
+
+    public static IEnumerable<object[]> BclImportAssemblyCases()
+    {
+        // List<T> (System.Collections.Generic.List`1) is in System.Collections.dll in .NET 5+
+        yield return ["System.Collections", "List"];
+    }
+
+    [Theory]
+    [MemberData(nameof(BclImportAssemblyCases))]
+    public void ImportAssembly_registers_bcl_assembly_types(string assemblyName, string expectedTypeName)
+    {
+        using var harness = CreateHarness();
+
+        harness.Engine.Execute($"typings.importAssembly('{assemblyName}')");
+
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.Contains(declarations, x => x.Contains(expectedTypeName));
+    }
+
+    [Theory]
+    [InlineData("System.IO", "File")]
+    [InlineData("System.IO", "Directory")]
+    public void UsingNamespace_exposes_bcl_type_as_global(string ns, string typeName)
+    {
+        using var harness = CreateHarness();
+
+        harness.Engine.Execute($"typings.usingNamespace('{ns}')");
+
+        // Type is accessible at runtime without namespace prefix
+        var result = harness.Engine.Evaluate(typeName);
+        Assert.False(result.IsUndefined(), $"{typeName} should be a global after usingNamespace('{ns}')");
+
+        // declare var is registered so completions work without namespace prefix
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.Contains(declarations, x => x.Contains($"declare var {typeName}:"));
     }
 
     private static TestHarness CreateHarness()
@@ -180,6 +246,42 @@ public sealed class ScriptTypingsAndBuiltinsTests
     }
 
     [Fact]
+    public void ImportAssemblyOf_registers_public_types_from_the_containing_assembly()
+    {
+        using var harness = CreateHarness();
+
+        harness.Engine.Execute("typings.importAssemblyOf(DuetsNs.ScriptEngine)");
+
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+
+        Assert.Contains(declarations, x => x.Contains("class ScriptEngine"));
+        Assert.Contains(declarations, x => x.Contains("class TypeScriptService"));
+        Assert.Contains(declarations, x => x.Contains("interface ITranspiler"));
+    }
+
+    [Fact]
+    public void ImportAssemblyOf_throws_for_non_type_reference()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service);
+
+        var exception = Assert.Throws<ArgumentException>(() => typings.ImportAssemblyOf(new JsString("Duets.ScriptEngine")));
+
+        Assert.Contains("Expected a CLR type reference", exception.Message);
+    }
+
+    [Fact]
+    public void ImportAssembly_throws_for_unsupported_value()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service);
+
+        var exception = Assert.Throws<ArgumentException>(() => typings.ImportAssembly(JsBoolean.False));
+
+        Assert.Contains("Expected an assembly name string or an Assembly object", exception.Message);
+    }
+
+    [Fact]
     public void ImportNamespace_throws_for_unsupported_value()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
@@ -199,6 +301,28 @@ public sealed class ScriptTypingsAndBuiltinsTests
         var exception = Assert.Throws<InvalidOperationException>(() => typings.ImportNamespace(new JsString("System.IO")));
 
         Assert.Contains("AllowClr", exception.Message);
+    }
+
+    [Fact]
+    public void ImportType_throws_for_unknown_type_name()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => typings.ImportType(new JsString("Missing.Type, Missing.Assembly")));
+
+        Assert.Contains("Type not found", exception.Message);
+    }
+
+    [Fact]
+    public void ImportType_throws_for_unsupported_value()
+    {
+        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
+        var typings = new ScriptTypings(service);
+
+        var exception = Assert.Throws<ArgumentException>(() => typings.ImportType(JsNumber.Create(123)));
+
+        Assert.Contains("Expected a CLR type reference", exception.Message);
     }
 
     [Fact]
@@ -247,71 +371,13 @@ public sealed class ScriptTypingsAndBuiltinsTests
     }
 
     [Fact]
-    public void UseAssemblyOf_registers_public_types_from_the_containing_assembly()
-    {
-        using var harness = CreateHarness();
-
-        harness.Engine.Execute("typings.useAssemblyOf(DuetsNs.ScriptEngine)");
-
-        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
-
-        Assert.Contains(declarations, x => x.Contains("class ScriptEngine"));
-        Assert.Contains(declarations, x => x.Contains("class TypeScriptService"));
-        Assert.Contains(declarations, x => x.Contains("interface ITranspiler"));
-    }
-
-    [Fact]
-    public void UseAssemblyOf_throws_for_non_type_reference()
+    public void UsingNamespace_throws_for_unsupported_value()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
         var typings = new ScriptTypings(service);
 
-        var exception = Assert.Throws<ArgumentException>(() => typings.UseAssemblyOf(new JsString("Duets.ScriptEngine")));
+        var exception = Assert.Throws<ArgumentException>(() => typings.UsingNamespace(JsNumber.Create(123)));
 
-        Assert.Contains("Expected a CLR type reference", exception.Message);
-    }
-
-    [Fact]
-    public void UseAssembly_throws_for_unsupported_value()
-    {
-        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-        var typings = new ScriptTypings(service);
-
-        var exception = Assert.Throws<ArgumentException>(() => typings.UseAssembly(JsBoolean.False));
-
-        Assert.Contains("Expected an assembly name string or an Assembly object", exception.Message);
-    }
-
-    [Fact]
-    public void UseNamespace_throws_for_unsupported_value()
-    {
-        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-        var typings = new ScriptTypings(service);
-
-        var exception = Assert.Throws<ArgumentException>(() => typings.UseNamespace(JsNumber.Create(123)));
-
-        Assert.Contains("Expected a namespace reference or string", exception.Message);
-    }
-
-    [Fact]
-    public void UseType_throws_for_unknown_type_name()
-    {
-        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-        var typings = new ScriptTypings(service);
-
-        var exception = Assert.Throws<InvalidOperationException>(() => typings.UseType(new JsString("Missing.Type, Missing.Assembly")));
-
-        Assert.Contains("Type not found", exception.Message);
-    }
-
-    [Fact]
-    public void UseType_throws_for_unsupported_value()
-    {
-        using var service = TypeScriptServiceTestFactory.CreateInitializedService();
-        var typings = new ScriptTypings(service);
-
-        var exception = Assert.Throws<ArgumentException>(() => typings.UseType(JsNumber.Create(123)));
-
-        Assert.Contains("Expected a CLR type reference", exception.Message);
+        Assert.Contains("Expected a namespace name string", exception.Message);
     }
 }

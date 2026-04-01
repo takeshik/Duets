@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
@@ -11,20 +12,25 @@ namespace Duets;
 /// <summary>Provides script-accessible built-in functions for managing TypeScript type declarations.</summary>
 public sealed class ScriptTypings
 {
-    public ScriptTypings(TypeScriptService ts, Func<JsValue, JsValue>? importNamespace = null)
+    public ScriptTypings(
+        TypeScriptService ts,
+        Func<JsValue, JsValue>? importNamespace = null,
+        Action<string, Type>? exposeGlobal = null)
     {
         this._ts = ts;
         this._importNamespace = importNamespace;
+        this._exposeGlobal = exposeGlobal;
     }
 
     private readonly TypeScriptService _ts;
     private readonly Func<JsValue, JsValue>? _importNamespace;
+    private readonly Action<string, Type>? _exposeGlobal;
 
     /// <summary>
     /// Imports a .NET namespace into the script environment and registers its types as TypeScript declaration targets.
     /// Accepts either a namespace name string or an existing namespace reference (e.g. <c>System.IO</c>).
     /// When passed a string, delegates to the Jint-provided <c>importNamespace</c> to obtain the reference,
-    /// then calls <see cref="UseNamespace"/> to register type declarations.
+    /// then registers the namespace's types as TypeScript declarations.
     /// </summary>
     /// <param name="nsRef">
     /// A namespace name string (e.g. <c>"System.IO"</c>), or a namespace reference
@@ -33,9 +39,9 @@ public sealed class ScriptTypings
     /// <returns>The namespace reference returned by <c>importNamespace</c>, or the original value if already a reference.</returns>
     public JsValue ImportNamespace(JsValue nsRef)
     {
-        if (nsRef is NamespaceReference)
+        if (nsRef is NamespaceReference nr)
         {
-            this.UseNamespace(nsRef);
+            this.RegisterNamespaceTypes(GetNamespaceNameFromRef(nr));
             return nsRef;
         }
 
@@ -49,7 +55,7 @@ public sealed class ScriptTypings
             }
 
             var result = this._importNamespace(nsRef);
-            this.UseNamespace(result);
+            this.RegisterNamespaceTypes(nsRef.AsString());
             return result;
         }
 
@@ -59,9 +65,73 @@ public sealed class ScriptTypings
         );
     }
 
+    /// <summary>
+    /// Equivalent to C#'s <c>using System.IO;</c> — imports a .NET namespace, registers its types as TypeScript
+    /// declaration targets, and exposes each type as a global variable so they can be referenced without the
+    /// namespace prefix (e.g. <c>new FileInfo('path')</c> instead of <c>new System.IO.FileInfo('path')</c>).
+    /// Accepts either a namespace name string or an existing namespace reference.
+    /// </summary>
+    /// <param name="nsRef">
+    /// A namespace name string (e.g. <c>"System.IO"</c>), or a namespace reference
+    /// (e.g. <c>System.IO</c> — requires <c>AllowClr</c> on the engine).
+    /// </param>
+    public void UsingNamespace(JsValue nsRef)
+    {
+        string ns;
+
+        if (nsRef is NamespaceReference nr)
+        {
+            ns = GetNamespaceNameFromRef(nr);
+        }
+        else if (nsRef.IsString())
+        {
+            if (this._importNamespace is null)
+            {
+                throw new InvalidOperationException(
+                    "typings.usingNamespace with a string argument requires AllowClr to be configured on the engine."
+                );
+            }
+
+            this._importNamespace(nsRef);
+            ns = nsRef.AsString();
+        }
+        else
+        {
+            throw new ArgumentException(
+                "Expected a namespace name string (e.g. typings.usingNamespace('System.IO')) " +
+                "or a namespace reference (e.g. typings.usingNamespace(System.IO))."
+            );
+        }
+
+        var types = AppDomain.CurrentDomain
+            .GetAssemblies()
+            .SelectMany(asm => TryGetExportedTypes(asm).Where(t => t.Namespace == ns))
+            .ToList();
+
+        foreach (var type in types)
+        {
+            this._ts.RegisterType(type);
+        }
+
+        if (this._exposeGlobal != null)
+        {
+            var sb = new StringBuilder();
+            foreach (var type in types)
+            {
+                this._exposeGlobal(type.Name, type);
+                sb.AppendLine($"declare var {type.Name}: typeof {ns}.{type.Name};");
+            }
+
+            if (sb.Length > 0)
+            {
+                this._ts.RegisterDeclaration(sb.ToString());
+            }
+        }
+    }
+
     /// <summary>Registers a single .NET type as a TypeScript declaration target.</summary>
     /// <param name="typeRef">An assembly-qualified type name string, or a CLR type reference (e.g. <c>System.IO.File</c>).</param>
-    public void UseType(JsValue typeRef)
+    public void ImportType(JsValue typeRef)
     {
         var type = typeRef switch
         {
@@ -69,7 +139,7 @@ public sealed class ScriptTypings
             _ when typeRef.IsString() => Type.GetType(typeRef.AsString())
                 ?? throw new InvalidOperationException($"Type not found: {typeRef.AsString()}"),
             _ => throw new ArgumentException(
-                "Expected a CLR type reference (e.g., typings.useType(System.IO.File)) or an assembly-qualified name string."
+                "Expected a CLR type reference (e.g., typings.importType(System.IO.File)) or an assembly-qualified name string."
             ),
         };
         this._ts.RegisterType(type);
@@ -105,7 +175,7 @@ public sealed class ScriptTypings
     /// Loads an assembly and registers all public types as TypeScript declaration targets.
     /// </summary>
     /// <param name="assemblyRef">An assembly name string or a wrapped <see cref="Assembly"/> object.</param>
-    public void UseAssembly(JsValue assemblyRef)
+    public void ImportAssembly(JsValue assemblyRef)
     {
         var asm = ResolveAssembly(assemblyRef);
         foreach (var type in TryGetExportedTypes(asm))
@@ -117,27 +187,13 @@ public sealed class ScriptTypings
     /// <summary>
     /// Registers all public types from the assembly containing the given type as TypeScript declaration targets.
     /// </summary>
-    public void UseAssemblyOf(JsValue typeRef)
+    public void ImportAssemblyOf(JsValue typeRef)
     {
-        this.UseAssembly(new JsString(ResolveTypeRef(typeRef).Assembly.FullName!));
+        this.ImportAssembly(new JsString(ResolveTypeRef(typeRef).Assembly.FullName!));
     }
 
-    /// <summary>
-    /// Registers all public types in the given namespace as TypeScript declaration targets.
-    /// Accepts either a Jint namespace reference (e.g., <c>typings.useNamespace(System.Net.Http)</c>)
-    /// or a plain string (e.g., <c>typings.useNamespace("System.Net.Http")</c>).
-    /// The namespace reference form requires the assembly to be accessible via <c>AllowClr</c>.
-    /// </summary>
-    public void UseNamespace(JsValue nsRef)
+    private void RegisterNamespaceTypes(string ns)
     {
-        var ns = nsRef switch
-        {
-            NamespaceReference nr => GetNamespaceNameFromRef(nr),
-            _ when nsRef.IsString() => nsRef.AsString(),
-            _ => throw new ArgumentException(
-                "Expected a namespace reference or string (e.g., typings.useNamespace(System.Net.Http) or typings.useNamespace(\"System.Net.Http\"))"
-            ),
-        };
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             foreach (var type in TryGetExportedTypes(asm).Where(t => t.Namespace == ns))
@@ -177,7 +233,7 @@ public sealed class ScriptTypings
         {
             throw new InvalidOperationException(
                 "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. " +
-                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.useNamespace(\"System.Net.Http\").",
+                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
                 ex
             );
         }
@@ -197,7 +253,7 @@ public sealed class ScriptTypings
         {
             throw new InvalidOperationException(
                 "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. " +
-                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.useNamespace(\"System.Net.Http\").",
+                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
                 ex
             );
         }
