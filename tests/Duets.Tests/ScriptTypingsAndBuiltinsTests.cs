@@ -376,6 +376,26 @@ public sealed class ScriptTypingsAndBuiltinsTests
     }
 
     [Fact]
+    public void UsingNamespace_does_not_expose_nested_types_as_globals()
+    {
+        using var harness = CreateHarness();
+
+        // System.Environment.SpecialFolder is a nested type with Namespace == "System" and IsNested == true
+        harness.Engine.Execute("typings.usingNamespace('System')");
+
+        // Nested types must not be scattered as bare globals — typeof returns "undefined" for undeclared identifiers
+        Assert.Equal("undefined", harness.Engine.Evaluate("typeof SpecialFolder").ToString());
+
+        // Non-nested types in System are exposed
+        Assert.NotEqual("undefined", harness.Engine.Evaluate("typeof Exception").ToString());
+
+        // declare var must not be registered for nested types
+        var declarations = harness.GetNonBuiltinDeclarations().Select(x => x.Content).ToList();
+        Assert.DoesNotContain(declarations, x => x.Contains("declare var SpecialFolder:"));
+        Assert.Contains(declarations, x => x.Contains("declare var Exception:"));
+    }
+
+    [Fact]
     public void UsingNamespace_throws_for_unsupported_value()
     {
         using var service = TypeScriptServiceTestFactory.CreateInitializedService();
