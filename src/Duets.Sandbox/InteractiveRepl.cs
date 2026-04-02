@@ -264,9 +264,9 @@ internal sealed class InteractiveRepl(SandboxSession session)
 
                 try
                 {
-                    Console.Error.Write($"  Switching to {tokens[2]} transpiler...");
+                    await Console.Error.WriteAsync($"  Switching to {tokens[2]} transpiler...");
                     await session.SetTranspilerAsync(tokens[2]);
-                    Console.Error.WriteLine($" done. {session.TranspilerDescription}");
+                    await Console.Error.WriteLineAsync($" done. {session.TranspilerDescription}");
                 }
                 catch (Exception ex)
                 {
@@ -277,9 +277,9 @@ internal sealed class InteractiveRepl(SandboxSession session)
             }
 
             case "reset":
-                Console.Error.Write("  Resetting engines...");
+                await Console.Error.WriteAsync("  Resetting engines...");
                 await session.ResetAsync();
-                Console.Error.WriteLine($" done. {session.TranspilerDescription}");
+                await Console.Error.WriteLineAsync($" done. {session.TranspilerDescription}");
                 break;
 
             default:

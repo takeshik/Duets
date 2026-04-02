@@ -17,7 +17,7 @@ public interface IAssetSource
 /// </summary>
 public static class AssetSources
 {
-    private static readonly HttpClient DefaultHttpClient = new();
+    private static readonly HttpClient _defaultHttpClient = new();
 
     /// <summary>
     /// Creates an asset source that fetches content from the given HTTP URL.
@@ -25,7 +25,7 @@ public static class AssetSources
     /// </summary>
     public static IAssetSource Http(string url, HttpClient? httpClient = null)
     {
-        return new HttpAssetSource(url, httpClient ?? DefaultHttpClient);
+        return new HttpAssetSource(url, httpClient ?? _defaultHttpClient);
     }
 
     /// <summary>

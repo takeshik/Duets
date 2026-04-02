@@ -5,7 +5,7 @@ namespace Duets.Sandbox;
 
 internal sealed class BatchRunner(SandboxSession session)
 {
-    private const string Help = """
+    private const string _help = """
         # Duets Sandbox — Batch Mode
 
         Batch mode reads JSON Lines (JSONL) from stdin and writes one JSON result per operation to stdout.
@@ -79,8 +79,7 @@ internal sealed class BatchRunner(SandboxSession session)
 
     public async Task RunAsync()
     {
-        string? line;
-        while ((line = Console.ReadLine()) != null)
+        while (Console.ReadLine() is { } line)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             var op = "?";
@@ -108,7 +107,7 @@ internal sealed class BatchRunner(SandboxSession session)
                     },
                     "set-transpiler" => await this.SetTranspilerAsync(cmd.GetProperty("transpiler").GetString()!),
                     "reset" => await this.ResetAsync(),
-                    "help" => new { ok = true, content = Help },
+                    "help" => new { ok = true, content = _help },
                     _ => new { ok = false, error = $"Unknown op: {op}" },
                 };
                 OutputJsonWithOp(op, result);

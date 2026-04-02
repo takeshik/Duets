@@ -54,7 +54,7 @@ public class BabelTranspiler : ITranspiler,
         this._engine = new Engine(opts => opts.Strict(false));
 
         // Babel standalone requires browser-like globals that Jint does not provide by default.
-        this._engine.Execute(
+        await this._engine.ExecuteAsync(
             """
             var process = { env: { NODE_ENV: 'production' } };
             var console = { log: function() {}, warn: function() {}, error: function() {}, info: function() {} };

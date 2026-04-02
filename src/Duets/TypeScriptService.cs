@@ -14,7 +14,7 @@ public record TypeScriptServiceOptions
     /// Asset source for the TypeScript compiler script (<c>typescript.js</c>).
     /// Defaults to fetching from unpkg with a 7-day disk cache in the system temp directory.
     /// </summary>
-    public IAssetSource TypeScriptJs { get; init; } =
+    public IAssetSource TypeScriptJs { get; } =
         AssetSources.Unpkg("typescript", "5.9.3", "lib/typescript.js")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), "typescript.js"));
 
@@ -24,7 +24,7 @@ public record TypeScriptServiceOptions
     /// <see cref="IAssetSource"/> for the corresponding <c>lib.es5.d.ts</c>.
     /// Defaults to fetching from unpkg with a version-keyed disk cache.
     /// </summary>
-    public Func<string, IAssetSource> LibEs5Source { get; init; } =
+    public Func<string, IAssetSource> LibEs5Source { get; } =
         tsVersion => AssetSources.Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), $"typescript-lib.es5-{tsVersion}.d.ts"));
 }
@@ -160,7 +160,7 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public void RegisterNamespaceSkeleton(string namespaceName)
     {
-        TypeDeclaration? notification = null;
+        TypeDeclaration? notification;
         lock (this._sync)
         {
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
@@ -178,10 +178,7 @@ public class TypeScriptService : ITranspiler,
             notification = decl;
         }
 
-        if (notification != null)
-        {
-            this.TypeDeclarationAdded?.Invoke(notification);
-        }
+        this.TypeDeclarationAdded?.Invoke(notification);
     }
 
     /// <summary>
@@ -190,7 +187,7 @@ public class TypeScriptService : ITranspiler,
     /// </summary>
     public void RegisterDeclaration(string content)
     {
-        TypeDeclaration? notification = null;
+        TypeDeclaration? notification;
         lock (this._sync)
         {
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
@@ -204,10 +201,7 @@ public class TypeScriptService : ITranspiler,
             notification = decl;
         }
 
-        if (notification != null)
-        {
-            this.TypeDeclarationAdded?.Invoke(notification);
-        }
+        this.TypeDeclarationAdded?.Invoke(notification);
     }
 
     /// <summary>

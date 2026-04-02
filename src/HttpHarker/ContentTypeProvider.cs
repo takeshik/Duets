@@ -19,8 +19,9 @@ public sealed class ContentTypeProvider
 
     private readonly Dictionary<string, string> _mappings;
 
-    public Func<HttpListenerRequest, string?> KeySelector { get; set; }
-    public Func<HttpListenerRequest, string> Fallback { get; set; }
+    public Func<HttpListenerRequest, string?> KeySelector { get; }
+
+    public Func<HttpListenerRequest, string> Fallback { get; }
 
     public static ContentTypeProvider CreateDefault()
     {

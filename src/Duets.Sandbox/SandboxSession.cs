@@ -46,16 +46,16 @@ internal sealed class SandboxSession : IAsyncDisposable
         switch (this.ActiveTranspiler)
         {
             case TranspilerKind.TypeScript:
-                Console.Error.Write("Initializing TypeScript engine...");
+                await Console.Error.WriteAsync("Initializing TypeScript engine...");
                 await this._ts.ResetAsync();
                 await this._ts.InjectStdLibAsync();
-                Console.Error.WriteLine($" TypeScript {this._ts.Version}");
+                await Console.Error.WriteLineAsync($" TypeScript {this._ts.Version}");
                 this._scriptEngine.RegisterTypeBuiltins(this._ts);
                 break;
             case TranspilerKind.Babel:
-                Console.Error.Write("Initializing Babel transpiler...");
+                await Console.Error.WriteAsync("Initializing Babel transpiler...");
                 await this._babel!.InitializeAsync();
-                Console.Error.WriteLine($" Babel {this._babel.Version}");
+                await Console.Error.WriteLineAsync($" Babel {this._babel.Version}");
                 break;
             default:
                 throw new UnreachableException();
@@ -172,7 +172,7 @@ internal sealed class SandboxSession : IAsyncDisposable
     public async Task StopWebServerAsync()
     {
         if (this._webServer == null) return;
-        this._webServerCts!.Cancel();
+        await this._webServerCts!.CancelAsync();
         try
         {
             await this._webServerTask!;
@@ -189,7 +189,7 @@ internal sealed class SandboxSession : IAsyncDisposable
         this._webServer = null;
         this._webServerCts = null;
         this._webServerTask = null;
-        Console.Error.WriteLine("Web server stopped.");
+        await Console.Error.WriteLineAsync("Web server stopped.");
     }
 
     public async Task ResetAsync()
@@ -222,7 +222,7 @@ internal sealed class SandboxSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        this._webServerCts?.Cancel();
+        if (this._webServerCts is { } cts) await cts.CancelAsync();
         if (this._webServerTask != null)
         {
             try

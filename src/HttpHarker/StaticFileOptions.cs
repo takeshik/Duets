@@ -9,7 +9,7 @@ namespace HttpHarker;
 /// </summary>
 public sealed class StaticFileOptions
 {
-    public ContentTypeProvider ContentTypeProvider { get; set; } = ContentTypeProvider.CreateDefault();
+    public ContentTypeProvider ContentTypeProvider { get; } = ContentTypeProvider.CreateDefault();
 
     /// <summary>Directory index served for "/" requests.</summary>
     public string DefaultDocument { get; set; } = "index.html";

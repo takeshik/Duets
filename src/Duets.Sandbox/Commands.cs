@@ -17,7 +17,7 @@ public class Commands
         await using var session = new SandboxSession();
         await session.EnsureInitializedAsync();
         session.StartWebServer(port);
-        Console.Error.WriteLine("Press Ctrl+C to stop.");
+        await Console.Error.WriteLineAsync("Press Ctrl+C to stop.");
         try
         {
             await Task.Delay(Timeout.Infinite, cancellationToken);

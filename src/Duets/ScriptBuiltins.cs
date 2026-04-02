@@ -19,12 +19,7 @@ public static class ScriptBuiltins
             ? ns => engine.Call(originalImportNs, ns)
             : null;
 
-        Action<string, Type> exposeGlobal = (name, type) =>
-        {
-            engine.SetTypeReferenceValue(name, type);
-        };
-
-        var typings = new ScriptTypings(ts, importNsFn, exposeGlobal);
+        var typings = new ScriptTypings(ts, importNsFn, engine.SetTypeReferenceValue);
         engine.SetValue("typings", typings);
 
         engine.SetValue(

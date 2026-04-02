@@ -33,10 +33,10 @@ public class ReplService : IDisposable
     {
         this._svc = svc;
         this._scriptEngine = scriptEngine;
-        this._monacoLoaderSource = monacoLoader
+        var monacoLoaderSource = monacoLoader
             ?? AssetSources.Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "monaco-loader.js"));
-        this._monacoLoader = new Lazy<Task<string>>(() => this._monacoLoaderSource.GetAsync());
+        this._monacoLoader = new Lazy<Task<string>>(() => monacoLoaderSource.GetAsync());
         svc.TypeDeclarationAdded += this.OnTypeDeclarationAdded;
         server
             .UseSimpleRouting(
@@ -51,7 +51,6 @@ public class ReplService : IDisposable
 
     private readonly TypeScriptService _svc;
     private readonly ScriptEngine _scriptEngine;
-    private readonly IAssetSource _monacoLoaderSource;
     private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeScriptService.TypeDeclaration?>> _sseWriters = new();
     private readonly Lazy<Task<string>> _monacoLoader;
 
