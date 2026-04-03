@@ -59,20 +59,10 @@ When a session involves a design decision (new component, technology choice, API
 in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
 `docs/architecture.md` to reflect the new state.
 
-## End-of-Session Checklist
+## Committing
 
-Before committing, verify each item that applies to the changes made in this session. This checklist is mandatory — do
-not skip items without explicit justification.
-
-| Condition | Required action |
-|-----------|-----------------|
-| Any source change | `dotnet test` passes with no failures |
-| New public API or behavior change | Test added or updated in `tests/Duets.Tests/` |
-| New feature visible to script authors | `samples/` updated or new sample added |
-| New user-facing feature or API added, or existing one changed | Review `README.md` and update if necessary; do not add content that does not pull its weight |
-| Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
-| ADR added or updated | Row added/updated in `docs/decisions/index.md` |
-| Architecture change (new layer, dependency, or data flow) | `docs/architecture.md` updated |
+Use the `/commit` skill to commit changes. It handles commit granularity, code style, pre-commit checks, and message
+authoring.
 
 ## Language
 
