@@ -18,6 +18,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     permissions:
       contents: read
       packages: write
