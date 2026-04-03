@@ -75,8 +75,17 @@ public class HttpServer(string prefix) : IDisposable
                 {
                     break;
                 }
+                catch (InvalidOperationException) when (!this._listener.IsListening)
+                {
+                    break;
+                }
                 catch
                 {
+                    if (!this._listener.IsListening)
+                    {
+                        break;
+                    }
+
                     // ignored
                 }
             }

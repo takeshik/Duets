@@ -34,7 +34,11 @@ internal static class ServerFixture
             cts.Cancel();
             try
             {
-                await serverTask;
+                await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException("HttpServer did not stop within 5 seconds after cancellation.", ex);
             }
             catch
             {
