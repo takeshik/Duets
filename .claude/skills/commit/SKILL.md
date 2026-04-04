@@ -50,6 +50,8 @@ Rules:
 - **English only** — commit messages are repository content.
 - **Title-only commits are prohibited** unless the change is trivially obvious (e.g. a single typo fix or a single variable rename with no semantic effect). All other commits must include a body.
 - The body explains **why**, not what. Do not restate what the diff already shows.
+  - Bad: "Point .codex/skills to .claude/skills so both resolve to the same definitions."
+  - Good: "Avoids duplicating skill files; Codex and Claude Code now share one source of truth."
 - Wrap body lines at 72 characters.
 - Always append a `Co-Authored-By:` trailer with the agent's identity.
 - Never stage sensitive files (`.env`, credentials, etc.).
@@ -67,7 +69,17 @@ Co-Authored-By: <agent identity>
 ## Step 5 — Execute
 
 1. Stage files for this commit unit **explicitly by name** — do not use `git add -A` or `git add .`.
-2. Create the commit.
+2. Create the commit using a heredoc to pass the message — **never use `\n` escape sequences inside a `-m` string**, as they will appear literally in the commit log:
+   ```bash
+   git commit -m "$(cat <<'EOF'
+   <summary>
+
+   <body>
+
+   Co-Authored-By: <agent identity>
+   EOF
+   )"
+   ```
 3. If the commit hook fails, **stop and ask the user**. Never bypass hooks (`--no-verify`).
 4. Repeat Steps 2–5 for any remaining commit units identified in Step 1.
 5. Report completion.
