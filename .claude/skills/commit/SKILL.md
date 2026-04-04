@@ -49,9 +49,9 @@ Rules:
 
 - **English only** — commit messages are repository content.
 - **Title-only commits are prohibited** unless the change is trivially obvious (e.g. a single typo fix or a single variable rename with no semantic effect). All other commits must include a body.
-- The body explains **why**, not what. Do not restate what the diff already shows.
-  - Bad: "Point .codex/skills to .claude/skills so both resolve to the same definitions."
-  - Good: "Avoids duplicating skill files; Codex and Claude Code now share one source of truth."
+- The body explains **why**, not what. Before finalising, ask: "Could a reader infer this sentence from the diff alone?" If yes, cut it and write the motivation instead.
+  - Bad: "Point .codex/skills to .claude/skills so both resolve to the same definitions." ← restates the diff
+  - Good: "Avoids duplicating skill files; Codex and Claude Code now share one source of truth." ← states the reason
 - Wrap body lines at 72 characters.
 - Always append a `Co-Authored-By:` trailer with the agent's identity.
 - Never stage sensitive files (`.env`, credentials, etc.).
