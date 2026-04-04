@@ -63,20 +63,22 @@ public class ScriptEngine : IDisposable
     /// <summary>Transpiles the TypeScript source to JavaScript and executes it.</summary>
     public void Execute(string tsCode)
     {
+        var prepared = Engine.PrepareScript(this._transpiler.Transpile(tsCode));
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this._jintEngine.Execute(this._transpiler.Transpile(tsCode));
+            this._jintEngine.Execute(prepared);
         }
     }
 
     /// <summary>Transpiles the TypeScript source to JavaScript and evaluates it.</summary>
     public JsValue Evaluate(string tsCode)
     {
+        var prepared = Engine.PrepareScript(this._transpiler.Transpile(tsCode));
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            return this._jintEngine.Evaluate(this._transpiler.Transpile(tsCode));
+            return this._jintEngine.Evaluate(prepared);
         }
     }
 
