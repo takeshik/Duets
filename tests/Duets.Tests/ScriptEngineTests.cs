@@ -1,3 +1,5 @@
+using Jint.Native;
+
 namespace Duets.Tests;
 
 public sealed class ScriptEngineTests
@@ -76,6 +78,89 @@ public sealed class ScriptEngineTests
     }
 
     [Fact]
+    public void Dollar_exception_captures_exception_from_evaluate()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
+        var ex = engine.Evaluate("$exception");
+
+        Assert.NotEqual(JsValue.Undefined, ex);
+        Assert.NotEqual(JsValue.Null, ex);
+    }
+
+    [Fact]
+    public void Dollar_exception_captures_exception_from_execute()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        Assert.ThrowsAny<Exception>(() => engine.Execute("null.prop"));
+        var ex = engine.Evaluate("$exception");
+
+        Assert.NotEqual(JsValue.Undefined, ex);
+        Assert.NotEqual(JsValue.Null, ex);
+    }
+
+    [Fact]
+    public void Dollar_exception_is_cleared_after_successful_evaluate()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
+        engine.Evaluate("1 + 1");
+        var ex = engine.Evaluate("$exception");
+
+        Assert.Equal(JsValue.Undefined, ex);
+    }
+
+    [Fact]
+    public void Dollar_exception_is_cleared_after_successful_execute()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
+        engine.Execute("var x = 1;");
+        var ex = engine.Evaluate("$exception");
+
+        Assert.Equal(JsValue.Undefined, ex);
+    }
+
+    [Fact]
+    public void Dollar_underscore_is_cleared_after_execute()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        engine.Evaluate("42");
+        engine.Execute("var x = 1;");
+        var result = engine.Evaluate("$_");
+
+        Assert.Equal(JsValue.Undefined, result);
+    }
+
+    [Fact]
+    public void Dollar_underscore_is_cleared_when_evaluate_throws()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        engine.Evaluate("42");
+        Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
+        var result = engine.Evaluate("$_");
+
+        Assert.Equal(JsValue.Undefined, result);
+    }
+
+    [Fact]
+    public void Dollar_underscore_tracks_last_evaluated_value()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        engine.Evaluate("42");
+        var result = engine.Evaluate("$_");
+
+        Assert.Equal("42", result.ToString());
+    }
+
+    [Fact]
     public void Dump_emits_console_log_entry_and_returns_value()
     {
         using var engine = new ScriptEngine(null, new IdentityTranspiler());
@@ -151,6 +236,44 @@ public sealed class ScriptEngineTests
         var result = engine.Evaluate("counter");
 
         Assert.Equal("15", result.ToString());
+    }
+
+    [Fact]
+    public void GetGlobalVariables_excludes_builtins_and_engine_special_variables()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        engine.Evaluate("42"); // sets $_
+        var globals = engine.GetGlobalVariables();
+
+        var keys = globals.Keys.Select(k => k.ToString()).ToHashSet();
+        Assert.DoesNotContain("$_", keys);
+        Assert.DoesNotContain("$exception", keys);
+        Assert.DoesNotContain("Math", keys);
+        Assert.DoesNotContain("undefined", keys);
+    }
+
+    [Fact]
+    public void GetGlobalVariables_is_empty_when_no_user_variables_defined()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        var globals = engine.GetGlobalVariables();
+
+        Assert.Empty(globals);
+    }
+
+    [Fact]
+    public void GetGlobalVariables_returns_user_defined_variables()
+    {
+        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+
+        engine.Execute("var x = 1; var y = 2;");
+        var globals = engine.GetGlobalVariables();
+
+        var keys = globals.Keys.Select(k => k.ToString()).ToHashSet();
+        Assert.Contains("x", keys);
+        Assert.Contains("y", keys);
     }
 
     [Fact]

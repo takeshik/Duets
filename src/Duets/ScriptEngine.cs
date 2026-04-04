@@ -13,10 +13,19 @@ public class ScriptEngine : IDisposable
         this._jintEngine = new Engine(configure);
         this._transpiler = transpiler;
         this.InitConsole();
+
+        this._predefinedGlobalKeys = this._jintEngine
+            .Global
+            .GetOwnProperties()
+            .Where(x => x.Key.IsString())
+            .Select(x => x.Key.AsString())
+            .Concat(["$_", "$exception"]) // defined by ScriptEngine itself
+            .ToHashSet();
     }
 
     private readonly Engine _jintEngine;
     private readonly ITranspiler _transpiler;
+    private readonly IReadOnlyCollection<string> _predefinedGlobalKeys;
     private readonly object _sync = new();
     private bool _disposed;
 
@@ -38,6 +47,18 @@ public class ScriptEngine : IDisposable
         {
             this.ThrowIfDisposed();
             this._jintEngine.SetValue(name, value);
+        }
+    }
+
+    public IReadOnlyDictionary<JsValue, JsValue> GetGlobalVariables()
+    {
+        lock (this._sync)
+        {
+            return this._jintEngine
+                .Global
+                .GetOwnProperties()
+                .Where(x => !this._predefinedGlobalKeys.Contains(x.Key.ToString()))
+                .ToDictionary(x => x.Key, x => x.Value.Value);
         }
     }
 
@@ -67,7 +88,18 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this._jintEngine.Execute(prepared);
+            try
+            {
+                this._jintEngine.Execute(prepared);
+                this._jintEngine.SetValue("$_", JsValue.Undefined);
+                this._jintEngine.SetValue("$exception", JsValue.Undefined);
+            }
+            catch (Exception ex)
+            {
+                this._jintEngine.SetValue("$_", JsValue.Undefined);
+                this._jintEngine.SetValue("$exception", ex);
+                throw;
+            }
         }
     }
 
@@ -78,7 +110,19 @@ public class ScriptEngine : IDisposable
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            return this._jintEngine.Evaluate(prepared);
+            try
+            {
+                var ret = this._jintEngine.Evaluate(prepared);
+                this._jintEngine.SetValue("$_", ret);
+                this._jintEngine.SetValue("$exception", JsValue.Undefined);
+                return ret;
+            }
+            catch (Exception ex)
+            {
+                this._jintEngine.SetValue("$_", JsValue.Undefined);
+                this._jintEngine.SetValue("$exception", ex);
+                throw;
+            }
         }
     }
 
