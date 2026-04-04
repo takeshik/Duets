@@ -15,7 +15,7 @@ public record TypeScriptServiceOptions
     /// Defaults to fetching from unpkg with a 7-day disk cache in the system temp directory.
     /// </summary>
     public IAssetSource TypeScriptJs { get; } =
-        AssetSources.Unpkg("typescript", "5.9.3", "lib/typescript.js")
+        AssetSources.Unpkg("typescript", "6.0.2", "lib/typescript.js")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), "typescript.js"));
 
     /// <summary>
