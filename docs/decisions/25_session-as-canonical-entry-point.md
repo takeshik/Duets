@@ -83,7 +83,7 @@ instance is provided.
   declaration subscription; attaching declarations to `TypeScriptService` makes the
   advanced path inconsistent with the default.
 
-### D: Session object as top-level context (chosen)
+### D: Session object as top-level context
 
 Introduce a session type that owns `TypeDeclarations`, the active `ITranspiler`, and
 `ScriptEngine` as a unit, created exclusively via `CreateAsync`.

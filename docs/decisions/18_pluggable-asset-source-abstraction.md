@@ -37,7 +37,7 @@ are untestable in isolation and violate the library's own dependency-injection i
 - Con: Unnamed functions convey no intent; composing caching on top of a raw delegate is
   awkward; no discoverable factory methods to guide consumers toward safe defaults
 
-### B: `IAssetSource` interface + `AssetSources` factory (chosen)
+### B: `IAssetSource` interface + `AssetSources` factory
 
 - Pro: Named abstraction; internal implementations hidden behind a factory; composable
   via `WithDiskCache` extension; ad-hoc `From(delegate)` escape hatch preserves
