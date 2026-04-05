@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using HttpHarker;
 using Timer = System.Timers.Timer;
@@ -111,7 +111,7 @@ public class ReplService : IDisposable
             {
                 var sseData = decl is null
                     ? ": keepalive\n\n"
-                    : $"data: {JsonSerializer.Serialize(new { fileName = decl.FileName, content = decl.Content })}\n\n";
+                    : $"data: {new JsonObject { ["fileName"] = decl.FileName, ["content"] = decl.Content }.ToJsonString()}\n\n";
                 await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
                 await res.OutputStream.FlushAsync();
             }
@@ -160,20 +160,20 @@ public class ReplService : IDisposable
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
-            JsonSerializer.Serialize(
-                new
-                {
-                    result = resultStr,
-                    ok,
-                    logs = logs.Select(l => new
+            new JsonObject
+            {
+                ["result"] = resultStr,
+                ["ok"] = ok,
+                ["logs"] = new JsonArray(
+                    logs.Select(l => (JsonNode) new JsonObject
                             {
-                                level = l.Level.ToString().ToLowerInvariant(),
-                                text = l.Text,
+                                ["level"] = l.Level.ToString().ToLowerInvariant(),
+                                ["text"] = l.Text,
                             }
                         )
-                        .ToArray(),
-                }
-            )
+                        .ToArray()
+                ),
+            }.ToJsonString()
         );
     }
 }
