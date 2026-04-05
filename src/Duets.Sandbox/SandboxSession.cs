@@ -18,27 +18,25 @@ internal sealed class SandboxSession : IAsyncDisposable
     }
 
     internal SandboxSession(
-        Func<TypeDeclarations, TypeScriptService>? typeScriptServiceFactory,
-        Func<BabelTranspiler>? babelFactory,
+        Func<TypeDeclarations, Task<TypeScriptService>>? typeScriptServiceFactory,
+        Func<Task<BabelTranspiler>>? babelFactory,
         Func<ITranspiler, ScriptEngine>? scriptEngineFactory)
     {
-        this._typeScriptServiceFactory = typeScriptServiceFactory ?? (declarations => new TypeScriptService(declarations));
-        this._babelFactory = babelFactory ?? (() => new BabelTranspiler());
+        this._typeScriptServiceFactory = typeScriptServiceFactory
+            ?? (declarations => TypeScriptService.CreateAsync(declarations, injectStdLib: true));
+        this._babelFactory = babelFactory ?? (() => BabelTranspiler.CreateAsync());
         this._scriptEngineFactory = scriptEngineFactory ?? CreateScriptEngine;
         this._typeDeclarations = new TypeDeclarations();
-        this._ts = this._typeScriptServiceFactory(this._typeDeclarations);
-        this._activeTranspiler = this._ts;
-        this._scriptEngine = this._scriptEngineFactory(this._ts);
     }
 
-    private readonly Func<TypeDeclarations, TypeScriptService> _typeScriptServiceFactory;
-    private readonly Func<BabelTranspiler> _babelFactory;
+    private readonly Func<TypeDeclarations, Task<TypeScriptService>> _typeScriptServiceFactory;
+    private readonly Func<Task<BabelTranspiler>> _babelFactory;
     private readonly Func<ITranspiler, ScriptEngine> _scriptEngineFactory;
     private TypeDeclarations _typeDeclarations;
-    private TypeScriptService _ts;
+    private TypeScriptService? _ts;
     private BabelTranspiler? _babel;
-    private ITranspiler _activeTranspiler;
-    private ScriptEngine _scriptEngine;
+    private ITranspiler? _activeTranspiler;
+    private ScriptEngine? _scriptEngine;
 
     private HttpServer? _webServer;
     private ReplService? _replService;
@@ -49,7 +47,7 @@ internal sealed class SandboxSession : IAsyncDisposable
 
     public TranspilerKind ActiveTranspiler { get; private set; } = TranspilerKind.TypeScript;
 
-    public string TranspilerDescription => this._activeTranspiler.Description;
+    public string TranspilerDescription => this._activeTranspiler?.Description ?? this.ActiveTranspiler.ToString();
 
     public bool IsServerRunning => this._webServer != null && this._webServerTask is { IsCompleted: false };
 
@@ -63,13 +61,16 @@ internal sealed class SandboxSession : IAsyncDisposable
         {
             case TranspilerKind.TypeScript:
                 await Console.Error.WriteAsync("Initializing TypeScript engine...");
-                await this._ts.ResetAsync();
-                await this._ts.InjectStdLibAsync();
+                this._ts = await this._typeScriptServiceFactory(this._typeDeclarations);
+                this._activeTranspiler = this._ts;
+                this._scriptEngine = this._scriptEngineFactory(this._ts);
                 await Console.Error.WriteLineAsync($" TypeScript {this._ts.Version}");
                 break;
             case TranspilerKind.Babel:
                 await Console.Error.WriteAsync("Initializing Babel transpiler...");
-                await this._babel!.InitializeAsync();
+                this._babel = await this._babelFactory();
+                this._activeTranspiler = this._babel;
+                this._scriptEngine = this._scriptEngineFactory(this._babel);
                 await Console.Error.WriteLineAsync($" Babel {this._babel.Version}");
                 break;
             default:
@@ -95,29 +96,16 @@ internal sealed class SandboxSession : IAsyncDisposable
     {
         if (kind == this.ActiveTranspiler) return;
         if (this._webServer != null) await this.StopWebServerAsync();
-        this._scriptEngine.Dispose();
-        this._ts.Dispose();
+        this._scriptEngine?.Dispose();
+        this._ts?.Dispose();
         this._babel?.Dispose();
         this._babel = null;
         this._typeDeclarations = new TypeDeclarations();
-        this._ts = this._typeScriptServiceFactory(this._typeDeclarations);
+        this._ts = null;
+        this._activeTranspiler = null;
+        this._scriptEngine = null;
         this.ActiveTranspiler = kind;
         this._initialized = false;
-
-        switch (kind)
-        {
-            case TranspilerKind.TypeScript:
-                this._activeTranspiler = this._ts;
-                this._scriptEngine = this._scriptEngineFactory(this._ts);
-                break;
-            case TranspilerKind.Babel:
-                this._babel = this._babelFactory();
-                this._activeTranspiler = this._babel;
-                this._scriptEngine = this._scriptEngineFactory(this._babel);
-                break;
-            default:
-                throw new UnreachableException();
-        }
 
         await this.EnsureInitializedAsync();
     }
@@ -131,21 +119,24 @@ internal sealed class SandboxSession : IAsyncDisposable
             logs.Add(e);
         }
 
-        this._scriptEngine.ConsoleLogged += OnLog;
+        var scriptEngine = this._scriptEngine ?? throw new InvalidOperationException("Call EnsureInitializedAsync() first.");
+
+        scriptEngine.ConsoleLogged += OnLog;
         try
         {
-            return (this._scriptEngine.Evaluate(code).ToString(), logs);
+            return (scriptEngine.Evaluate(code).ToString(), logs);
         }
         finally
         {
-            this._scriptEngine.ConsoleLogged -= OnLog;
+            scriptEngine.ConsoleLogged -= OnLog;
         }
     }
 
     public IReadOnlyList<TypeScriptService.CompletionEntry> GetCompletions(string source, int position)
     {
+        this.RequireInitialized();
         this.RequireTranspiler(TranspilerKind.TypeScript, "Completions");
-        return this._ts.GetCompletions(source, position);
+        return this._ts!.GetCompletions(source, position);
     }
 
     public IReadOnlyCollection<TypeDeclaration> GetTypeDeclarations()
@@ -163,8 +154,10 @@ internal sealed class SandboxSession : IAsyncDisposable
 
     public void StartWebServer(int port = 17375)
     {
+        this.RequireInitialized();
         this.RequireTranspiler(TranspilerKind.TypeScript, "The web server");
         if (this.IsServerRunning) return;
+        var scriptEngine = this._scriptEngine ?? throw new InvalidOperationException("Call EnsureInitializedAsync() first.");
 
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
@@ -179,7 +172,7 @@ internal sealed class SandboxSession : IAsyncDisposable
 
         this._webServerCts = new CancellationTokenSource();
         this._webServer = new HttpServer($"http://127.0.0.1:{port}/");
-        this._replService = this._webServer.UseContentTypeDetection().UseRepl(this._typeDeclarations, this._scriptEngine);
+        this._replService = this._webServer.UseContentTypeDetection().UseRepl(this._typeDeclarations, scriptEngine);
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
         Console.Error.WriteLine($"Web REPL server started at http://127.0.0.1:{port}/");
     }
@@ -210,28 +203,15 @@ internal sealed class SandboxSession : IAsyncDisposable
     public async Task ResetAsync()
     {
         if (this._webServer != null) await this.StopWebServerAsync();
-        this._scriptEngine.Dispose();
-        this._ts.Dispose();
+        this._scriptEngine?.Dispose();
+        this._ts?.Dispose();
         this._babel?.Dispose();
 
         this._typeDeclarations = new TypeDeclarations();
-        this._ts = this._typeScriptServiceFactory(this._typeDeclarations);
-        switch (this.ActiveTranspiler)
-        {
-            case TranspilerKind.TypeScript:
-                this._babel = null;
-                this._activeTranspiler = this._ts;
-                this._scriptEngine = this._scriptEngineFactory(this._ts);
-                break;
-            case TranspilerKind.Babel:
-                this._babel = this._babelFactory();
-                this._activeTranspiler = this._babel;
-                this._scriptEngine = this._scriptEngineFactory(this._babel);
-                break;
-            default:
-                throw new UnreachableException();
-        }
-
+        this._ts = null;
+        this._babel = null;
+        this._activeTranspiler = null;
+        this._scriptEngine = null;
         this._initialized = false;
         await this.EnsureInitializedAsync();
     }
@@ -252,8 +232,8 @@ internal sealed class SandboxSession : IAsyncDisposable
 
         this._replService?.Dispose();
         this._webServer?.Dispose();
-        this._scriptEngine.Dispose();
-        this._ts.Dispose();
+        this._scriptEngine?.Dispose();
+        this._ts?.Dispose();
         this._babel?.Dispose();
     }
 
@@ -269,6 +249,14 @@ internal sealed class SandboxSession : IAsyncDisposable
             throw new InvalidOperationException(
                 $"{featureName} requires the {required} transpiler (active: {this.ActiveTranspiler})."
             );
+        }
+    }
+
+    private void RequireInitialized()
+    {
+        if (!this._initialized)
+        {
+            throw new InvalidOperationException("Call EnsureInitializedAsync() first.");
         }
     }
 }

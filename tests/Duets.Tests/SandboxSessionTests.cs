@@ -9,8 +9,8 @@ public sealed class SandboxSessionTests
     private static SandboxSession CreateSession()
     {
         return new SandboxSession(
-            FakeRuntimeAssets.CreateTypeScriptService,
-            FakeRuntimeAssets.CreateBabelTranspiler,
+            declarations => FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true),
+            FakeRuntimeAssets.CreateBabelTranspilerAsync,
             null
         );
     }

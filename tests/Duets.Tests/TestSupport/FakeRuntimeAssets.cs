@@ -85,21 +85,22 @@ internal static class FakeRuntimeAssets
         };
         """;
 
-    public static TypeScriptService CreateTypeScriptService(TypeDeclarations declarations)
+    public static Task<TypeScriptService> CreateTypeScriptServiceAsync(TypeDeclarations declarations)
     {
-        return new TypeScriptService(
+        return TypeScriptService.CreateAsync(
             declarations,
             new TypeScriptServiceOptions
             {
                 TypeScriptJs = AssetSources.From(_ => Task.FromResult(TypeScriptRuntime)),
                 LibEs5Source = _ => AssetSources.From(_ => Task.FromResult(LibEs5Declaration)),
-            }
+            },
+            false
         );
     }
 
-    public static BabelTranspiler CreateBabelTranspiler()
+    public static Task<BabelTranspiler> CreateBabelTranspilerAsync()
     {
-        return new BabelTranspiler(
+        return BabelTranspiler.CreateAsync(
             new BabelTranspilerOptions
             {
                 BabelJs = AssetSources.From(_ => Task.FromResult(BabelRuntime)),
@@ -111,14 +112,15 @@ internal static class FakeRuntimeAssets
         TypeDeclarations declarations,
         bool includeStdLib = false)
     {
-        var service = CreateTypeScriptService(declarations);
-        await service.ResetAsync();
-        if (includeStdLib)
-        {
-            await service.InjectStdLibAsync();
-        }
-
-        return service;
+        return await TypeScriptService.CreateAsync(
+            declarations,
+            new TypeScriptServiceOptions
+            {
+                TypeScriptJs = AssetSources.From(_ => Task.FromResult(TypeScriptRuntime)),
+                LibEs5Source = _ => AssetSources.From(_ => Task.FromResult(LibEs5Declaration)),
+            },
+            includeStdLib
+        );
     }
 
     public static IReadOnlyDictionary<string, string> GetLanguageServiceFiles(TypeScriptService service)

@@ -31,7 +31,7 @@ public record TypeScriptServiceOptions
 public class TypeScriptService : ITranspiler,
     IDisposable
 {
-    public TypeScriptService(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null)
+    private TypeScriptService(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null)
     {
         this._typeDeclarations = typeDeclarations;
         this._options = options ?? new TypeScriptServiceOptions();
@@ -49,6 +49,26 @@ public class TypeScriptService : ITranspiler,
 
     /// <inheritdoc/>
     public string Description => $"TypeScript {this.Version ?? "unknown"}";
+
+    public static async Task<TypeScriptService> CreateAsync(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null, bool injectStdLib = false)
+    {
+        var service = new TypeScriptService(typeDeclarations, options);
+        try
+        {
+            await service.ResetAsync();
+            if (injectStdLib)
+            {
+                await service.InjectStdLibAsync();
+            }
+
+            return service;
+        }
+        catch
+        {
+            service.Dispose();
+            throw;
+        }
+    }
 
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
@@ -153,15 +173,6 @@ public class TypeScriptService : ITranspiler,
                     )
                 )
                 .ToList();
-        }
-    }
-
-    internal void InitializeForTesting(Engine engine)
-    {
-        lock (this._sync)
-        {
-            this._engine = engine;
-            this.ReplayDeclarations();
         }
     }
 

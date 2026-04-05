@@ -24,7 +24,8 @@ public record BabelTranspilerOptions
 /// is no longer available.
 /// </summary>
 /// <remarks>
-/// Call <see cref="InitializeAsync"/> before using <see cref="Transpile"/>.
+/// Obtain an instance via <see cref="CreateAsync(BabelTranspilerOptions)"/>.
+/// Call <see cref="InitializeAsync"/> only to reinitialize an existing instance.
 /// Supports TypeScript features with runtime semantics (enum, namespace, constructor
 /// parameter properties) via <c>@babel/preset-typescript</c>.
 /// Unlike <see cref="TypeScriptService"/>, this implementation does not provide
@@ -33,7 +34,7 @@ public record BabelTranspilerOptions
 public class BabelTranspiler : ITranspiler,
     IDisposable
 {
-    public BabelTranspiler(BabelTranspilerOptions? options = null)
+    private BabelTranspiler(BabelTranspilerOptions? options = null)
     {
         this._options = options ?? new BabelTranspilerOptions();
     }
@@ -48,25 +49,53 @@ public class BabelTranspiler : ITranspiler,
     /// <inheritdoc/>
     public string Description => $"Babel {this.Version ?? ""}".TrimEnd();
 
+    public static async Task<BabelTranspiler> CreateAsync(BabelTranspilerOptions? options = null)
+    {
+        var transpiler = new BabelTranspiler(options);
+        try
+        {
+            await transpiler.InitializeAsync();
+            return transpiler;
+        }
+        catch
+        {
+            transpiler.Dispose();
+            throw;
+        }
+    }
+
     public async Task InitializeAsync(bool forceDownload = false)
     {
-        this._engine?.Dispose();
-        this._engine = new Engine(opts => opts.Strict(false));
+        var newEngine = new Engine(opts => opts.Strict(false));
 
         // Babel standalone requires browser-like globals that Jint does not provide by default.
-        await this._engine.ExecuteAsync(
-            """
-            var process = { env: { NODE_ENV: 'production' } };
-            var console = { log: function() {}, warn: function() {}, error: function() {}, info: function() {} };
-            """
-        );
+        try
+        {
+            await newEngine.ExecuteAsync(
+                """
+                var process = { env: { NODE_ENV: 'production' } };
+                var console = { log: function() {}, warn: function() {}, error: function() {}, info: function() {} };
+                """
+            );
 
-        await this._engine.ExecuteAsync(await this._options.BabelJs.GetAsync(forceDownload));
+            await newEngine.ExecuteAsync(await this._options.BabelJs.GetAsync(forceDownload));
 
-        this._babel = this._engine.GetValue("Babel");
-        this._babelTransform = this._babel.Get("transform");
-        var v = this._babel.Get("version");
-        this.Version = v.IsUndefined() ? null : v.AsString();
+            var babel = newEngine.GetValue("Babel");
+            var babelTransform = babel.Get("transform");
+            var v = babel.Get("version");
+
+            var previousEngine = this._engine;
+            this._engine = newEngine;
+            this._babel = babel;
+            this._babelTransform = babelTransform;
+            this.Version = v.IsUndefined() ? null : v.AsString();
+            previousEngine?.Dispose();
+        }
+        catch
+        {
+            newEngine.Dispose();
+            throw;
+        }
     }
 
     public void Dispose()

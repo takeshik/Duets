@@ -6,11 +6,11 @@ namespace Duets.Tests;
 /// </summary>
 public sealed class BabelTranspilerIntegrationTests : IAsyncLifetime
 {
-    private readonly BabelTranspiler _transpiler = new();
+    private BabelTranspiler _transpiler = null!;
 
     public async ValueTask InitializeAsync()
     {
-        await this._transpiler.InitializeAsync();
+        this._transpiler = await BabelTranspiler.CreateAsync();
     }
 
     public ValueTask DisposeAsync()

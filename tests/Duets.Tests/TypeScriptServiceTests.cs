@@ -19,6 +19,17 @@ public sealed class TypeScriptServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_can_inject_the_standard_library_during_initialization()
+    {
+        var declarations = new TypeDeclarations();
+        using var service = await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true);
+
+        var files = FakeRuntimeAssets.GetLanguageServiceFiles(service);
+
+        Assert.Contains("lib.es5.d.ts", files.Keys);
+    }
+
+    [Fact]
     public async Task Declaration_changes_after_initialization_are_mirrored_into_the_language_service()
     {
         var declarations = new TypeDeclarations();
@@ -56,17 +67,6 @@ public sealed class TypeScriptServiceTests
         var files = FakeRuntimeAssets.GetLanguageServiceFiles(service);
         Assert.Contains("lib.es5.d.ts", files.Keys);
         Assert.Contains("interface Math", files["lib.es5.d.ts"]);
-    }
-
-    [Fact]
-    public async Task InjectStdLibAsync_requires_the_runtime_to_be_initialized_first()
-    {
-        var declarations = new TypeDeclarations();
-        using var service = FakeRuntimeAssets.CreateTypeScriptService(declarations);
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.InjectStdLibAsync());
-
-        Assert.Contains("ResetAsync", exception.Message);
     }
 
     [Fact]

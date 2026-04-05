@@ -4,11 +4,11 @@ namespace Duets.Tests;
 
 public sealed class BabelTranspilerTests : IAsyncLifetime
 {
-    private readonly BabelTranspiler _transpiler = FakeRuntimeAssets.CreateBabelTranspiler();
+    private BabelTranspiler _transpiler = null!;
 
     public async ValueTask InitializeAsync()
     {
-        await this._transpiler.InitializeAsync();
+        this._transpiler = await FakeRuntimeAssets.CreateBabelTranspilerAsync();
     }
 
     public ValueTask DisposeAsync()
@@ -35,16 +35,6 @@ public sealed class BabelTranspilerTests : IAsyncLifetime
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal(0, diagnostic.Start);
         Assert.Equal("Unexpected token", diagnostic.MessageText);
-    }
-
-    [Fact]
-    public void Transpile_requires_initialization()
-    {
-        using var transpiler = FakeRuntimeAssets.CreateBabelTranspiler();
-
-        var exception = Assert.Throws<InvalidOperationException>(() => transpiler.Transpile("const answer: number = 42;"));
-
-        Assert.Contains("InitializeAsync", exception.Message);
     }
 
     [Fact]
