@@ -10,6 +10,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Duets.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\shared\*.cs" Link="(shared)\%(Filename)%(Extension)" />
   </ItemGroup>
 

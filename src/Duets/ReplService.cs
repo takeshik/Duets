@@ -14,10 +14,10 @@ public static class ReplServiceExtensions
 {
     public static ReplService UseRepl(
         this HttpServer server,
-        TypeScriptService svc, ScriptEngine scriptEngine, string root = "/",
+        ITypeDeclarationProvider declarations, ScriptEngine scriptEngine, string root = "/",
         IAssetSource? monacoLoader = null)
     {
-        return new ReplService(svc, scriptEngine, server, root, monacoLoader);
+        return new ReplService(declarations, scriptEngine, server, root, monacoLoader);
     }
 }
 
@@ -28,16 +28,16 @@ public static class ReplServiceExtensions
 public class ReplService : IDisposable
 {
     public ReplService(
-        TypeScriptService svc, ScriptEngine scriptEngine, HttpServer server, string root = "/",
+        ITypeDeclarationProvider declarations, ScriptEngine scriptEngine, HttpServer server, string root = "/",
         IAssetSource? monacoLoader = null)
     {
-        this._svc = svc;
+        this._declarations = declarations;
         this._scriptEngine = scriptEngine;
         var monacoLoaderSource = monacoLoader
             ?? AssetSources.Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "monaco-loader.js"));
         this._monacoLoader = new Lazy<Task<string>>(() => monacoLoaderSource.GetAsync());
-        svc.TypeDeclarationAdded += this.OnTypeDeclarationAdded;
+        declarations.DeclarationChanged += this.OnDeclarationChanged;
         server
             .UseSimpleRouting(
                 root,
@@ -49,21 +49,21 @@ public class ReplService : IDisposable
             .UseEmbeddedResources(typeof(ReplService).Assembly, "Duets.Resources.ReplStaticFiles", root);
     }
 
-    private readonly TypeScriptService _svc;
+    private readonly ITypeDeclarationProvider _declarations;
     private readonly ScriptEngine _scriptEngine;
-    private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeScriptService.TypeDeclaration?>> _sseWriters = new();
+    private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeDeclaration?>> _sseWriters = new();
     private readonly Lazy<Task<string>> _monacoLoader;
 
     public void Dispose()
     {
-        this._svc.TypeDeclarationAdded -= this.OnTypeDeclarationAdded;
+        this._declarations.DeclarationChanged -= this.OnDeclarationChanged;
     }
 
-    private void OnTypeDeclarationAdded(TypeScriptService.TypeDeclaration decl)
+    private void OnDeclarationChanged(TypeDeclaration declaration)
     {
         foreach (var (id, writer) in this._sseWriters)
         {
-            if (!writer.TryWrite(decl))
+            if (!writer.TryWrite(declaration))
             {
                 this._sseWriters.TryRemove(id, out _);
             }
@@ -82,14 +82,14 @@ public class ReplService : IDisposable
         res.Headers["Cache-Control"] = "no-cache";
         res.SendChunked = true;
 
-        var channel = Channel.CreateUnbounded<TypeScriptService.TypeDeclaration?>();
+        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
         var id = Guid.NewGuid();
         this._sseWriters[id] = channel.Writer;
 
         // Send already-registered TypeDeclarations first
-        foreach (var decl in this._svc.GetTypeDeclarations())
+        foreach (var declaration in this._declarations.GetDeclarations())
         {
-            channel.Writer.TryWrite(decl);
+            channel.Writer.TryWrite(declaration);
         }
 
         // Send a keepalive comment every 15 seconds to detect client disconnection

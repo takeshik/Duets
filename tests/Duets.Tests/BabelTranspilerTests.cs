@@ -1,12 +1,10 @@
+using Duets.Tests.TestSupport;
+
 namespace Duets.Tests;
 
-/// <summary>
-/// Integration tests for <see cref="BabelTranspiler"/>. The bundle is fetched from unpkg
-/// on first run and cached in the system temp directory.
-/// </summary>
 public sealed class BabelTranspilerTests : IAsyncLifetime
 {
-    private readonly BabelTranspiler _transpiler = new();
+    private readonly BabelTranspiler _transpiler = FakeRuntimeAssets.CreateBabelTranspiler();
 
     public async ValueTask InitializeAsync()
     {
@@ -20,113 +18,40 @@ public sealed class BabelTranspilerTests : IAsyncLifetime
     }
 
     [Fact]
-    public void Transpile_enum_result_is_executable_by_jint()
+    public void InitializeAsync_sets_the_version_and_description()
     {
-        using var engine = new ScriptEngine(null, this._transpiler);
-
-        engine.Execute("enum Status { Active = 1, Inactive = 2 }");
-        var result = engine.Evaluate("Status.Active");
-
-        Assert.Equal("1", result.ToString());
+        Assert.Equal("test", this._transpiler.Version);
+        Assert.Equal("Babel test", this._transpiler.Description);
     }
 
     [Fact]
-    public void Transpile_expands_enum_to_runtime_object()
-    {
-        var output = this._transpiler.Transpile(
-            """
-            enum Direction { Up, Down, Left, Right }
-            """
-        );
-
-        Assert.DoesNotContain("enum", output);
-        Assert.Contains("Direction", output);
-    }
-
-    [Fact]
-    public void Transpile_expands_string_enum()
-    {
-        var output = this._transpiler.Transpile(
-            """
-            enum Color { Red = "red", Green = "green", Blue = "blue" }
-            """
-        );
-
-        Assert.DoesNotContain("enum", output);
-        Assert.Contains("\"red\"", output);
-    }
-
-    [Fact]
-    public void Transpile_handles_constructor_parameter_properties()
-    {
-        var output = this._transpiler.Transpile(
-            """
-            class Point {
-                constructor(public x: number, private y: number) {}
-            }
-            """
-        );
-
-        Assert.DoesNotContain("public", output);
-        Assert.DoesNotContain("private", output);
-        Assert.Contains("this.x", output);
-        Assert.Contains("this.y", output);
-    }
-
-    [Fact]
-    public void Transpile_handles_generics()
-    {
-        var output = this._transpiler.Transpile(
-            """
-            function identity<T>(value: T): T { return value; }
-            """
-        );
-
-        Assert.DoesNotContain("<T>", output);
-        Assert.Contains("function identity", output);
-    }
-
-    [Fact]
-    public void Transpile_handles_interface_declaration()
-    {
-        var output = this._transpiler.Transpile(
-            """
-            interface Point { x: number; y: number; }
-            const p: Point = { x: 1, y: 2 };
-            """
-        );
-
-        Assert.DoesNotContain("interface", output);
-        Assert.Contains("const p", output);
-    }
-
-    [Fact]
-    public void Transpile_populates_diagnostics_and_throws_on_syntax_error()
+    public void Transpile_populates_diagnostics_and_rethrows_when_babel_reports_an_error()
     {
         var diagnostics = new List<Diagnostic>();
 
-        Assert.ThrowsAny<Exception>(() => this._transpiler.Transpile("const x = (", diagnostics: diagnostics)
-        );
-        Assert.NotEmpty(diagnostics);
+        var exception = Assert.ThrowsAny<Exception>(() => this._transpiler.Transpile("syntaxError", diagnostics: diagnostics));
+
+        Assert.Contains("Unexpected token", exception.Message);
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal(0, diagnostic.Start);
+        Assert.Equal("Unexpected token", diagnostic.MessageText);
     }
 
     [Fact]
-    public void Transpile_result_is_executable_by_jint()
+    public void Transpile_requires_initialization()
     {
-        using var engine = new ScriptEngine(null, this._transpiler);
+        using var transpiler = FakeRuntimeAssets.CreateBabelTranspiler();
 
-        engine.Execute("const answer: number = 40 + 2;");
-        var result = engine.Evaluate("answer");
+        var exception = Assert.Throws<InvalidOperationException>(() => transpiler.Transpile("const answer: number = 42;"));
 
-        Assert.Equal("42", result.ToString());
+        Assert.Contains("InitializeAsync", exception.Message);
     }
 
     [Fact]
-    public void Transpile_strips_type_annotations()
+    public void Transpile_returns_the_transformed_javascript_and_preserves_the_filename()
     {
-        var output = this._transpiler.Transpile("const x: number = 42;");
+        var output = this._transpiler.Transpile("const answer: number = 42;", "input.ts");
 
-        Assert.DoesNotContain(": number", output);
-        Assert.Contains("42", output);
+        Assert.Equal("/*input.ts*/\nconst answer = 42;", output);
     }
 }

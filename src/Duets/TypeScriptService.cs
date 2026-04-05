@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using Jint;
 using Jint.Native;
@@ -14,7 +13,7 @@ public record TypeScriptServiceOptions
     /// Asset source for the TypeScript compiler script (<c>typescript.js</c>).
     /// Defaults to fetching from unpkg with a 7-day disk cache in the system temp directory.
     /// </summary>
-    public IAssetSource TypeScriptJs { get; } =
+    public IAssetSource TypeScriptJs { get; init; } =
         AssetSources.Unpkg("typescript", "6.0.2", "lib/typescript.js")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), "typescript.js"));
 
@@ -24,7 +23,7 @@ public record TypeScriptServiceOptions
     /// <see cref="IAssetSource"/> for the corresponding <c>lib.es5.d.ts</c>.
     /// Defaults to fetching from unpkg with a version-keyed disk cache.
     /// </summary>
-    public Func<string, IAssetSource> LibEs5Source { get; } =
+    public Func<string, IAssetSource> LibEs5Source { get; init; } =
         tsVersion => AssetSources.Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), $"typescript-lib.es5-{tsVersion}.d.ts"));
 }
@@ -32,23 +31,16 @@ public record TypeScriptServiceOptions
 public class TypeScriptService : ITranspiler,
     IDisposable
 {
-    public TypeScriptService(TypeScriptServiceOptions? options = null)
+    public TypeScriptService(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null)
     {
+        this._typeDeclarations = typeDeclarations;
         this._options = options ?? new TypeScriptServiceOptions();
+        typeDeclarations.DeclarationChanged += this.OnDeclarationChanged;
     }
 
+    private readonly ITypeDeclarationProvider _typeDeclarations;
     private readonly TypeScriptServiceOptions _options;
     private readonly object _sync = new();
-    private readonly HashSet<Type> _registeredTypes = [];
-
-    // Tracks namespace skeletons that still carry the $name dummy member (namespace → file name).
-    // Entries are removed when a real type from that namespace is registered.
-    private readonly Dictionary<string, string> _pendingSkeletonNamespaces = new();
-
-    // Tracks namespaces that already have at least one real type registered.
-    private readonly HashSet<string> _coveredNamespaces = [];
-    private readonly ClrDeclarationGenerator _declarationGenerator = new();
-    private readonly Dictionary<string, TypeDeclaration> _typeDeclarations = new();
     private Engine? _engine;
     private JsValue? _ts;
     private JsValue? _tsTranspile;
@@ -57,11 +49,6 @@ public class TypeScriptService : ITranspiler,
 
     /// <inheritdoc/>
     public string Description => $"TypeScript {this.Version ?? "unknown"}";
-
-    /// <summary>
-    /// Fires when a type declaration is added or updated. Used for SSE delivery and similar purposes.
-    /// </summary>
-    public event Action<TypeDeclaration>? TypeDeclarationAdded;
 
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
@@ -84,15 +71,12 @@ public class TypeScriptService : ITranspiler,
             Engine? previousEngine;
             lock (this._sync)
             {
-                this._registeredTypes.Clear();
-                this._pendingSkeletonNamespaces.Clear();
-                this._coveredNamespaces.Clear();
-                this._typeDeclarations.Clear();
                 previousEngine = this._engine;
                 this._engine = newEngine;
                 this._ts = ts;
                 this._tsTranspile = tsTranspile;
                 this.Version = version;
+                this.ReplayDeclarations();
             }
 
             previousEngine?.Dispose();
@@ -102,106 +86,6 @@ public class TypeScriptService : ITranspiler,
             newEngine.Dispose();
             throw;
         }
-    }
-
-    /// <summary>
-    /// Registers a .NET type as a completion target. Used to generate type declarations (.d.ts).
-    /// Duplicate registrations of the same type are ignored.
-    /// </summary>
-    public void RegisterType(Type type)
-    {
-        List<TypeDeclaration> notifications = [];
-        lock (this._sync)
-        {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            if (!this._registeredTypes.Add(type)) return;
-
-            // Register base type first so it's declared before this type references it
-            var baseType = type.BaseType;
-            if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType)) this.RegisterType(baseType);
-
-            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes(type.ToString()));
-            var fileName = $"clr-{hash}.d.ts";
-            var content = this._declarationGenerator.GenerateTypeDefTs(type);
-            var decl = new TypeDeclaration(fileName, content);
-            var host = this._engine.GetValue("$$host");
-            host.Get("addFile").Call(host, [fileName, content]);
-            this._typeDeclarations[fileName] = decl;
-            notifications.Add(decl);
-
-            // If a skeleton with a $name dummy exists for this namespace, clear it now that a real type is present.
-            if (type.Namespace != null && this._pendingSkeletonNamespaces.TryGetValue(type.Namespace, out var skeletonFile))
-            {
-                var emptyContent = $"declare namespace {type.Namespace} {{ }}\n";
-                host.Get("addFile").Call(host, [skeletonFile, emptyContent]);
-                var updatedSkeleton = new TypeDeclaration(skeletonFile, emptyContent);
-                this._typeDeclarations[skeletonFile] = updatedSkeleton;
-                this._pendingSkeletonNamespaces.Remove(type.Namespace);
-                this._coveredNamespaces.Add(type.Namespace);
-                notifications.Add(updatedSkeleton);
-            }
-            else if (type.Namespace != null)
-            {
-                this._coveredNamespaces.Add(type.Namespace);
-            }
-        }
-
-        foreach (var decl in notifications)
-        {
-            this.TypeDeclarationAdded?.Invoke(decl);
-        }
-    }
-
-    /// <summary>
-    /// Registers a namespace skeleton declaration so that the namespace appears in TypeScript completions
-    /// without registering any type members. A <c>$name</c> dummy member is included to ensure the namespace
-    /// is visible in completions; it is automatically removed when a real type from the namespace is registered.
-    /// Duplicate registrations and namespaces that already have real types are ignored.
-    /// </summary>
-    public void RegisterNamespaceSkeleton(string namespaceName)
-    {
-        TypeDeclaration? notification;
-        lock (this._sync)
-        {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            if (this._coveredNamespaces.Contains(namespaceName)) return;
-            if (this._pendingSkeletonNamespaces.ContainsKey(namespaceName)) return;
-
-            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes($"ns:{namespaceName}"));
-            var fileName = $"clr-ns-{hash}.d.ts";
-            var content = $"declare namespace {namespaceName} {{ const $name: '{namespaceName}'; }}\n";
-            var decl = new TypeDeclaration(fileName, content);
-            var host = this._engine.GetValue("$$host");
-            host.Get("addFile").Call(host, [fileName, content]);
-            this._typeDeclarations[fileName] = decl;
-            this._pendingSkeletonNamespaces[namespaceName] = fileName;
-            notification = decl;
-        }
-
-        this.TypeDeclarationAdded?.Invoke(notification);
-    }
-
-    /// <summary>
-    /// Registers an arbitrary TypeScript declaration into the language service.
-    /// The file name is derived from a hash of the content. Duplicate content is ignored.
-    /// </summary>
-    public void RegisterDeclaration(string content)
-    {
-        TypeDeclaration? notification;
-        lock (this._sync)
-        {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            var hash = ComputeSha1Hex(Encoding.UTF8.GetBytes(content));
-            var fileName = $"decl-{hash}.d.ts";
-            if (this._typeDeclarations.ContainsKey(fileName)) return;
-            var decl = new TypeDeclaration(fileName, content);
-            var host = this._engine.GetValue("$$host");
-            host.Get("addFile").Call(host, [fileName, content]);
-            this._typeDeclarations[fileName] = decl;
-            notification = decl;
-        }
-
-        this.TypeDeclarationAdded?.Invoke(notification);
     }
 
     /// <summary>
@@ -226,15 +110,6 @@ public class TypeScriptService : ITranspiler,
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
             var host = this._engine.GetValue("$$host");
             host.Get("addFile").Call(host, ["lib.es5.d.ts", content]);
-        }
-    }
-
-    /// <summary>Returns all registered TypeDeclarations (for initial SSE delivery).</summary>
-    public IReadOnlyCollection<TypeDeclaration> GetTypeDeclarations()
-    {
-        lock (this._sync)
-        {
-            return this._typeDeclarations.Values.ToArray();
         }
     }
 
@@ -281,8 +156,19 @@ public class TypeScriptService : ITranspiler,
         }
     }
 
+    internal void InitializeForTesting(Engine engine)
+    {
+        lock (this._sync)
+        {
+            this._engine = engine;
+            this.ReplayDeclarations();
+        }
+    }
+
     public void Dispose()
     {
+        this._typeDeclarations.DeclarationChanged -= this.OnDeclarationChanged;
+
         lock (this._sync)
         {
             this._engine?.Dispose();
@@ -337,18 +223,29 @@ public class TypeScriptService : ITranspiler,
         }
     }
 
-    private static string ComputeSha1Hex(byte[] bytes)
+    private void OnDeclarationChanged(TypeDeclaration declaration)
     {
-#if NETSTANDARD2_1
-        using var sha1 = SHA1.Create();
-        return BitConverter.ToString(sha1.ComputeHash(bytes)).Replace("-", string.Empty);
-#else
-        return Convert.ToHexString(SHA1.HashData(bytes));
-#endif
+        lock (this._sync)
+        {
+            this.AddDeclarationToLanguageService(declaration);
+        }
+    }
+
+    private void ReplayDeclarations()
+    {
+        foreach (var declaration in this._typeDeclarations.GetDeclarations())
+        {
+            this.AddDeclarationToLanguageService(declaration);
+        }
+    }
+
+    private void AddDeclarationToLanguageService(TypeDeclaration declaration)
+    {
+        if (this._engine == null) return;
+
+        var host = this._engine.GetValue("$$host");
+        host.Get("addFile").Call(host, [declaration.FileName, declaration.Content]);
     }
 
     public record CompletionEntry(string Name, string Kind, string? SortText);
-
-    /// <summary>TypeScript declaration file passed to Monaco's addExtraLib.</summary>
-    public record TypeDeclaration(string FileName, string Content);
 }

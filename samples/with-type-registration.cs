@@ -16,11 +16,12 @@
 using Duets;
 using Jint;
 
-using var ts = new TypeScriptService();
+var declarations = new TypeDeclarations();
+using var ts = new TypeScriptService(declarations);
 await ts.ResetAsync();
 
 using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
-engine.RegisterTypeBuiltins(ts);
+engine.RegisterTypeBuiltins(declarations);
 
 // From a script, use `typings` to register types for runtime access AND completions:
 //

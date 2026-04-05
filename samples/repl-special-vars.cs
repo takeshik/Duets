@@ -18,7 +18,8 @@
 
 using Duets;
 
-using var ts = new TypeScriptService();
+var declarations = new TypeDeclarations();
+using var ts = new TypeScriptService(declarations);
 await ts.ResetAsync();
 
 using var engine = new ScriptEngine(null, ts);
@@ -43,9 +44,9 @@ catch
     // swallow; inspect via $exception instead
 }
 
-var exMessage = engine.Evaluate("$exception?.message ?? String($exception)");
+var exMessage = engine.Evaluate("$exception ? $exception.message : String($exception)");
 Console.WriteLine($"$exception.message = {exMessage}");
-// $exception.message = Cannot read properties of null (reading 'missingProperty')
+// $exception.message = Cannot read property 'missingProperty' of null
 
 // $exception is cleared after the next successful call
 engine.Evaluate("1 + 1");
@@ -65,4 +66,4 @@ foreach (var (key, value) in globals)
 //   greeting = hello
 //   alpha = 1
 //   beta = two
-//   gamma = 3       (Jint renders single-element arrays as their element)
+//   gamma = (1)[]

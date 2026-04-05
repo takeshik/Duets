@@ -13,16 +13,16 @@ namespace Duets;
 public sealed class ScriptTypings
 {
     public ScriptTypings(
-        TypeScriptService ts,
+        ITypeDeclarationRegistrar declarations,
         Func<JsValue, JsValue>? importNamespace = null,
         Action<string, Type>? exposeGlobal = null)
     {
-        this._ts = ts;
+        this._declarations = declarations;
         this._importNamespace = importNamespace;
         this._exposeGlobal = exposeGlobal;
     }
 
-    private readonly TypeScriptService _ts;
+    private readonly ITypeDeclarationRegistrar _declarations;
     private readonly Func<JsValue, JsValue>? _importNamespace;
     private readonly Action<string, Type>? _exposeGlobal;
 
@@ -110,7 +110,7 @@ public sealed class ScriptTypings
 
         foreach (var type in types)
         {
-            this._ts.RegisterType(type);
+            this._declarations.RegisterType(type);
         }
 
         if (this._exposeGlobal != null)
@@ -125,7 +125,7 @@ public sealed class ScriptTypings
 
             if (sb.Length > 0)
             {
-                this._ts.RegisterDeclaration(sb.ToString());
+                this._declarations.RegisterDeclaration(sb.ToString());
             }
         }
     }
@@ -143,7 +143,7 @@ public sealed class ScriptTypings
                 "Expected a CLR type reference (e.g., typings.importType(System.IO.File)) or an assembly-qualified name string."
             ),
         };
-        this._ts.RegisterType(type);
+        this._declarations.RegisterType(type);
     }
 
     /// <summary>
@@ -159,7 +159,7 @@ public sealed class ScriptTypings
             .Where(ns => ns != null)
             .Distinct())
         {
-            this._ts.RegisterNamespaceSkeleton(ns!);
+            this._declarations.RegisterNamespace(ns!);
         }
     }
 
@@ -181,7 +181,7 @@ public sealed class ScriptTypings
         var asm = ResolveAssembly(assemblyRef);
         foreach (var type in TryGetExportedTypes(asm))
         {
-            this._ts.RegisterType(type);
+            this._declarations.RegisterType(type);
         }
     }
 
@@ -199,7 +199,7 @@ public sealed class ScriptTypings
         {
             foreach (var type in TryGetExportedTypes(asm).Where(t => t.Namespace == ns))
             {
-                this._ts.RegisterType(type);
+                this._declarations.RegisterType(type);
             }
         }
     }

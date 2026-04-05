@@ -7,7 +7,8 @@
 
 using Duets;
 
-using var ts = new TypeScriptService();
+var declarations = new TypeDeclarations();
+using var ts = new TypeScriptService(declarations);
 await ts.ResetAsync(); // downloads & caches typescript.js on first run
 
 using var engine = new ScriptEngine(null, ts);

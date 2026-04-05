@@ -11,7 +11,7 @@ public static class ScriptBuiltins
     /// <summary>
     /// Registers the <c>typings</c> global object and the <c>clrTypeOf</c> function into the engine.
     /// </summary>
-    public static ScriptEngine RegisterTypeBuiltins(this ScriptEngine engine, TypeScriptService ts)
+    public static ScriptEngine RegisterTypeBuiltins(this ScriptEngine engine, ITypeDeclarationRegistrar declarations)
     {
         // Capture the Jint-provided importNamespace before overriding it.
         var originalImportNs = engine.GetValue("importNamespace");
@@ -19,7 +19,7 @@ public static class ScriptBuiltins
             ? ns => engine.Call(originalImportNs, ns)
             : null;
 
-        var typings = new ScriptTypings(ts, importNsFn, engine.SetTypeReferenceValue);
+        var typings = new ScriptTypings(declarations, importNsFn, engine.SetTypeReferenceValue);
         engine.SetValue("typings", typings);
 
         engine.SetValue(
@@ -37,7 +37,7 @@ public static class ScriptBuiltins
         using var stream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream("Duets.Resources.ScriptEngineInit.d.ts")!;
         using var reader = new StreamReader(stream);
-        ts.RegisterDeclaration(reader.ReadToEnd());
+        declarations.RegisterDeclaration(reader.ReadToEnd());
         return engine;
     }
 }

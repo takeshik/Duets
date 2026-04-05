@@ -7,7 +7,8 @@
 
 using Duets;
 
-using var ts = new TypeScriptService();
+var declarations = new TypeDeclarations();
+using var ts = new TypeScriptService(declarations);
 await ts.ResetAsync();
 
 using var engine = new ScriptEngine(null, ts);

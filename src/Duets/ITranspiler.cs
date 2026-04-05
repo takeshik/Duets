@@ -2,7 +2,7 @@ namespace Duets;
 
 /// <summary>
 /// Minimal transpiler abstraction: converts TypeScript source to JavaScript.
-/// Implemented by <see cref="TypeScriptService"/>; also implementable by stubs for testing.
+/// Implemented by <see cref="BabelTranspiler"/> and <see cref="TypeScriptService"/>.
 /// </summary>
 public interface ITranspiler
 {

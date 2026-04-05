@@ -1,21 +1,10 @@
+using Duets.Tests.TestSupport;
 using Jint.Native;
 
 namespace Duets.Tests;
 
 public sealed class ScriptEngineTests
 {
-    private sealed class IdentityTranspiler : ITranspiler
-    {
-        public string Transpile(
-            string input,
-            string? fileName = null,
-            IList<Diagnostic>? diagnostics = null,
-            string? moduleName = null)
-        {
-            return input;
-        }
-    }
-
     private sealed class RecordingTranspiler(Dictionary<string, string> mappings) : ITranspiler
     {
         public List<string> Inputs { get; } = [];

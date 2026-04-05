@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Duets/Duets.csproj" />
+    <ProjectReference Include="../../src/Duets.Sandbox/Duets.Sandbox.csproj" />
   </ItemGroup>
 
 </Project>
