@@ -56,12 +56,10 @@ session.RegisterTypeBuiltins();
 
 ### With web REPL
 
-[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions. Pass a factory to select `TypeScriptService`; the session wires `TypeDeclarations` automatically:
+[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions:
 
 ```csharp
-using var session = await DuetsSession.CreateAsync(
-    decls => TypeScriptService.CreateAsync(decls),
-    opts => opts.AllowClr());
+using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
 session.RegisterTypeBuiltins();
 
 using var server = new HttpServer("http://127.0.0.1:17375/");
