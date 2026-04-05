@@ -1,6 +1,6 @@
 // REPL special variables: $_, $exception, GetGlobalVariables
 //
-// ScriptEngine maintains three REPL conveniences that mirror interactive
+// DuetsSession maintains three REPL conveniences that mirror interactive
 // shell workflows:
 //
 //   $_            — the value returned by the last Evaluate call (like $_ in
@@ -18,44 +18,40 @@
 
 using Duets;
 
-var declarations = new TypeDeclarations();
-using var ts = new TypeScriptService(declarations);
-await ts.ResetAsync();
-
-using var engine = new ScriptEngine(null, ts);
+using var session = await DuetsSession.CreateAsync();
 
 // $_ — last evaluated value
-engine.Evaluate("Math.PI * 2");
-var lastResult = engine.Evaluate("$_");
+session.Evaluate("Math.PI * 2");
+var lastResult = session.Evaluate("$_");
 Console.WriteLine($"$_ = {lastResult}"); // $_ = 6.283185307179586
 
 // $_ is cleared after Execute (statement, not expression)
-engine.Execute("const greeting = 'hello';");
-var afterExec = engine.Evaluate("$_");
+session.Execute("const greeting = 'hello';");
+var afterExec = session.Evaluate("$_");
 Console.WriteLine($"$_ after Execute = {afterExec}"); // $_ after Execute = undefined
 
 // $exception — captures the last thrown error
 try
 {
-    engine.Evaluate("null.missingProperty");
+    session.Evaluate("null.missingProperty");
 }
 catch
 {
     // swallow; inspect via $exception instead
 }
 
-var exMessage = engine.Evaluate("$exception ? $exception.message : String($exception)");
+var exMessage = session.Evaluate("$exception ? $exception.message : String($exception)");
 Console.WriteLine($"$exception.message = {exMessage}");
 // $exception.message = Cannot read property 'missingProperty' of null
 
 // $exception is cleared after the next successful call
-engine.Evaluate("1 + 1");
-var clearedEx = engine.Evaluate("$exception");
+session.Evaluate("1 + 1");
+var clearedEx = session.Evaluate("$exception");
 Console.WriteLine($"$exception after success = {clearedEx}"); // $exception after success = undefined
 
 // GetGlobalVariables — snapshot of user-defined names only
-engine.Execute("var alpha = 1; var beta = 'two'; var gamma = [3];");
-var globals = engine.GetGlobalVariables();
+session.Execute("var alpha = 1; var beta = 'two'; var gamma = [3];");
+var globals = session.GetGlobalVariables();
 
 Console.WriteLine("User-defined globals:");
 foreach (var (key, value) in globals)

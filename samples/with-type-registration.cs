@@ -4,24 +4,19 @@
 // RegisterTypeBuiltins() adds the `typings` global, which exposes .NET types
 // to both scripts and the Monaco IntelliSense completions.
 //
-// Alternative transpiler: swap TypeScriptService for BabelTranspiler if you need
-// a lighter-weight transpiler that does not rely on the official TypeScript compiler.
-// BabelTranspiler supports most TypeScript syntax but does not provide completions.
+// To use TypeScriptService instead of the default BabelTranspiler (required
+// for server-side completions), pass a factory to CreateAsync:
 //
-//   using var babel = new BabelTranspiler();
-//   await babel.InitializeAsync();
-//   using var engine = new ScriptEngine(opts => opts.AllowClr(), babel);
+//   using var session = await DuetsSession.CreateAsync(
+//       decls => TypeScriptService.CreateAsync(decls),
+//       opts => opts.AllowClr());
 #:project ../src/Duets/Duets.csproj
 
 using Duets;
 using Jint;
 
-var declarations = new TypeDeclarations();
-using var ts = new TypeScriptService(declarations);
-await ts.ResetAsync();
-
-using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
-engine.RegisterTypeBuiltins(declarations);
+using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
+session.RegisterTypeBuiltins();
 
 // From a script, use `typings` to register types for runtime access AND completions:
 //
@@ -40,7 +35,7 @@ engine.RegisterTypeBuiltins(declarations);
 // Use typings.importNamespace() or typings.usingNamespace() when you also want IntelliSense completions.
 
 // Use usingNamespace to bring types into scope like C#'s `using System.IO;`
-var result = engine.Evaluate("""
+var result = session.Evaluate("""
     typings.usingNamespace("System.IO");
     Directory.GetCurrentDirectory()
     """);

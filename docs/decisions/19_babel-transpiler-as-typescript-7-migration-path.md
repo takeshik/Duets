@@ -66,9 +66,14 @@ Introduce `BabelTranspiler`, a new `ITranspiler` implementation that runs `@babe
 dedicated Jint engine. It serves as both a proof that `ITranspiler` is replaceable and as the
 practical migration path for TypeScript 7.
 
-`TypeScriptService` remains the default and continues to provide language service features
-(completions, type declaration management, SSE delivery) that Babel cannot replicate. `BabelTranspiler`
-is available as an opt-in alternative for scenarios where `typescript.js` is unavailable or undesirable.
+`TypeScriptService` continues to provide language service features (completions, type declaration
+management, SSE delivery) that Babel cannot replicate. `BabelTranspiler` is available as an opt-in
+alternative for scenarios where `typescript.js` is unavailable or undesirable.
+
+> **Note (ADR-25):** When ADR-25 introduced `DuetsSession`, `BabelTranspiler` became the **default**
+> transpiler for `DuetsSession.CreateAsync()`. `TypeScriptService` is now the opt-in path for callers
+> who need server-side completions. The analysis and rationale in this ADR remain valid; only the
+> default selection changed.
 
 ## Rationale
 

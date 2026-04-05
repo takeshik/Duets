@@ -19,6 +19,14 @@ public static class ReplServiceExtensions
     {
         return new ReplService(declarations, scriptEngine, server, root, monacoLoader);
     }
+
+    public static ReplService UseRepl(
+        this HttpServer server,
+        DuetsSession session, string root = "/",
+        IAssetSource? monacoLoader = null)
+    {
+        return new ReplService(session.Declarations, session.Engine, server, root, monacoLoader);
+    }
 }
 
 /// <summary>

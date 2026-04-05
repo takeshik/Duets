@@ -1,20 +1,16 @@
 // Script console output
 //
-// ScriptEngine exposes a ConsoleLogged event that fires whenever script code
+// DuetsSession exposes a ConsoleLogged event that fires whenever script code
 // calls console.log/warn/error/info/debug. Subscribe to it to route output
 // to your application's logging infrastructure.
 #:project ../src/Duets/Duets.csproj
 
 using Duets;
 
-var declarations = new TypeDeclarations();
-using var ts = new TypeScriptService(declarations);
-await ts.ResetAsync();
-
-using var engine = new ScriptEngine(null, ts);
+using var session = await DuetsSession.CreateAsync();
 
 // Subscribe before executing any code.
-engine.ConsoleLogged += entry =>
+session.ConsoleLogged += entry =>
 {
     var prefix = entry.Level switch
     {
@@ -27,7 +23,7 @@ engine.ConsoleLogged += entry =>
     Console.WriteLine(prefix + entry.Text);
 };
 
-engine.Execute("""
+session.Execute("""
     console.log('hello from script');
     console.warn('something looks off');
     console.error('something went wrong');

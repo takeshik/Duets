@@ -7,14 +7,10 @@
 
 using Duets;
 
-var declarations = new TypeDeclarations();
-using var ts = new TypeScriptService(declarations);
-await ts.ResetAsync();
+using var session = await DuetsSession.CreateAsync();
+session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 
-using var engine = new ScriptEngine(null, ts);
-engine.ConsoleLogged += entry => Console.WriteLine(entry.Text);
-
-engine.Execute("""
+session.Execute("""
     // util.inspect — returns a formatted string; does not print anything.
     const formatted = util.inspect({ x: 1, y: [2, 3] });
     console.log(formatted);

@@ -6,7 +6,7 @@ Duets lets you drop a fully-featured TypeScript REPL into **any** .NET applicati
 
 ## Features
 
-- **TypeScript transpilation & execution** — powered by [Jint](https://github.com/sebastienros/jint) running the official TypeScript compiler in-process. No Node.js required.
+- **TypeScript transpilation & execution** — powered by [Jint](https://github.com/sebastienros/jint) running Babel (default) or the official TypeScript compiler in-process. No Node.js required.
 - **Auto-generated type declarations** — expose .NET types to the editor and get IntelliSense-style completions via automatically generated `.d.ts` files.
 - **Web-based REPL UI** — a Monaco Editor frontend served over a built-in HTTP server, with SSE-based live type declaration updates.
 - **Zero heavy dependencies** — deliberately avoids ASP.NET Core / Kestrel. The built-in HTTP layer ([HttpHarker](src/HttpHarker/)) is a thin wrapper around `System.Net.HttpListener`, keeping the footprint minimal for embedding.
@@ -30,48 +30,44 @@ dotnet run samples/web-repl.cs              # browser-based Monaco editor
 
 ### Minimal: transpile and evaluate
 
-[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — The core of Duets is two classes: `TypeScriptService` (transpiler) and `ScriptEngine` (executor).
+[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — `DuetsSession` is the single entry point. `CreateAsync` downloads and caches the transpiler on first run.
 
 ```csharp
-using var ts = new TypeScriptService();
-await ts.ResetAsync(); // downloads & caches typescript.js on first run
-
-using var engine = new ScriptEngine(null, ts);
-
-var result = engine.Evaluate("Math.sqrt(2)");
+using var session = await DuetsSession.CreateAsync();
+var result = session.Evaluate("Math.sqrt(2)");
 Console.WriteLine(result); // 1.4142135623730951
 ```
 
 ### With .NET type registration
 
-[`samples/with-type-registration.cs`](samples/with-type-registration.cs) — Add `AllowClr` and register the `typings` built-in to expose .NET types to scripts and get IntelliSense-style completions:
+[`samples/with-type-registration.cs`](samples/with-type-registration.cs) — Add `AllowClr` and call `RegisterTypeBuiltins()` to expose .NET types to scripts and get IntelliSense-style completions:
 
 ```csharp
-using var engine = new ScriptEngine(opts => opts.AllowClr(), ts);
-engine.RegisterTypeBuiltins(ts); // registers the typings global
+using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
+session.RegisterTypeBuiltins();
 
 // From a script:
-//   typings.importNamespace("System.IO")                     // import namespace: runtime + completions (recommended)
-//   typings.importNamespace(System.IO)                       //   same, but with a namespace reference
-//   typings.useType(System.IO.File)                          // single type via CLR reference
-//   typings.useType("System.IO.File, System.IO.FileSystem")  // via assembly-qualified name
-//   typings.scanAssembly("System.Net.Http")                  // namespace skeletons only
-//   typings.scanAssemblyOf(System.IO.File)                   // namespace skeletons from the type's assembly
-//   typings.useAssembly("System.Net.Http")                   // all public types
-//   typings.useAssemblyOf(System.IO.File)                    // all public types from the type's assembly
-//   typings.useNamespace(System.Net.Http)                    // types in one namespace (namespace reference)
-//   typings.useNamespace("System.Net.Http")                  // types in one namespace (string form)
+//   typings.usingNamespace("System.IO")    // C# using semantics: scatter types as globals + completions
+//   typings.importNamespace("System.IO")   // keep namespace prefix
+//   typings.importType(System.IO.File)     // single type via CLR reference
+//   typings.scanAssembly("System.Net.Http") // namespace skeletons only
+//   typings.importAssembly("System.Net.Http") // all public types
 ```
 
 ### With web REPL
 
-[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions:
+[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions. Pass a factory to select `TypeScriptService`; the session wires `TypeDeclarations` automatically:
 
 ```csharp
+using var session = await DuetsSession.CreateAsync(
+    decls => TypeScriptService.CreateAsync(decls),
+    opts => opts.AllowClr());
+session.RegisterTypeBuiltins();
+
 using var server = new HttpServer("http://127.0.0.1:17375/");
 using var repl = server
     .UseContentTypeDetection()
-    .UseRepl(ts, engine);
+    .UseRepl(session);
 
 await server.RunAsync();
 ```
@@ -90,7 +86,8 @@ Open `http://127.0.0.1:17375/` in a browser to access the TypeScript console.
 
 - `src/`
   - `Duets/` — Core library
-    - `TypeScriptService.cs` — TS compiler integration (transpile, completions)
+    - `DuetsSession.cs` — Top-level entry point; owns transpiler, engine, and declarations
+    - `TypeScriptService.cs` — TypeScript compiler integration (transpile, completions)
     - `ScriptEngine.cs` — Jint engine wrapper for user code execution
     - `ClrDeclarationGenerator.cs` — .NET → `.d.ts` type declaration generator
     - `ReplService.cs` — Web REPL (Monaco UI, SSE, eval endpoint)
