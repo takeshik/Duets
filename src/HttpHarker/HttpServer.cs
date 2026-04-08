@@ -19,6 +19,8 @@ public class HttpServer(string prefix) : IDisposable
 
     private readonly List<Func<HttpListenerContext, Func<Task>, Task>> _middleware = [];
 
+    private CancellationTokenSource? _cts;
+
     public bool IsRunning { get; private set; }
 
     public HttpServer Use(Func<HttpListenerContext, Func<Task>, Task> middleware)
@@ -31,6 +33,20 @@ public class HttpServer(string prefix) : IDisposable
     public HttpServer Use(IMiddleware middleware)
     {
         return this.Use(middleware.InvokeAsync);
+    }
+
+    public void Start(int workersCount = 8)
+    {
+        if (this.IsRunning) throw new InvalidOperationException("Server is already running.");
+        this._cts = new CancellationTokenSource();
+        this.RunAsync(workersCount, this._cts.Token).Forget();
+    }
+
+    public void Stop()
+    {
+        var cts = Interlocked.Exchange(ref this._cts, null);
+        cts?.Cancel();
+        cts?.Dispose();
     }
 
     public async Task RunAsync(int workersCount = 8, CancellationToken cancellationToken = default)
@@ -94,6 +110,7 @@ public class HttpServer(string prefix) : IDisposable
 
     public void Dispose()
     {
+        this.Stop();
         this._listener.Stop();
         this._listener.Close();
     }
