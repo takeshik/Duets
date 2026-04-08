@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Duets.Sandbox;
 
-internal sealed class BatchRunner(SandboxSession session)
+internal sealed class BatchRunner(SandboxContext session)
 {
     private const string _help = """
         # Duets Sandbox — Batch Mode

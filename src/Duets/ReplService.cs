@@ -14,14 +14,6 @@ public static class ReplServiceExtensions
 {
     public static ReplService UseRepl(
         this HttpServer server,
-        ITypeDeclarationProvider declarations, ScriptEngine scriptEngine, string root = "/",
-        IAssetSource? monacoLoader = null)
-    {
-        return new ReplService(declarations, scriptEngine, server, root, monacoLoader);
-    }
-
-    public static ReplService UseRepl(
-        this HttpServer server,
         DuetsSession session, string root = "/",
         IAssetSource? monacoLoader = null)
     {

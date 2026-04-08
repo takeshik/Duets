@@ -1,6 +1,6 @@
 namespace Duets.Sandbox;
 
-internal sealed class InteractiveRepl(SandboxSession session)
+internal sealed class InteractiveRepl(SandboxContext session)
 {
     public async Task RunAsync()
     {

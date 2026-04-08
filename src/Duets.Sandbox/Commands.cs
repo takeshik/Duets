@@ -7,16 +7,14 @@ public class Commands
 {
     public async Task Complete([Argument] string source, int? position = null)
     {
-        await using var session = new SandboxSession();
-        await session.EnsureInitializedAsync();
-        OutputJson(CompleteOnce(session, source, position ?? source.Length));
+        await using var ctx = await SandboxContext.CreateAsync();
+        OutputJson(CompleteOnce(ctx, source, position ?? source.Length));
     }
 
     public async Task Serve(int port = 17375, CancellationToken cancellationToken = default)
     {
-        await using var session = new SandboxSession();
-        await session.EnsureInitializedAsync();
-        session.StartWebServer(port);
+        await using var ctx = await SandboxContext.CreateAsync();
+        ctx.StartWebServer(port);
         await Console.Error.WriteLineAsync("Press Ctrl+C to stop.");
         try
         {
@@ -26,28 +24,26 @@ public class Commands
         {
         }
 
-        await session.StopWebServerAsync();
+        await ctx.StopWebServerAsync();
     }
 
     public async Task Batch()
     {
-        await using var session = new SandboxSession();
-        await session.EnsureInitializedAsync();
-        await new BatchRunner(session).RunAsync();
+        await using var ctx = await SandboxContext.CreateAsync();
+        await new BatchRunner(ctx).RunAsync();
     }
 
     public async Task Repl()
     {
-        await using var session = new SandboxSession();
-        await session.EnsureInitializedAsync();
-        await new InteractiveRepl(session).RunAsync();
+        await using var ctx = await SandboxContext.CreateAsync();
+        await new InteractiveRepl(ctx).RunAsync();
     }
 
-    private static object CompleteOnce(SandboxSession s, string source, int position)
+    private static object CompleteOnce(SandboxContext ctx, string source, int position)
     {
         try
         {
-            var completions = s.GetCompletions(source, position);
+            var completions = ctx.GetCompletions(source, position);
             return new { ok = true, completions };
         }
         catch (Exception ex)

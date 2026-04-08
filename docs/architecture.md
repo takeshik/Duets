@@ -30,7 +30,7 @@ A lightweight HTTP server built on `System.Net.HttpListener` with a middleware p
 ### Duets.Sandbox (developer / agent debugging CLI)
 
 An internal console application for end-to-end verification of the Duets stack.
-It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sandbox-multi-mode-debugging-cli.md), [ADR-16](decisions/16_samples-directory-and-sandbox-role-clarification.md)). All commands use the fully-initialized `SandboxSession` (TypeScript engine, stdlib, `typings` built-ins, `AllowClr`). Modes:
+It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sandbox-multi-mode-debugging-cli.md), [ADR-16](decisions/16_samples-directory-and-sandbox-role-clarification.md)). All commands run against a fully-initialized TypeScript engine with stdlib, `typings` built-ins, and `AllowClr`. Modes:
 
 | Mode | Invocation | Description |
 |---|---|---|
