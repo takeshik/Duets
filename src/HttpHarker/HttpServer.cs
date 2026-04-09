@@ -58,7 +58,18 @@ public class HttpServer(string prefix) : IDisposable
 
             // BeginGetContext/EndGetContext does not natively support cancellation,
             // so Stop() is called on cancellation to forcibly terminate GetContextAsync.
-            await using var _ = cancellationToken.Register(this._listener.Stop);
+            await using var _ = cancellationToken.Register(() =>
+                {
+                    try
+                    {
+                        this._listener.Stop();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Listener was already closed externally — nothing to do.
+                    }
+                }
+            );
 
             var tasks = Enumerable.Range(0, workersCount)
                 .Select(_ => WorkerLoopAsync())
@@ -69,7 +80,14 @@ public class HttpServer(string prefix) : IDisposable
         finally
         {
             this.IsRunning = false;
-            this._listener.Stop();
+            try
+            {
+                this._listener.Stop();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Listener was already closed externally (e.g. via Dispose()) — nothing to do.
+            }
         }
 
         return;
