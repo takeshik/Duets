@@ -1,0 +1,29 @@
+{
+  "name": "Duets",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:10.0",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": true
+    },
+    "ghcr.io/devcontainers-extra/features/mise:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.vscode-dotnet-runtime",
+        "openai.chatgpt",
+        "Anthropic.claude-code",
+        "GitHub.copilot-chat"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "Duets.slnx"
+      }
+    }
+  },
+  "forwardPorts": [
+    17375
+  ],
+  "postCreateCommand": "dotnet tool restore && dotnet restore"
+}

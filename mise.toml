@@ -1,0 +1,20 @@
+[tasks.restore]
+run = "dotnet restore"
+
+[tasks.clean]
+run = "dotnet clean"
+
+[tasks.build]
+run = "dotnet build"
+
+[tasks.test]
+run = "dotnet test"
+
+[tasks.sandbox]
+run = "dotnet run --project src/Duets.Sandbox"
+
+[tasks.cleanupcode]
+run = "dotnet jb cleanupcode Duets.slnx"
+
+[tasks.inspectcode]
+run = "dotnet jb inspectcode Duets.slnx"
