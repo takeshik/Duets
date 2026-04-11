@@ -44,7 +44,7 @@ jobs:
         run: dotnet test --no-build -c Release -- --report-trx
 
       - name: Report test results
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         if: always()
         with:
           name: xUnit Tests
