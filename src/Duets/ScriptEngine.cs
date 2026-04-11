@@ -10,7 +10,22 @@ public class ScriptEngine : IDisposable
 {
     public ScriptEngine(Action<Options>? configure, ITranspiler transpiler)
     {
-        this._jintEngine = new Engine(configure);
+        var extensionMethods = new ExtensionMethodRegistry();
+        this.ExtensionMethods = extensionMethods;
+
+        this._jintEngine = new Engine(opts =>
+            {
+                configure?.Invoke(opts);
+                opts.AddObjectConverter(new ClrArrayObjectConverter());
+
+                // Chain with any host-provided MemberAccessor: host runs first, then extension methods.
+                var hostAccessor = opts.Interop.MemberAccessor;
+                opts.Interop.MemberAccessor = (engine, target, member) =>
+                    hostAccessor(engine, target, member)
+                    ?? extensionMethods.CreateMemberValue(engine, target, member);
+            }
+        );
+
         this._transpiler = transpiler;
         this.InitConsole();
 
@@ -28,6 +43,9 @@ public class ScriptEngine : IDisposable
     private readonly IReadOnlyCollection<string> _predefinedGlobalKeys;
     private readonly object _sync = new();
     private bool _disposed;
+
+    /// <summary>Registry of extension method container types made available via <c>MemberAccessor</c>.</summary>
+    internal ExtensionMethodRegistry ExtensionMethods { get; }
 
     /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
@@ -153,6 +171,10 @@ public class ScriptEngine : IDisposable
                     this.ConsoleLogged?.Invoke(new ScriptConsoleEntry(level, text));
                 }
             )
+        );
+        this._jintEngine.SetValue(
+            "__utilToJsArray__",
+            new Func<JsValue, JsValue>(value => JsArrayConverter.ToJsArray(this._jintEngine, value))
         );
 
         using var stream = Assembly.GetExecutingAssembly()

@@ -15,16 +15,19 @@ public sealed class ScriptTypings
     public ScriptTypings(
         ITypeDeclarationRegistrar declarations,
         Func<JsValue, JsValue>? importNamespace = null,
-        Action<string, Type>? exposeGlobal = null)
+        Action<string, Type>? exposeGlobal = null,
+        Action<Type>? registerExtensionMethods = null)
     {
         this._declarations = declarations;
         this._importNamespace = importNamespace;
         this._exposeGlobal = exposeGlobal;
+        this._registerExtensionMethods = registerExtensionMethods;
     }
 
     private readonly ITypeDeclarationRegistrar _declarations;
     private readonly Func<JsValue, JsValue>? _importNamespace;
     private readonly Action<string, Type>? _exposeGlobal;
+    private readonly Action<Type>? _registerExtensionMethods;
 
     /// <summary>
     /// Imports a .NET namespace into the script environment and registers its types as TypeScript declaration targets.
@@ -191,6 +194,35 @@ public sealed class ScriptTypings
     public void ImportAssemblyOf(JsValue typeRef)
     {
         this.ImportAssembly(new JsString(ResolveTypeRef(typeRef).Assembly.FullName!));
+    }
+
+    /// <summary>
+    /// Registers a static class containing extension methods so that they appear as instance-method
+    /// completions on their target types and are callable at runtime.
+    /// </summary>
+    /// <param name="typeRef">A CLR type reference pointing to the static class that defines the extension methods.</param>
+    public void AddExtensionMethods(JsValue typeRef)
+    {
+        if (this._registerExtensionMethods is null)
+        {
+            throw new InvalidOperationException(
+                "typings.addExtensionMethods requires the engine to be configured with AllowClr " +
+                "and the built-in type registrar (RegisterTypeBuiltins)."
+            );
+        }
+
+        var type = typeRef switch
+        {
+            TypeReference tr => tr.ReferenceType,
+            _ when typeRef.IsString() => Type.GetType(typeRef.AsString())
+                ?? throw new InvalidOperationException($"Type not found: {typeRef.AsString()}"),
+            _ => throw new ArgumentException(
+                "Expected a CLR type reference (e.g. typings.addExtensionMethods(System.Linq.Enumerable)) " +
+                "or an assembly-qualified name string."
+            ),
+        };
+
+        this._registerExtensionMethods(type);
     }
 
     private void RegisterNamespaceTypes(string ns)

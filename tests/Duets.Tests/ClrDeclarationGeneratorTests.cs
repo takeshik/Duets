@@ -19,6 +19,23 @@ public sealed class ClrDeclarationGeneratorTests
     }
 
     [Fact]
+    public void GenerateTypeDefTs_emits_implemented_interface_bridge_for_classes()
+    {
+        var generator = new ClrDeclarationGenerator();
+
+        var actual = generator.GenerateTypeDefTs(typeof(DeclarationExtensionTarget));
+
+        Assert.Contains(
+            "class DeclarationExtensionTarget implements Duets.Tests.TestTypes.Declarations.IDeclarationExtensionTarget {",
+            actual
+        );
+        Assert.Contains(
+            "interface DeclarationExtensionTarget extends Duets.Tests.TestTypes.Declarations.IDeclarationExtensionTarget {",
+            actual
+        );
+    }
+
+    [Fact]
     public void GenerateTypeDefTs_generates_class_members_with_supported_type_mappings()
     {
         var generator = new ClrDeclarationGenerator();

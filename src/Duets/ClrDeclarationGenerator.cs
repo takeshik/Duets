@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace Duets;
@@ -15,6 +16,20 @@ public class ClrDeclarationGenerator
         typeof(int), typeof(uint),
         typeof(long), typeof(ulong),
         typeof(float), typeof(double), typeof(decimal),
+    ];
+
+    private static readonly Type[] _arrayProjectionNamedTypes =
+    [
+        typeof(IEnumerable<>),
+        typeof(IList<>),
+        typeof(IReadOnlyList<>),
+        typeof(List<>),
+    ];
+
+    private static readonly Type[] _dictionaryProjectionNamedTypes =
+    [
+        typeof(IDictionary<,>),
+        typeof(Dictionary<,>),
     ];
 
     /// <summary>
@@ -38,6 +53,38 @@ public class ClrDeclarationGenerator
         var sb = new StringBuilder();
         var visited = new HashSet<Type>();
         WriteDeclaration(sb, targetType, visited);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates TypeScript interface augmentation declarations for all extension methods
+    /// defined in <paramref name="containerType"/>, grouped by their target (first-parameter) type.
+    /// </summary>
+    public string GenerateExtensionMethodsTs(Type containerType)
+    {
+        var sb = new StringBuilder();
+        var visited = new HashSet<Type>();
+
+        var groups = containerType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.IsDefined(typeof(ExtensionAttribute), false))
+            .GroupBy(m =>
+                {
+                    var p = m.GetParameters()[0].ParameterType;
+                    return p.IsGenericType && !p.IsGenericTypeDefinition
+                        ? p.GetGenericTypeDefinition()
+                        : p;
+                }
+            );
+
+        foreach (var group in groups)
+        {
+            foreach (var target in GetAugmentationTargets(group.Key))
+            {
+                WriteExtensionAugmentation(sb, group.Key, target, [.. group], visited);
+            }
+        }
+
         return sb.ToString();
     }
 
@@ -90,7 +137,12 @@ public class ClrDeclarationGenerator
             extendsClause = $" extends {MapType(baseType, visited)}";
         }
 
-        sb.AppendLine($"{typeIndent}{keyword} {header}{extendsClause} {{");
+        var implementedInterfaces = GetDirectlyImplementedInterfaces(type);
+        var implementsClause = implementedInterfaces.Count > 0
+            ? $" implements {string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))}"
+            : "";
+
+        sb.AppendLine($"{typeIndent}{keyword} {header}{extendsClause}{implementsClause} {{");
 
         var memberIndent = typeIndent + "  ";
 
@@ -104,6 +156,15 @@ public class ClrDeclarationGenerator
         WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
 
         sb.AppendLine($"{typeIndent}}}");
+
+        if (implementedInterfaces.Count > 0)
+        {
+            var interfaceKeyword = typeIndent.Length == 0 ? "declare interface" : "interface";
+            sb.AppendLine(
+                $"{typeIndent}{interfaceKeyword} {header} extends " +
+                $"{string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))} {{}}"
+            );
+        }
     }
 
     private static void WriteInterfaceDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
@@ -296,51 +357,51 @@ public class ClrDeclarationGenerator
         if (type == typeof(bool)) return "boolean";
         if (_numericTypes.Contains(type)) return "number";
 
-        // Task / Task<T>
-        if (type == typeof(Task)) return "Promise<void>";
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))
+        if (TryGetTaskResultSlot(type, out var taskResult))
         {
-            var inner = MapType(type.GetGenericArguments()[0], visited);
-            return $"Promise<{inner}>";
+            return taskResult is null
+                ? "Promise<void>"
+                : $"Promise<{MapType(taskResult, visited)}>";
         }
 
-        // T[] / IEnumerable<T> / List<T>
-        if (type.IsArray && type.GetArrayRank() == 1)
+        if (TryGetArrayProjectionSlot(type, out var arrayElement))
         {
-            var elem = MapType(type.GetElementType()!, visited);
-            return $"{elem}[]";
+            return $"{MapType(arrayElement, visited)}[]";
+        }
+
+        if (type == typeof(Action)) return "() => void";
+
+        if (TryGetDictionaryProjectionSlots(type, out var keyType, out var valueType))
+        {
+            var keyTs = MapType(keyType, visited);
+            var valTs = MapType(valueType, visited);
+            if (keyTs != "any" && keyTs != "number" && keyTs != "string")
+            {
+                return "any";
+            }
+
+            return $"{{ [key: {keyTs}]: {valTs} }}";
+        }
+
+        if (TryFormatDelegateType(type, visited, MapType, out var delegateTs))
+        {
+            return delegateTs;
         }
 
         if (type.IsGenericType)
         {
             var def = type.GetGenericTypeDefinition();
-            if (def == typeof(List<>) || def == typeof(IEnumerable<>) || def == typeof(IReadOnlyList<>) || def == typeof(IList<>))
-            {
-                var elem = MapType(type.GetGenericArguments()[0], visited);
-                return $"{elem}[]";
-            }
+            var args = type.GetGenericArguments()
+                .Select(a => MapType(a, visited))
+                .ToArray();
 
-            if (def == typeof(Dictionary<,>) || def == typeof(IDictionary<,>))
+            if (type.Namespace != null)
             {
-                var keyTs = MapType(type.GetGenericArguments()[0], visited);
-                var valTs = MapType(type.GetGenericArguments()[1], visited);
-                if (keyTs != "any" && keyTs != "number" && keyTs != "string")
-                {
-                    return "any";
-                }
-
-                return $"{{ [key: {keyTs}]: {valTs} }}";
+                return $"{type.Namespace}.{GetScriptName(def)}<{string.Join(", ", args)}>";
             }
         }
 
-        // Classes, structs, interfaces → return the fully-qualified TypeScript type name with namespace
-        // Even unregistered types appear in completions and hover; registered types get full completion support
-        if (type.Namespace != null)
-        {
-            return $"{type.Namespace}.{BuildSimpleTypeName(type)}";
-        }
-
-        return "any";
+        return MapNamedType(type);
     }
 
     /// <summary>Builds the type header including generic type parameters.</summary>
@@ -360,6 +421,532 @@ public class ClrDeclarationGenerator
         var name = GetScriptName(def);
         var args = string.Join(", ", type.GetGenericArguments().Select(a => MapType(a, [])));
         return $"{name}<{args}>";
+    }
+
+    private static void WriteExtensionAugmentation(
+        StringBuilder sb,
+        Type receiverType,
+        ExtensionAugmentationTarget augmentationTarget,
+        MethodInfo[] methods,
+        HashSet<Type> visited)
+    {
+        var ns = augmentationTarget.Namespace;
+        var typeIndent = ns != null ? "  " : "";
+        var memberIndent = typeIndent + "  ";
+
+        if (ns != null) sb.AppendLine($"declare namespace {ns} {{");
+
+        var keyword = augmentationTarget.UseDeclareKeyword ? "declare interface" : "interface";
+        sb.AppendLine(
+            $"{typeIndent}{keyword} {augmentationTarget.ScriptTypeName}{augmentationTarget.TypeParamStr} {{"
+        );
+
+        // Collect entries with overload-collapsing (same pattern as WriteMethods)
+        var entries = new List<(string? tsSig, List<string> netSigs)>();
+        var tsSigIndex = new Dictionary<string, int>();
+
+        foreach (var method in methods)
+        {
+            // Build substitution: method's first-param generic args → interface type param names.
+            // e.g. for Select(this IEnumerable<TSource>, ...) targeting IEnumerable<T>:
+            //   TSource (method's generic param) → "T" (interface's type param name)
+            var firstParamType = method.GetParameters()[0].ParameterType;
+            var firstParamArgs = GetTypeParameterSlots(firstParamType);
+
+            var substitution = new Dictionary<Type, string>();
+            for (var i = 0; i < Math.Min(firstParamArgs.Length, augmentationTarget.TypeParamNames.Length); i++)
+            {
+                substitution[firstParamArgs[i]] = augmentationTarget.TypeParamNames[i];
+            }
+
+            var tsSig = TryBuildExtensionMethodSignature(method, substitution, visited);
+            var netSig = FormatClrSignature(method);
+
+            if (tsSig is null)
+            {
+                entries.Add((null, [netSig]));
+            }
+            else
+            {
+                if (tsSigIndex.TryGetValue(tsSig, out var idx))
+                {
+                    entries[idx].netSigs.Add(netSig);
+                }
+                else
+                {
+                    tsSigIndex[tsSig] = entries.Count;
+                    entries.Add(($"{memberIndent}{tsSig};", [netSig]));
+                }
+            }
+        }
+
+        foreach (var (tsSig, netSigs) in entries)
+        {
+            if (tsSig is null)
+            {
+                sb.AppendLine($"{memberIndent}// [skipped] {netSigs[0]}");
+            }
+            else
+            {
+                if (netSigs.Count == 1)
+                {
+                    sb.AppendLine($"{memberIndent}/** {netSigs[0]} */");
+                }
+                else
+                {
+                    sb.AppendLine($"{memberIndent}/**");
+                    foreach (var n in netSigs)
+                    {
+                        sb.AppendLine($"{memberIndent} * - {n}");
+                    }
+
+                    sb.AppendLine($"{memberIndent} */");
+                }
+
+                sb.AppendLine(tsSig);
+            }
+        }
+
+        sb.AppendLine($"{typeIndent}}}");
+        if (ns != null) sb.AppendLine("}");
+    }
+
+    private static List<ExtensionAugmentationTarget> GetAugmentationTargets(Type targetType)
+    {
+        var targets = new List<ExtensionAugmentationTarget>();
+        var added = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(ExtensionAugmentationTarget target)
+        {
+            var key = $"{target.Namespace}|{target.ScriptTypeName}|{target.TypeParamStr}";
+            if (added.Add(key))
+            {
+                targets.Add(target);
+            }
+        }
+
+        if (TryCreateClrAugmentationTarget(targetType, out var directTarget))
+        {
+            Add(directTarget);
+        }
+
+        foreach (var alias in GetNamedProjectionAliases(targetType))
+        {
+            if (TryCreateClrAugmentationTarget(alias, out var aliasTarget))
+            {
+                Add(aliasTarget);
+            }
+        }
+
+        if (TryCreateProjectedAugmentationTarget(targetType, out var projectedTarget))
+        {
+            Add(projectedTarget);
+        }
+
+        return targets;
+    }
+
+    private static IEnumerable<Type> GetNamedProjectionAliases(Type targetType)
+    {
+        if (!TryGetProjectionAliasFamily(targetType, out var family))
+        {
+            return [];
+        }
+
+        return family.Where(candidate => candidate != GetOpenType(targetType) && IsAssignableToReceiver(targetType, candidate));
+    }
+
+    private static bool TryGetProjectionAliasFamily(Type type, out Type[] family)
+    {
+        if (TryGetArrayProjectionSlot(type, out _))
+        {
+            family = _arrayProjectionNamedTypes;
+            return true;
+        }
+
+        if (TryGetDictionaryProjectionSlots(type, out _, out _))
+        {
+            family = _dictionaryProjectionNamedTypes;
+            return true;
+        }
+
+        family = [];
+        return false;
+    }
+
+    private static bool IsAssignableToReceiver(Type receiverType, Type candidateType)
+    {
+        var receiver = GetOpenType(receiverType);
+        var candidate = GetOpenType(candidateType);
+
+        if (receiver == candidate) return true;
+
+        if (receiver.IsGenericTypeDefinition && candidate.IsGenericTypeDefinition)
+        {
+            var arity = receiver.GetGenericArguments().Length;
+            if (candidate.GetGenericArguments().Length != arity) return false;
+
+            try
+            {
+                var sampleArgs = Enumerable.Repeat(typeof(object), arity).ToArray();
+                var closedReceiver = receiver.MakeGenericType(sampleArgs);
+                var closedCandidate = candidate.MakeGenericType(sampleArgs);
+                return closedReceiver.IsAssignableFrom(closedCandidate);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        return receiver.IsAssignableFrom(candidate);
+    }
+
+    private static bool TryCreateProjectedAugmentationTarget(Type targetType, out ExtensionAugmentationTarget target)
+    {
+        if (TryGetAugmentableProjectedType(targetType, out var projectedKind, out var typeParamNames))
+        {
+            target = new ExtensionAugmentationTarget(
+                null,
+                projectedKind switch
+                {
+                    ProjectedTypeKind.Array => "Array",
+                    ProjectedTypeKind.Promise => "Promise",
+                    _ => throw new InvalidOperationException("Unexpected projected augmentation target."),
+                },
+                BuildTypeParamString(typeParamNames),
+                typeParamNames,
+                false
+            );
+            return true;
+        }
+
+        target = default;
+        return false;
+    }
+
+    private static bool TryCreateClrAugmentationTarget(Type targetType, out ExtensionAugmentationTarget target)
+    {
+        if (targetType.IsArray)
+        {
+            target = default;
+            return false;
+        }
+
+        var openType = GetOpenType(targetType);
+        var typeParamNames = openType.IsGenericTypeDefinition
+            ? openType.GetGenericArguments().Select(t => t.Name).ToArray()
+            : [];
+        target = new ExtensionAugmentationTarget(
+            openType.Namespace,
+            GetScriptName(openType),
+            BuildTypeParamString(typeParamNames),
+            typeParamNames,
+            openType.Namespace is null
+        );
+        return true;
+    }
+
+    private static string BuildTypeParamString(string[] typeParamNames)
+    {
+        return typeParamNames.Length > 0
+            ? $"<{string.Join(", ", typeParamNames)}>"
+            : "";
+    }
+
+    private static string? TryBuildExtensionMethodSignature(
+        MethodInfo method, Dictionary<Type, string> substitution, HashSet<Type> visited)
+    {
+        // Skip 'this' (first) parameter
+        var parameters = method.GetParameters().Skip(1).ToArray();
+
+        var paramParts = new List<string>();
+        foreach (var param in parameters)
+        {
+            if (param.ParameterType.IsByRef || param.ParameterType.IsPointer)
+            {
+                return null;
+            }
+
+            paramParts.Add(
+                $"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: " +
+                $"{MapTypeWithSubstitution(param.ParameterType, substitution, visited)}"
+            );
+        }
+
+        var returnTs = MapTypeWithSubstitution(method.ReturnType, substitution, visited);
+
+        // Method-level type params: generic args NOT already mapped by the substitution
+        var methodTypeParams = method.IsGenericMethodDefinition
+            ? method.GetGenericArguments().Where(t => !substitution.ContainsKey(t)).ToList()
+            : [];
+
+        var typeParamStr = methodTypeParams.Count > 0
+            ? $"<{string.Join(", ", methodTypeParams.Select(t => t.Name))}>"
+            : "";
+
+        return $"{method.Name}{typeParamStr}({string.Join(", ", paramParts)}): {returnTs}";
+    }
+
+    /// <summary>
+    /// Like <see cref="MapType"/> but applies <paramref name="substitution"/> to generic type
+    /// parameters before mapping, so that e.g. <c>TSource</c> becomes the interface's own <c>T</c>.
+    /// </summary>
+    private static string MapTypeWithSubstitution(
+        Type type, Dictionary<Type, string> substitution, HashSet<Type> visited)
+    {
+        if (type.IsGenericParameter)
+        {
+            return substitution.TryGetValue(type, out var s) ? s : type.Name;
+        }
+
+        if (type == typeof(void)) return "void";
+        if (type == typeof(string)) return "string";
+        if (type == typeof(bool)) return "boolean";
+        if (_numericTypes.Contains(type)) return "number";
+        if (type == typeof(Action)) return "() => void";
+
+        var nullableUnderlying = Nullable.GetUnderlyingType(type);
+        if (nullableUnderlying != null)
+        {
+            var inner = MapTypeWithSubstitution(nullableUnderlying, substitution, visited);
+            return inner == "any" ? "any" : $"{inner} | null";
+        }
+
+        if (TryGetTaskResultSlot(type, out var taskResult))
+        {
+            return taskResult is null
+                ? "Promise<void>"
+                : $"Promise<{MapTypeWithSubstitution(taskResult, substitution, visited)}>";
+        }
+
+        if (TryGetArrayProjectionSlot(type, out var arrayElement))
+        {
+            return $"{MapTypeWithSubstitution(arrayElement, substitution, visited)}[]";
+        }
+
+        if (TryGetDictionaryProjectionSlots(type, out var keyType, out var valueType))
+        {
+            var mappedKey = MapTypeWithSubstitution(keyType, substitution, visited);
+            var mappedValue = MapTypeWithSubstitution(valueType, substitution, visited);
+            return mappedKey is "string" or "number"
+                ? $"{{ [key: {mappedKey}]: {mappedValue} }}"
+                : "any";
+        }
+
+        if (TryFormatDelegateType(
+                type,
+                visited,
+                (innerType, innerVisited) => MapTypeWithSubstitution(innerType, substitution, innerVisited),
+                out var delegateTs
+            ))
+        {
+            return delegateTs;
+        }
+
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            var args = type.GetGenericArguments()
+                .Select(a => MapTypeWithSubstitution(a, substitution, visited))
+                .ToArray();
+
+            if (type.Namespace != null)
+            {
+                return $"{type.Namespace}.{GetScriptName(def)}<{string.Join(", ", args)}>";
+            }
+
+            return "any";
+        }
+
+        return MapNamedType(type);
+    }
+
+    private static bool TryGetArrayProjectionSlot(Type type, out Type elementType)
+    {
+        if (type.IsArray && type.GetArrayRank() == 1)
+        {
+            elementType = type.GetElementType()!;
+            return true;
+        }
+
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            if (_arrayProjectionNamedTypes.Contains(def))
+            {
+                elementType = type.GetGenericArguments()[0];
+                return true;
+            }
+        }
+
+        if (type.IsGenericTypeDefinition && _arrayProjectionNamedTypes.Contains(type))
+        {
+            elementType = type.GetGenericArguments()[0];
+            return true;
+        }
+
+        elementType = null!;
+        return false;
+    }
+
+    private static bool TryGetDictionaryProjectionSlots(Type type, out Type keyType, out Type valueType)
+    {
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            if (_dictionaryProjectionNamedTypes.Contains(def))
+            {
+                var args = type.GetGenericArguments();
+                keyType = args[0];
+                valueType = args[1];
+                return true;
+            }
+        }
+
+        if (type.IsGenericTypeDefinition && _dictionaryProjectionNamedTypes.Contains(type))
+        {
+            var args = type.GetGenericArguments();
+            keyType = args[0];
+            valueType = args[1];
+            return true;
+        }
+
+        keyType = null!;
+        valueType = null!;
+        return false;
+    }
+
+    private static bool TryGetTaskResultSlot(Type type, out Type? resultType)
+    {
+        if (type == typeof(Task))
+        {
+            resultType = null;
+            return true;
+        }
+
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>))
+        {
+            resultType = type.GetGenericArguments()[0];
+            return true;
+        }
+
+        if (type.IsGenericTypeDefinition && type == typeof(Task<>))
+        {
+            resultType = type.GetGenericArguments()[0];
+            return true;
+        }
+
+        resultType = null;
+        return false;
+    }
+
+    private static bool TryFormatDelegateType(
+        Type type,
+        HashSet<Type> visited,
+        Func<Type, HashSet<Type>, string> mapType,
+        out string tsType)
+    {
+        if (type.IsGenericType)
+        {
+            var def = type.GetGenericTypeDefinition();
+            if (typeof(Delegate).IsAssignableFrom(type) && type.Namespace == "System")
+            {
+                var typeArgs = type.GetGenericArguments();
+                if (def.Name.StartsWith("Func`", StringComparison.Ordinal))
+                {
+                    var paramParts = typeArgs[..^1].Select((t, i) => $"arg{i}: {mapType(t, visited)}");
+                    var retType = mapType(typeArgs[^1], visited);
+                    tsType = $"({string.Join(", ", paramParts)}) => {retType}";
+                    return true;
+                }
+
+                if (def.Name.StartsWith("Action`", StringComparison.Ordinal))
+                {
+                    var paramParts = typeArgs.Select((t, i) => $"arg{i}: {mapType(t, visited)}");
+                    tsType = $"({string.Join(", ", paramParts)}) => void";
+                    return true;
+                }
+            }
+        }
+
+        tsType = "";
+        return false;
+    }
+
+    private static Type GetOpenType(Type type)
+    {
+        return type.IsGenericType && !type.IsGenericTypeDefinition
+            ? type.GetGenericTypeDefinition()
+            : type;
+    }
+
+    private static IReadOnlyList<Type> GetDirectlyImplementedInterfaces(Type type)
+    {
+        var baseInterfaces = type.BaseType?.GetInterfaces().ToHashSet() ?? [];
+
+        return type.GetInterfaces()
+            .Where(i => !baseInterfaces.Contains(i))
+            .Where(i => !type.GetInterfaces().Any(other => other != i && i.IsAssignableFrom(other)))
+            .ToArray();
+    }
+
+    private static bool TryGetAugmentableProjectedType(
+        Type type, out ProjectedTypeKind projectedKind, out string[] typeParamNames)
+    {
+        if (TryGetArrayProjectionSlot(type, out var arraySlot) && IsRepresentableAsGlobalArrayAugmentation(type, arraySlot))
+        {
+            projectedKind = ProjectedTypeKind.Array;
+            typeParamNames = [arraySlot.Name];
+            return true;
+        }
+
+        if (TryGetTaskResultSlot(type, out var taskResult) && taskResult?.IsGenericParameter == true)
+        {
+            projectedKind = ProjectedTypeKind.Promise;
+            typeParamNames = [taskResult.Name];
+            return true;
+        }
+
+        projectedKind = ProjectedTypeKind.None;
+        typeParamNames = [];
+        return false;
+    }
+
+    private static bool IsRepresentableAsGlobalArrayAugmentation(Type type, Type arraySlot)
+    {
+        if (!arraySlot.IsGenericParameter) return false;
+
+        return (type.IsArray && type.GetArrayRank() == 1)
+            || _arrayProjectionNamedTypes.Contains(GetOpenType(type));
+    }
+
+    private static Type[] GetTypeParameterSlots(Type type)
+    {
+        if (type.IsArray && type.GetArrayRank() == 1)
+        {
+            var elem = type.GetElementType()!;
+            return elem.IsGenericParameter ? [elem] : [];
+        }
+
+        if (type.IsGenericType || type.IsGenericTypeDefinition)
+        {
+            return type.GetGenericArguments();
+        }
+
+        return [];
+    }
+
+    private static string MapNamedType(Type type)
+    {
+        // Classes, structs, interfaces → return the fully-qualified TypeScript type name with namespace
+        // Even unregistered types appear in completions and hover; registered types get full completion support
+        if (type.Namespace != null)
+        {
+            return $"{type.Namespace}.{BuildSimpleTypeName(type)}";
+        }
+
+        return "any";
     }
 
     private static string FormatClrSignature(MethodInfo method)
@@ -383,4 +970,19 @@ public class ClrDeclarationGenerator
         string[] reserved = ["arguments", "default", "delete", "export", "import", "in", "instanceof", "new", "return", "this", "typeof", "void"];
         return Array.IndexOf(reserved, name) >= 0 ? $"_{name}" : name;
     }
+
+    private enum ProjectedTypeKind
+    {
+        None,
+        Array,
+        Promise,
+    }
+
+    private readonly record struct ExtensionAugmentationTarget(
+        string? Namespace,
+        string ScriptTypeName,
+        string TypeParamStr,
+        string[] TypeParamNames,
+        bool UseDeclareKeyword
+    );
 }

@@ -19,7 +19,16 @@ public static class ScriptBuiltins
             ? ns => engine.Call(originalImportNs, ns)
             : null;
 
-        var typings = new ScriptTypings(declarations, importNsFn, engine.SetTypeReferenceValue);
+        var generator = new ClrDeclarationGenerator();
+        Action<Type> registerExtensionMethods = containerType =>
+        {
+            if (engine.ExtensionMethods.Register(containerType))
+            {
+                declarations.RegisterDeclaration(generator.GenerateExtensionMethodsTs(containerType));
+            }
+        };
+
+        var typings = new ScriptTypings(declarations, importNsFn, engine.SetTypeReferenceValue, registerExtensionMethods);
         engine.SetValue("typings", typings);
 
         engine.SetValue(

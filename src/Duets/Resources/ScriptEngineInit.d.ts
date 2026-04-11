@@ -158,6 +158,39 @@ declare const typings: {
     importNamespace(ns: any): any;
 
     /**
+     * Registers a static class that defines extension methods so that those methods appear
+     * as instance-method completions on their target types and are callable at runtime.
+     *
+     * ```ts
+     * var Linq = importNamespace('System.Linq');
+     * typings.addExtensionMethods(Linq.Enumerable);
+     *
+     * // After this call, extension methods are available on collection instances:
+     * var ns = importNamespace('System.Collections.Generic');
+     * var list = new ns.List();
+     * list.Add(1); list.Add(2); list.Add(3);
+     * list.Select(x => x * 2).ToArray()   // ← completions available; runtime dispatch via MemberAccessor
+     * ```
+     *
+     * Extension methods are resolved by walking the full type hierarchy of the target object,
+     * so a method defined on an interface or base type is available on implementing and
+     * derived CLR objects as well. One-dimensional CLR arrays are preserved as CLR objects
+     * for this purpose, so registered extension methods may target `T[]` at runtime.
+     *
+     * TypeScript completions are emitted as interface augmentations on the declared target type;
+     * completions appear on variables whose static type matches that target.
+     *
+     * Limitations:
+     * - Pure JavaScript arrays are outside this feature's scope. Only CLR arrays participate
+     *   in extension-method dispatch. Use `util.toJsArray(someClrArray)` when you need a native
+     *   JavaScript array from a CLR array.
+     * - When a receiver can only be represented in TypeScript as a concrete array element type
+     *   (for example `byte[]`), no `Array<T>` augmentation is emitted; such receivers remain
+     *   callable at runtime on CLR values but do not get projected array completions.
+     */
+    addExtensionMethods(type: any): void;
+
+    /**
      * C# `using` equivalent — imports a namespace, registers its types for completions,
      * and exposes each type as a global variable so they can be used without a namespace prefix.
      *
@@ -230,7 +263,14 @@ declare const util: {
      * ```
      */
     inspect(value: unknown, opts?: { depth?: number; compact?: boolean }): string;
-};
+    /**
+     * Converts a CLR array into a native JavaScript array.
+     *
+     * JavaScript arrays are returned as-is.
+     * Nested CLR arrays are converted recursively.
+     */
+    toJsArray(value: unknown): any[];
+}
 
 /**
  * Outputs `value` to the REPL output pane (as a `log`-level entry) and returns it
