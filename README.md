@@ -52,6 +52,9 @@ session.RegisterTypeBuiltins();
 //   typings.importType(System.IO.File)     // single type via CLR reference
 //   typings.scanAssembly("System.Net.Http") // namespace skeletons only
 //   typings.importAssembly("System.Net.Http") // all public types
+//
+//   var Linq = importNamespace("System.Linq");
+//   typings.addExtensionMethods(Linq.Enumerable) // LINQ operators as instance methods + completions
 ```
 
 ### With web REPL
