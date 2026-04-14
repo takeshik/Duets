@@ -1,4 +1,5 @@
 using Duets.Tests.TestSupport;
+using Jint;
 
 namespace Duets.Tests;
 
@@ -99,5 +100,31 @@ public sealed class DuetsSessionTests
         session.Dispose();
 
         Assert.True(transpiler.IsDisposed);
+    }
+
+    [Fact]
+    public async Task Extension_method_array_augmentations_do_not_break_array_completions()
+    {
+        using var session = await DuetsSession.CreateAsync(
+            async declarations => await TypeScriptService.CreateAsync(declarations, null, true),
+            opts => opts.AllowClr()
+        );
+        session.RegisterTypeBuiltins();
+        session.Execute(
+            """
+            typings.usingNamespace('System.Linq');
+            typings.addExtensionMethods(Enumerable);
+            """
+        );
+
+        var transpiler = (TypeScriptService) session.Transpiler;
+
+        var arrayLiteralCompletions = transpiler.GetCompletions("const xs = [1,2,3]; xs.", "const xs = [1,2,3]; xs.".Length);
+        Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "map");
+        Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "Select");
+
+        var rangeCompletions = transpiler.GetCompletions("Enumerable.Range(1, 10).", "Enumerable.Range(1, 10).".Length);
+        Assert.Contains(rangeCompletions, entry => entry.Name == "map");
+        Assert.Contains(rangeCompletions, entry => entry.Name == "Select");
     }
 }

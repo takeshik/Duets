@@ -897,14 +897,14 @@ public class ClrDeclarationGenerator
         if (TryGetArrayProjectionSlot(type, out var arraySlot) && IsRepresentableAsGlobalArrayAugmentation(type, arraySlot))
         {
             projectedKind = ProjectedTypeKind.Array;
-            typeParamNames = [arraySlot.Name];
+            typeParamNames = GetCanonicalProjectedTypeParamNames(projectedKind);
             return true;
         }
 
         if (TryGetTaskResultSlot(type, out var taskResult) && taskResult?.IsGenericParameter == true)
         {
             projectedKind = ProjectedTypeKind.Promise;
-            typeParamNames = [taskResult.Name];
+            typeParamNames = GetCanonicalProjectedTypeParamNames(projectedKind);
             return true;
         }
 
@@ -935,6 +935,16 @@ public class ClrDeclarationGenerator
         }
 
         return [];
+    }
+
+    private static string[] GetCanonicalProjectedTypeParamNames(ProjectedTypeKind projectedKind)
+    {
+        return projectedKind switch
+        {
+            ProjectedTypeKind.Array => ["T"],
+            ProjectedTypeKind.Promise => ["T"],
+            _ => [],
+        };
     }
 
     private static string MapNamedType(Type type)
