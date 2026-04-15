@@ -12,12 +12,14 @@ public sealed class ConsoleCollectionDefinition
 [Collection("Console")]
 public sealed class BatchRunnerTests
 {
+    private static readonly TranspilerChoice FakeTypeScriptChoice = new(
+        "typescript",
+        async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true)
+    );
+
     private static Task<SandboxContext> CreateContextAsync()
     {
-        return SandboxContext.CreateAsync(
-            declarations => FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true),
-            FakeRuntimeAssets.CreateBabelTranspilerAsync
-        );
+        return SandboxContext.CreateAsync(FakeTypeScriptChoice, BackendChoice.Jint);
     }
 
     [Fact]

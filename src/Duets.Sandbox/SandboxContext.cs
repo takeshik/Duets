@@ -1,60 +1,112 @@
-using System.Diagnostics;
 using Duets.Jint;
+using Duets.Okojo;
 using HttpHarker;
 using Jint;
+using Okojo.Reflection;
+using BabelTranspiler = Duets.Jint.BabelTranspiler;
+using TypeScriptService = Duets.Jint.TypeScriptService;
 
 namespace Duets.Sandbox;
 
-internal enum TranspilerKind
+internal sealed class PassThroughTranspiler : ITranspiler
 {
-    TypeScript,
-    Babel,
+    public string Description => "none";
+
+    public string Transpile(string input, string? fileName = null, IList<Diagnostic>? diagnostics = null, string? moduleName = null)
+    {
+        return input;
+    }
+}
+
+internal sealed record TranspilerChoice(
+    string Name,
+    Func<TypeDeclarations, Task<ITranspiler>> Factory)
+{
+    public static readonly TranspilerChoice TypeScript = new(
+        "typescript",
+        async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true)
+    );
+
+    public static readonly TranspilerChoice Babel = new(
+        "babel",
+        async _ => await BabelTranspiler.CreateAsync()
+    );
+
+    public static TranspilerChoice Parse(string name)
+    {
+        return name.ToLowerInvariant() switch
+        {
+            "typescript" => TypeScript,
+            "babel" => Babel,
+            _ => throw new ArgumentException($"Unknown transpiler: '{name}'. Valid values: typescript, babel"),
+        };
+    }
+}
+
+internal sealed record BackendChoice(
+    string Name,
+    Action<DuetsSessionConfiguration> Configure,
+    bool SupportsExternalTranspiler = true)
+{
+    public static readonly BackendChoice Jint = new(
+        "jint",
+        config => config.UseJint(opts => opts.AllowClr())
+    );
+
+    // Okojo's JS runtime cannot load Babel or TypeScript bundles (runtime bugs in 0.1.1-preview.1).
+    // Engine-only mode: IdentityTranspiler is used regardless of the transpiler choice.
+    public static readonly BackendChoice Okojo = new(
+        "okojo",
+        config => config.UseOkojo(builder =>
+            builder.AllowClrAccess(AppDomain.CurrentDomain.GetAssemblies())
+        ),
+        false
+    );
+
+    public static BackendChoice Parse(string name)
+    {
+        return name.ToLowerInvariant() switch
+        {
+            "jint" => Jint,
+            "okojo" => Okojo,
+            _ => throw new ArgumentException($"Unknown backend: '{name}'. Valid values: jint, okojo"),
+        };
+    }
 }
 
 internal sealed class SandboxContext : IAsyncDisposable
 {
     private SandboxContext(
         DuetsSession session,
-        TranspilerKind activeTranspiler,
-        Func<TypeDeclarations, Task<ITranspiler>> tsFactory,
-        Func<TypeDeclarations, Task<ITranspiler>> babelFactory)
+        TranspilerChoice transpiler,
+        BackendChoice backend)
     {
         this._session = session;
-        this.ActiveTranspiler = activeTranspiler;
-        this._tsFactory = tsFactory;
-        this._babelFactory = babelFactory;
+        this.ActiveTranspiler = transpiler;
+        this.ActiveBackend = backend;
     }
 
-    private readonly Func<TypeDeclarations, Task<ITranspiler>> _tsFactory;
-    private readonly Func<TypeDeclarations, Task<ITranspiler>> _babelFactory;
     private DuetsSession _session;
     private HttpServer? _webServer;
     private ReplService? _replService;
     private CancellationTokenSource? _webServerCts;
     private Task? _webServerTask;
 
-    public TranspilerKind ActiveTranspiler { get; private set; }
+    public TranspilerChoice ActiveTranspiler { get; private set; }
+    public BackendChoice ActiveBackend { get; private set; }
 
     public string TranspilerDescription => this._session.Transpiler.Description;
 
     public bool IsServerRunning => this._webServer != null && this._webServerTask is { IsCompleted: false };
 
     internal static async Task<SandboxContext> CreateAsync(
-        Func<TypeDeclarations, Task<TypeScriptService>>? tsFactory = null,
-        Func<Task<BabelTranspiler>>? babelFactory = null)
+        TranspilerChoice? transpiler = null,
+        BackendChoice? backend = null)
     {
-        Func<TypeDeclarations, Task<ITranspiler>> tsF =
-            tsFactory is not null
-                ? async decls => await tsFactory(decls)
-                : async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true);
-
-        Func<TypeDeclarations, Task<ITranspiler>> babelF =
-            babelFactory is not null
-                ? async _ => await babelFactory()
-                : async _ => await BabelTranspiler.CreateAsync();
-
-        var session = await CreateDuetsSessionAsync(TranspilerKind.TypeScript, tsF, babelF);
-        return new SandboxContext(session, TranspilerKind.TypeScript, tsF, babelF);
+        var t = transpiler ?? TranspilerChoice.TypeScript;
+        var b = backend ?? BackendChoice.Jint;
+        var session = await CreateDuetsSessionAsync(t, b);
+        return new SandboxContext(session, t, b);
     }
 
     public (string Result, IReadOnlyList<ScriptConsoleEntry> Logs) Evaluate(string code)
@@ -82,7 +134,7 @@ internal sealed class SandboxContext : IAsyncDisposable
         if (this._session.Transpiler is not TypeScriptService ts)
         {
             throw new InvalidOperationException(
-                $"Completions require the TypeScript transpiler (active: {this.ActiveTranspiler})."
+                $"Completions require the TypeScript transpiler (active: {this.ActiveTranspiler.Name})."
             );
         }
 
@@ -104,22 +156,38 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public async Task SetTranspilerAsync(string name)
     {
-        var kind = name.ToLowerInvariant() switch
-        {
-            "typescript" => TranspilerKind.TypeScript,
-            "babel" => TranspilerKind.Babel,
-            _ => throw new ArgumentException($"Unknown transpiler: '{name}'. Valid values: typescript, babel"),
-        };
-        await this.SetTranspilerAsync(kind);
+        await this.SetTranspilerAsync(TranspilerChoice.Parse(name));
     }
 
-    public async Task SetTranspilerAsync(TranspilerKind kind)
+    public async Task SetTranspilerAsync(TranspilerChoice choice)
     {
-        if (kind == this.ActiveTranspiler) return;
+        if (!this.ActiveBackend.SupportsExternalTranspiler)
+        {
+            throw new InvalidOperationException(
+                $"The {this.ActiveBackend.Name} backend does not support external transpilers (engine-only mode)."
+            );
+        }
+
+        if (choice == this.ActiveTranspiler) return;
         if (this._webServer != null) await this.StopWebServerAsync();
         var old = this._session;
-        this._session = await CreateDuetsSessionAsync(kind, this._tsFactory, this._babelFactory);
-        this.ActiveTranspiler = kind;
+        this._session = await CreateDuetsSessionAsync(choice, this.ActiveBackend);
+        this.ActiveTranspiler = choice;
+        old.Dispose();
+    }
+
+    public async Task SetBackendAsync(string name)
+    {
+        await this.SetBackendAsync(BackendChoice.Parse(name));
+    }
+
+    public async Task SetBackendAsync(BackendChoice choice)
+    {
+        if (choice == this.ActiveBackend) return;
+        if (this._webServer != null) await this.StopWebServerAsync();
+        var old = this._session;
+        this._session = await CreateDuetsSessionAsync(this.ActiveTranspiler, choice);
+        this.ActiveBackend = choice;
         old.Dispose();
     }
 
@@ -127,7 +195,7 @@ internal sealed class SandboxContext : IAsyncDisposable
     {
         if (this._webServer != null) await this.StopWebServerAsync();
         var old = this._session;
-        this._session = await CreateDuetsSessionAsync(this.ActiveTranspiler, this._tsFactory, this._babelFactory);
+        this._session = await CreateDuetsSessionAsync(this.ActiveTranspiler, this.ActiveBackend);
         old.Dispose();
     }
 
@@ -140,7 +208,6 @@ internal sealed class SandboxContext : IAsyncDisposable
 
         if (this.IsServerRunning) return;
 
-        // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
         {
             this._replService?.Dispose();
@@ -168,8 +235,6 @@ internal sealed class SandboxContext : IAsyncDisposable
         }
         catch
         {
-            // Ignore both OperationCanceledException (normal cancellation) and any
-            // fault the task may have accumulated before Stop() was called.
         }
 
         this._replService?.Dispose();
@@ -201,29 +266,25 @@ internal sealed class SandboxContext : IAsyncDisposable
     }
 
     private static async Task<DuetsSession> CreateDuetsSessionAsync(
-        TranspilerKind kind,
-        Func<TypeDeclarations, Task<ITranspiler>> tsFactory,
-        Func<TypeDeclarations, Task<ITranspiler>> babelFactory)
+        TranspilerChoice transpiler,
+        BackendChoice backend)
     {
-        var factory = kind switch
+        if (backend.SupportsExternalTranspiler)
         {
-            TranspilerKind.TypeScript => tsFactory,
-            TranspilerKind.Babel => babelFactory,
-            _ => throw new UnreachableException(),
-        };
-        var kindName = kind switch
+            await Console.Error.WriteAsync($"Initializing {backend.Name}/{transpiler.Name} engine...");
+            var session = await DuetsSession.CreateAsync(transpiler.Factory, backend.Configure);
+            await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
+            return session;
+        }
+        else
         {
-            TranspilerKind.TypeScript => "TypeScript",
-            TranspilerKind.Babel => "Babel",
-            _ => throw new UnreachableException(),
-        };
-
-        await Console.Error.WriteAsync($"Initializing {kindName} engine...");
-        var session = await DuetsSession.CreateAsync(
-            factory,
-            configuration => configuration.UseJint(opts => opts.AllowClr())
-        );
-        await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
-        return session;
+            await Console.Error.WriteAsync($"Initializing {backend.Name} engine (engine-only, no transpiler)...");
+            var session = await DuetsSession.CreateAsync(
+                _ => Task.FromResult<ITranspiler>(new PassThroughTranspiler()),
+                backend.Configure
+            );
+            await Console.Error.WriteLineAsync(" done");
+            return session;
+        }
     }
 }

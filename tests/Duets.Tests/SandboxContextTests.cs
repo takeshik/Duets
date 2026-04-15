@@ -6,12 +6,19 @@ namespace Duets.Tests;
 
 public sealed class SandboxContextTests
 {
+    private static readonly TranspilerChoice FakeTypeScriptChoice = new(
+        "typescript",
+        async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true)
+    );
+
+    private static readonly TranspilerChoice FakeBabelChoice = new(
+        "babel",
+        async _ => await FakeRuntimeAssets.CreateBabelTranspilerAsync()
+    );
+
     private static Task<SandboxContext> CreateContextAsync()
     {
-        return SandboxContext.CreateAsync(
-            declarations => FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true),
-            FakeRuntimeAssets.CreateBabelTranspilerAsync
-        );
+        return SandboxContext.CreateAsync(FakeTypeScriptChoice, BackendChoice.Jint);
     }
 
     [Fact]
@@ -30,7 +37,7 @@ public sealed class SandboxContextTests
     public async Task GetCompletions_requires_the_typescript_transpiler()
     {
         await using var ctx = await CreateContextAsync();
-        await ctx.SetTranspilerAsync(TranspilerKind.Babel);
+        await ctx.SetTranspilerAsync(FakeBabelChoice);
 
         var exception = Assert.Throws<InvalidOperationException>(() => ctx.GetCompletions("Math.", 5));
 
@@ -64,7 +71,7 @@ public sealed class SandboxContextTests
     {
         await using var ctx = await CreateContextAsync();
 
-        await ctx.SetTranspilerAsync(TranspilerKind.Babel);
+        await ctx.SetTranspilerAsync(FakeBabelChoice);
         var (result, _) = ctx.Evaluate("const answer: number = 40 + 2; answer");
         var fullName = ctx.RegisterType(typeof(NamespaceAlpha).AssemblyQualifiedName!);
 

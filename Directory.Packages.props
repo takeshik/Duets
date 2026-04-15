@@ -8,6 +8,8 @@
     <PackageVersion Include="Jint" Version="4.8.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.2.1" />
     <PackageVersion Include="Nerdbank.GitVersioning" Version="3.9.50" />
+    <PackageVersion Include="Okojo" Version="0.1.2-preview.1" />
+    <PackageVersion Include="Okojo.Reflection" Version="0.1.2-preview.1" />
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="System.Text.Json" Version="10.0.5" />
     <PackageVersion Include="System.Threading.Channels" Version="10.0.5" />

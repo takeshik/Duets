@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — the Okojo extension-method limitation noted in Consequences was subsequently
+resolved via `OkojoExtensionMethodRegistry`.
 
 ## Context
 

@@ -43,6 +43,7 @@ public class TypeScriptService : ITranspiler,
     private Engine? _engine;
     private JsValue? _ts;
     private JsValue? _tsTranspile;
+    private JsValue? _host;
 
     public string? Version { get; private set; }
 
@@ -92,6 +93,7 @@ public class TypeScriptService : ITranspiler,
                 this._engine = newEngine;
                 this._ts = ts;
                 this._tsTranspile = tsTranspile;
+                this._host = newEngine.GetValue("$$host");
                 this.Version = version;
                 this.ReplayDeclarations();
             }
@@ -125,7 +127,7 @@ public class TypeScriptService : ITranspiler,
         lock (this._sync)
         {
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            var host = this._engine.GetValue("$$host");
+            var host = this._host!;
             host.Get("addFile").Call(host, ["lib.es5.d.ts", content]);
         }
     }
@@ -143,7 +145,7 @@ public class TypeScriptService : ITranspiler,
         {
             if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
 
-            var host = this._engine.GetValue("$$host");
+            var host = this._host!;
             // Add user code as a virtual file
             host.Get("addFile").Call(host, [fileName, source]);
 
@@ -183,6 +185,7 @@ public class TypeScriptService : ITranspiler,
             this._engine = null;
             this._ts = null;
             this._tsTranspile = null;
+            this._host = null;
             this.Version = null;
         }
     }
@@ -251,8 +254,7 @@ public class TypeScriptService : ITranspiler,
     {
         if (this._engine == null) return;
 
-        // TODO: Cache $$host/addFile after ResetAsync so declaration replay does not repeat global/property lookup.
-        var host = this._engine.GetValue("$$host");
+        var host = this._host!;
         host.Get("addFile").Call(host, [declaration.FileName, declaration.Content]);
     }
 

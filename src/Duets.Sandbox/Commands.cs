@@ -11,9 +11,9 @@ public class Commands
         OutputJson(CompleteOnce(ctx, source, position ?? source.Length));
     }
 
-    public async Task Serve(int port = 17375, CancellationToken cancellationToken = default)
+    public async Task Serve(int port = 17375, string backend = "jint", CancellationToken cancellationToken = default)
     {
-        await using var ctx = await SandboxContext.CreateAsync();
+        await using var ctx = await SandboxContext.CreateAsync(backend: BackendChoice.Parse(backend));
         ctx.StartWebServer(port);
         await Console.Error.WriteLineAsync("Press Ctrl+C to stop.");
         try
@@ -27,15 +27,15 @@ public class Commands
         await ctx.StopWebServerAsync();
     }
 
-    public async Task Batch()
+    public async Task Batch(string backend = "jint")
     {
-        await using var ctx = await SandboxContext.CreateAsync();
+        await using var ctx = await SandboxContext.CreateAsync(backend: BackendChoice.Parse(backend));
         await new BatchRunner(ctx).RunAsync();
     }
 
-    public async Task Repl()
+    public async Task Repl(string backend = "jint")
     {
-        await using var ctx = await SandboxContext.CreateAsync();
+        await using var ctx = await SandboxContext.CreateAsync(backend: BackendChoice.Parse(backend));
         await new InteractiveRepl(ctx).RunAsync();
     }
 

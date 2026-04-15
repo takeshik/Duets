@@ -9,14 +9,14 @@ namespace HttpHarker.Tests;
 /// </summary>
 public sealed class EmbeddedResourceFileProviderTests
 {
-    private static readonly Assembly ThisAssembly = typeof(EmbeddedResourceFileProviderTests).Assembly;
     private const string Prefix = "HttpHarker.Tests.TestResources";
+    private static readonly Assembly _thisAssembly = typeof(EmbeddedResourceFileProviderTests).Assembly;
 
     [Fact]
     public void Constructor_trims_trailing_dot_from_prefix()
     {
         // Prefix with trailing dot must behave identically to one without.
-        var provider = new EmbeddedResourceFileProvider(ThisAssembly, Prefix + ".");
+        var provider = new EmbeddedResourceFileProvider(_thisAssembly, Prefix + ".");
 
         Assert.NotNull(provider.GetFileContent("hello.txt"));
     }
@@ -24,7 +24,7 @@ public sealed class EmbeddedResourceFileProviderTests
     [Fact]
     public void GetFileContent_returns_bytes_for_existing_resource()
     {
-        var provider = new EmbeddedResourceFileProvider(ThisAssembly, Prefix);
+        var provider = new EmbeddedResourceFileProvider(_thisAssembly, Prefix);
 
         var bytes = provider.GetFileContent("hello.txt");
 
@@ -35,7 +35,7 @@ public sealed class EmbeddedResourceFileProviderTests
     [Fact]
     public void GetFileContent_returns_bytes_for_nested_resource()
     {
-        var provider = new EmbeddedResourceFileProvider(ThisAssembly, Prefix);
+        var provider = new EmbeddedResourceFileProvider(_thisAssembly, Prefix);
 
         var bytes = provider.GetFileContent("sub/page.html");
 
@@ -46,7 +46,7 @@ public sealed class EmbeddedResourceFileProviderTests
     [Fact]
     public void GetFileContent_returns_null_for_missing_resource()
     {
-        var provider = new EmbeddedResourceFileProvider(ThisAssembly, Prefix);
+        var provider = new EmbeddedResourceFileProvider(_thisAssembly, Prefix);
 
         Assert.Null(provider.GetFileContent("notexist.txt"));
     }

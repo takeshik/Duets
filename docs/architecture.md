@@ -35,6 +35,20 @@ The Jint integration package provides the Jint-backed runtime implementation
 - **ExtensionMethodRegistry** — Thread-safe registry for runtime extension method dispatch via Jint's `MemberAccessor` hook ([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
 - **DuetsSessionConfigurationExtensions** — Provides `UseJint()` on `DuetsSessionConfiguration`; the entry point for configuring the Jint backend.
 
+### Duets.Okojo
+
+The Okojo integration package contains the Okojo-backed runtime implementation
+([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)):
+
+- `OkojoScriptEngine`
+- `TypeScriptService`
+- `BabelTranspiler`
+- `OkojoScriptTypings`
+- `DuetsSessionConfigurationExtensions`
+
+`Duets.Okojo` targets `.NET 10` and uses `Okojo.Reflection` for CLR access. It supports all `typings` APIs including
+`usingNamespace`, `importType`, `scanAssembly`, `importAssembly`, and `addExtensionMethods` (via
+`OkojoExtensionMethodRegistry`).
 ### HttpHarker (HTTP server library)
 
 A lightweight HTTP server built on `System.Net.HttpListener` with a middleware pipeline ([ADR-9](decisions/9_wrap-httplistener-in-a-dedicated-middleware-library.md)). It is a separate library with its own namespace and may be extracted into its own repository in the future. See [../src/HttpHarker/README.md](../src/HttpHarker/README.md) for details.
