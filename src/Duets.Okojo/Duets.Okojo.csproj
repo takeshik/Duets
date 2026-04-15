@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageId>Duets.Okojo</PackageId>
+    <Authors>takeshik</Authors>
+    <Description>Okojo backend for Duets.</Description>
+    <Copyright>Copyright © Takeshi KIRIYA (aka takeshik) &lt;takeshik@tksk.io&gt;</Copyright>
+    <PackageProjectUrl>https://github.com/takeshik/Duets</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/takeshik/Duets</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>TypeScript JavaScript REPL debug Okojo</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Duets\Duets.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Okojo" />
+    <PackageReference Include="Okojo.Reflection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\shared\*.cs" Link="(shared)\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Duets.Tests$(_AssemblyNamePublicKeySuffix)" />
+  </ItemGroup>
+
+</Project>

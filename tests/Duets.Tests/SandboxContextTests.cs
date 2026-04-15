@@ -17,12 +17,18 @@ public sealed class SandboxContextTests
     private readonly TranspilerAssetsFixture _assets;
     private readonly ITestOutputHelper _output;
 
+    private TranspilerChoice BabelChoice => new(
+        "babel",
+        async _ => await this._assets.CreateBabelTranspilerAsync()
+    );
+
     private Task<SandboxContext> CreateContextAsync()
     {
-        return SandboxContext.CreateAsync(
-            declarations => this._assets.CreateTypeScriptServiceAsync(declarations, true),
-            this._assets.CreateBabelTranspilerAsync
+        var tsChoice = new TranspilerChoice(
+            "typescript",
+            async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations, true)
         );
+        return SandboxContext.CreateAsync(tsChoice, BackendChoice.Jint);
     }
 
     [Fact]
@@ -41,7 +47,7 @@ public sealed class SandboxContextTests
     public async Task GetCompletions_requires_the_typescript_transpiler()
     {
         await using var ctx = await this.CreateContextAsync();
-        await ctx.SetTranspilerAsync(TranspilerKind.Babel);
+        await ctx.SetTranspilerAsync(this.BabelChoice);
 
         var exception = Assert.Throws<InvalidOperationException>(() => ctx.GetCompletions("Math.", 5));
 
@@ -75,7 +81,7 @@ public sealed class SandboxContextTests
     {
         await using var ctx = await this.CreateContextAsync();
 
-        await ctx.SetTranspilerAsync(TranspilerKind.Babel);
+        await ctx.SetTranspilerAsync(this.BabelChoice);
         var (result, _) = ctx.Evaluate("const answer: number = 40 + 2; answer");
         var fullName = ctx.RegisterType(typeof(NamespaceAlpha).AssemblyQualifiedName!);
 

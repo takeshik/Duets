@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — applies to `Duets`, `Duets.Jint`, and `HttpHarker`.
+`Duets.Okojo` targets `net10.0` as a deliberate exception; see ADR-27.
 
 ## Context
 

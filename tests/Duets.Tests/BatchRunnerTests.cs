@@ -24,10 +24,11 @@ public sealed class BatchRunnerTests
 
     private Task<SandboxContext> CreateContextAsync()
     {
-        return SandboxContext.CreateAsync(
-            declarations => this._assets.CreateTypeScriptServiceAsync(declarations, true),
-            this._assets.CreateBabelTranspilerAsync
+        var tsChoice = new TranspilerChoice(
+            "typescript",
+            async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations, true)
         );
+        return SandboxContext.CreateAsync(tsChoice, BackendChoice.Jint);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-using Duets.Jint;
+using TypeScriptService = Duets.Jint.TypeScriptService;
 
 namespace Duets.Sandbox;
 
@@ -6,7 +6,7 @@ internal sealed class InteractiveRepl(SandboxContext session)
 {
     public async Task RunAsync()
     {
-        Console.WriteLine($"Duets Sandbox  [{session.TranspilerDescription}]");
+        Console.WriteLine($"Duets Sandbox  [{session.ActiveBackend.Name} / {session.TranspilerDescription}]");
         Console.WriteLine("Enter TypeScript code to evaluate, or :help for commands.\n");
 
         await this.HandleCommandAsync("server start");
@@ -72,6 +72,7 @@ internal sealed class InteractiveRepl(SandboxContext session)
               :server stop                  Stop web server
               :server status                Show web server status
               :set transpiler <name>         Switch transpiler (typescript | babel)
+              :set backend <name>           Switch backend (jint | okojo); clears script state
               :reset                        Reset all engines to initial state
               :help                         Show this help
               :quit                         Exit
@@ -258,17 +259,30 @@ internal sealed class InteractiveRepl(SandboxContext session)
 
             case "set":
             {
-                if (tokens.Length < 3 || !tokens[1].Equals("transpiler", StringComparison.OrdinalIgnoreCase))
+                if (tokens.Length < 3)
                 {
-                    PrintError("Usage: :set transpiler <typescript|babel>");
+                    PrintError("Usage: :set transpiler <typescript|babel>  |  :set backend <jint|okojo>");
                     break;
                 }
 
                 try
                 {
-                    await Console.Error.WriteAsync($"  Switching to {tokens[2]} transpiler...");
-                    await session.SetTranspilerAsync(tokens[2]);
-                    await Console.Error.WriteLineAsync($" done. {session.TranspilerDescription}");
+                    switch (tokens[1].ToLowerInvariant())
+                    {
+                        case "transpiler":
+                            await Console.Error.WriteAsync($"  Switching to {tokens[2]} transpiler...");
+                            await session.SetTranspilerAsync(tokens[2]);
+                            await Console.Error.WriteLineAsync($" done. {session.TranspilerDescription}");
+                            break;
+                        case "backend":
+                            await Console.Error.WriteAsync($"  Switching to {tokens[2]} backend...");
+                            await session.SetBackendAsync(tokens[2]);
+                            await Console.Error.WriteLineAsync(" done.");
+                            break;
+                        default:
+                            PrintError($"Unknown setting: {tokens[1]}  (transpiler | backend)");
+                            break;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -279,9 +293,9 @@ internal sealed class InteractiveRepl(SandboxContext session)
             }
 
             case "reset":
-                await Console.Error.WriteAsync("  Resetting engines...");
+                await Console.Error.WriteAsync("  Resetting...");
                 await session.ResetAsync();
-                await Console.Error.WriteLineAsync($" done. {session.TranspilerDescription}");
+                await Console.Error.WriteLineAsync($" done. [{session.ActiveBackend.Name} / {session.TranspilerDescription}]");
                 break;
 
             default:

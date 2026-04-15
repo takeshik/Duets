@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted — API shape partially superseded by ADR-27.
+The session ownership model and `TypeDeclarations` independence remain in effect.
+`DuetsSession.CreateAsync` now requires an explicit transpiler factory and
+`DuetsSessionConfiguration` delegate; the zero-argument default and the
+`RegisterTypeBuiltins()` session method described in the Consequences below
+were removed as part of the backend split.
 
 ## Context
 

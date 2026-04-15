@@ -25,6 +25,7 @@ internal sealed class BatchRunner(SandboxContext session)
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |
         | `set-transpiler` | `transpiler` | | Switch transpiler (`typescript` or `babel`); returns `transpiler` (description string) |
+        | `set-backend` | `backend` | | Switch runtime backend (`jint` or `okojo`); clears script state |
         | `reset` | | | Reset all engines and clear script state |
         | `help` | | | Returns this document as `content` (Markdown string) |
 
@@ -120,6 +121,7 @@ internal sealed class BatchRunner(SandboxContext session)
                             .ToArray(),
                     },
                     "set-transpiler" => await this.SetTranspilerAsync(cmd.GetProperty("transpiler").GetString()!),
+                    "set-backend" => await this.SetBackendAsync(cmd.GetProperty("backend").GetString()!),
                     "reset" => await this.ResetAsync(),
                     "help" => new { ok = true, content = _help },
                     _ => new { ok = false, error = $"Unknown op: {op}" },
@@ -208,6 +210,12 @@ internal sealed class BatchRunner(SandboxContext session)
     {
         await session.SetTranspilerAsync(name);
         return new { ok = true, transpiler = session.TranspilerDescription };
+    }
+
+    private async Task<object> SetBackendAsync(string name)
+    {
+        await session.SetBackendAsync(name);
+        return new { ok = true, backend = session.ActiveBackend.Name };
     }
 
     private async Task<object> ResetAsync()

@@ -39,6 +39,20 @@ The Jint integration package provides the Jint-backed runtime implementation
 - **DuetsSessionConfigurationExtensions** — Provides `UseJint()` and `UseBabel()` on `DuetsSessionConfiguration` ([ADR-28](decisions/28_unified-createasync-api-and-backend-autodiscovery.md)). `UseJint()` selects the Jint engine; `UseBabel()` selects the Babel transpiler. Both are optional when `JintBackendInitializer` has already registered the defaults.
 - **JintBackendInitializer** — Registers `JintScriptEngine` and `BabelTranspiler` as the default engine and transpiler in `DuetsBackendRegistry` via `[ModuleInitializer]`, enabling zero-configuration `DuetsSession.CreateAsync()` for any caller that references `Duets.Jint` ([ADR-28](decisions/28_unified-createasync-api-and-backend-autodiscovery.md)).
 
+### Duets.Okojo
+
+The Okojo integration package contains the Okojo-backed runtime implementation
+([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)):
+
+- `OkojoScriptEngine`
+- `TypeScriptService`
+- `BabelTranspiler`
+- `OkojoScriptTypings`
+- `DuetsSessionConfigurationExtensions`
+
+`Duets.Okojo` targets `.NET 10` and uses `Okojo.Reflection` for CLR access. It supports all `typings` APIs including
+`usingNamespace`, `importType`, `scanAssembly`, `importAssembly`, and `addExtensionMethods` (via
+`OkojoExtensionMethodRegistry`).
 ### HttpHarker (HTTP server library)
 
 A lightweight HTTP server built on `System.Net.HttpListener` with a middleware pipeline ([ADR-9](decisions/9_wrap-httplistener-in-a-dedicated-middleware-library.md)). It is a separate library with its own namespace and may be extracted into its own repository in the future. See [../src/HttpHarker/README.md](../src/HttpHarker/README.md) for details.
