@@ -37,7 +37,7 @@ public class ClrDeclarationGenerator
     /// backtick arity suffix removed (e.g. <c>List`1</c> → <c>List</c>).
     /// This is the name used in global variable bindings and <c>declare var</c> declarations.
     /// </summary>
-    internal static string GetScriptName(Type type)
+    public static string GetScriptName(Type type)
     {
         var backtickIdx = type.Name.IndexOf('`');
         return backtickIdx >= 0 ? type.Name[..backtickIdx] : type.Name;

@@ -6,7 +6,7 @@ using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
 
-namespace Duets;
+namespace Duets.Jint;
 
 /// <summary>
 /// A mutable, thread-safe registry of extension method container types.

@@ -1,3 +1,6 @@
+using Duets.Jint;
+using Duets.Tests.TestSupport;
+
 namespace Duets.Tests;
 
 /// <summary>
@@ -22,7 +25,7 @@ public sealed class BabelTranspilerIntegrationTests : IAsyncLifetime
     [Fact]
     public void Transpile_enum_result_is_executable_by_jint()
     {
-        using var engine = new ScriptEngine(null, this._transpiler);
+        using var engine = JintTestRuntime.CreateEngine(transpiler: this._transpiler);
 
         engine.Execute("enum Status { Active = 1, Inactive = 2 }");
         var result = engine.Evaluate("Status.Active");
@@ -113,7 +116,7 @@ public sealed class BabelTranspilerIntegrationTests : IAsyncLifetime
     [Fact]
     public void Transpile_result_is_executable_by_jint()
     {
-        using var engine = new ScriptEngine(null, this._transpiler);
+        using var engine = JintTestRuntime.CreateEngine(transpiler: this._transpiler);
 
         engine.Execute("const answer: number = 40 + 2;");
         var result = engine.Evaluate("answer");

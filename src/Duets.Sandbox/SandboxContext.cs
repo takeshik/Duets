@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Duets.Jint;
 using HttpHarker;
 using Jint;
 
@@ -218,9 +219,11 @@ internal sealed class SandboxContext : IAsyncDisposable
         };
 
         await Console.Error.WriteAsync($"Initializing {kindName} engine...");
-        var session = await DuetsSession.CreateAsync(factory, opts => opts.AllowClr());
+        var session = await DuetsSession.CreateAsync(
+            factory,
+            configuration => configuration.UseJint(opts => opts.AllowClr())
+        );
         await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
-        session.RegisterTypeBuiltins();
         return session;
     }
 }

@@ -59,7 +59,10 @@ const inspect = function (value, opts) {
 // util.inspect: returns a formatted string (use when you need the string itself).
 var util = Object.freeze({
     inspect: function (value, opts) { return inspect(value, opts); },
-    toJsArray: function (value) { return __utilToJsArray__(value); },
+    toJsArray: function (value) {
+        if (typeof __utilToJsArray__ === 'function') return __utilToJsArray__(value);
+        return Array.isArray(value) ? value : Array.from(value);
+    },
 });
 
 // dump(value): outputs the value to the REPL output pane and returns it unchanged,

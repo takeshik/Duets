@@ -1,4 +1,5 @@
 using System.Reflection;
+using Duets.Jint;
 using Jint;
 using Jint.Native;
 
@@ -93,8 +94,7 @@ internal static class FakeRuntimeAssets
             {
                 TypeScriptJs = AssetSources.From(_ => Task.FromResult(TypeScriptRuntime)),
                 LibEs5Source = _ => AssetSources.From(_ => Task.FromResult(LibEs5Declaration)),
-            },
-            false
+            }
         );
     }
 

@@ -20,6 +20,7 @@ internal sealed class BatchRunner(SandboxContext session)
         | `complete` | `source` | `position` (int, default: end) | Completions at position; returns `completions` array |
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
+        | `types-dump` | | | Dump registered declaration files; returns `types` array of `{fileName, content}` |
         | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |
@@ -33,14 +34,14 @@ internal sealed class BatchRunner(SandboxContext session)
 
         | Call | Description |
         |---|---|
-        | `typings.useType("Asm.Qualified.TypeName")` | Register a single type by assembly-qualified name |
-        | `typings.useType(System.IO.File)` | Register a single type via CLR type reference |
+        | `typings.importType("Asm.Qualified.TypeName")` | Register a single type by assembly-qualified name |
+        | `typings.importType(System.IO.File)` | Register a single type via CLR type reference |
         | `typings.scanAssembly("AssemblyName")` | Load assembly; register namespace skeletons for TS completions (no type members) |
         | `typings.scanAssemblyOf(System.IO.File)` | Scan the assembly containing the given CLR type reference |
-        | `typings.useAssembly("AssemblyName")` | Load assembly; register all public types |
-        | `typings.useAssemblyOf(System.IO.File)` | Register all public types from the containing assembly |
-        | `typings.useNamespace(System.Net.Http)` | Register all public types in a namespace (namespace reference form) |
-        | `typings.useNamespace("System.Net.Http")` | Register all public types in a namespace (string form) |
+        | `typings.importAssembly("AssemblyName")` | Load assembly; register all public types |
+        | `typings.importAssemblyOf(System.IO.File)` | Register all public types from the containing assembly |
+        | `typings.importNamespace("System.Net.Http")` | Register all public types in a namespace with completions |
+        | `typings.usingNamespace("System.Net.Http")` | Register all public types as globals (C# `using` semantics) |
 
         ## Completion entry fields
 
@@ -58,6 +59,7 @@ internal sealed class BatchRunner(SandboxContext session)
         {"op":"complete","source":"System.Math.","position":12}
         {"op":"register","type":"System.IO.File, System.IO.FileSystem"}
         {"op":"types"}
+        {"op":"types-dump"}
         {"op":"server-start","port":17375}
         {"op":"server-stop"}
         {"op":"server-status"}
@@ -104,6 +106,18 @@ internal sealed class BatchRunner(SandboxContext session)
                     {
                         ok = true,
                         types = session.GetTypeDeclarations().Select(d => d.FileName).ToArray(),
+                    },
+                    "types-dump" => new
+                    {
+                        ok = true,
+                        types = session.GetTypeDeclarations()
+                            .Select(d => new
+                                {
+                                    d.FileName,
+                                    d.Content,
+                                }
+                            )
+                            .ToArray(),
                     },
                     "set-transpiler" => await this.SetTranspilerAsync(cmd.GetProperty("transpiler").GetString()!),
                     "reset" => await this.ResetAsync(),

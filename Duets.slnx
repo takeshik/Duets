@@ -9,6 +9,8 @@
   <Folder Name="/src/">
     <Project Path="src/Duets.Sandbox/Duets.Sandbox.csproj" />
     <Project Path="src/Duets/Duets.csproj" />
+    <Project Path="src/Duets.Jint/Duets.Jint.csproj" />
+
     <Project Path="src/HttpHarker/HttpHarker.csproj" />
   </Folder>
   <Folder Name="/tests/">

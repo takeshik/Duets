@@ -1,3 +1,5 @@
+using Duets.Jint;
+
 namespace Duets.Sandbox;
 
 internal sealed class InteractiveRepl(SandboxContext session)

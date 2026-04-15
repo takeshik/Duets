@@ -27,7 +27,7 @@ public static class ReplServiceExtensions
 /// </summary>
 public class ReplService : IDisposable
 {
-    public ReplService(
+    internal ReplService(
         ITypeDeclarationProvider declarations, ScriptEngine scriptEngine, HttpServer server, string root = "/",
         IAssetSource? monacoLoader = null)
     {

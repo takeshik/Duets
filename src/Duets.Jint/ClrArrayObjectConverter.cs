@@ -2,7 +2,7 @@ using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
 
-namespace Duets;
+namespace Duets.Jint;
 
 /// <summary>
 /// Preserves CLR arrays as wrapped CLR objects so they participate in extension-method

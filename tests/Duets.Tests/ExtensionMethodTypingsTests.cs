@@ -1,4 +1,5 @@
 using System.Reflection;
+using Duets.Jint;
 using Duets.Tests.TestSupport;
 using Duets.Tests.TestTypes.Declarations;
 using Duets.Tests.TestTypes.Extensions;
@@ -34,12 +35,11 @@ public sealed class ExtensionMethodTypingsTests
     private static (TypeDeclarations declarations, ScriptEngine engine) CreateEngine()
     {
         var declarations = new TypeDeclarations();
-        var engine = new ScriptEngine(
-            opts => opts.AllowClr(
+        var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
-                typeof(ScriptEngine).Assembly
-            ),
-            new IdentityTranspiler()
+                typeof(ScriptEngine).Assembly,
+                typeof(JintScriptEngine).Assembly
+            )
         );
         engine.RegisterTypeBuiltins(declarations);
         engine.Execute(
@@ -54,12 +54,11 @@ public sealed class ExtensionMethodTypingsTests
     public void AddExtensionMethods_does_not_re_register_declarations_for_duplicate_container_registration()
     {
         var declarations = new CountingRegistrar();
-        using var engine = new ScriptEngine(
-            opts => opts.AllowClr(
+        using var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
-                typeof(ScriptEngine).Assembly
-            ),
-            new IdentityTranspiler()
+                typeof(ScriptEngine).Assembly,
+                typeof(JintScriptEngine).Assembly
+            )
         );
         engine.RegisterTypeBuiltins(declarations);
         engine.Execute(
@@ -229,7 +228,7 @@ public sealed class ExtensionMethodTypingsTests
     [Fact]
     public void ExtensionMethodRegistry_makes_generic_array_extension_callable()
     {
-        var registryType = typeof(ScriptEngine).Assembly.GetType("Duets.ExtensionMethodRegistry", true)!;
+        var registryType = typeof(JintScriptEngine).Assembly.GetType("Duets.Jint.ExtensionMethodRegistry", true)!;
         var registry = Activator.CreateInstance(registryType)!;
         registryType.GetMethod("Register")!.Invoke(registry, [typeof(ArrayExtensions)]);
 

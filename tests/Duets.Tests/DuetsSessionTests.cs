@@ -1,3 +1,4 @@
+using Duets.Jint;
 using Duets.Tests.TestSupport;
 using Jint;
 
@@ -26,6 +27,21 @@ public sealed class DuetsSessionTests
     }
 
     [Fact]
+    public async Task CreateAsync_disposes_transpilers_created_by_async_factories_when_engine_construction_fails()
+    {
+        var transpiler = new DisposableTranspiler();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DuetsSession.CreateAsync(
+                _ => Task.FromResult<ITranspiler>(transpiler),
+                configuration => configuration.UseEngine(_ => throw new InvalidOperationException("boom"))
+            )
+        );
+
+        Assert.True(transpiler.IsDisposed);
+    }
+
+    [Fact]
     public async Task CreateAsync_disposes_transpilers_when_engine_construction_fails()
     {
         var transpiler = new DisposableTranspiler();
@@ -33,7 +49,7 @@ public sealed class DuetsSessionTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             DuetsSession.CreateAsync(
                 _ => Task.FromResult<ITranspiler>(transpiler),
-                _ => throw new InvalidOperationException("boom")
+                configuration => configuration.UseEngine(_ => throw new InvalidOperationException("boom"))
             )
         );
 
@@ -41,50 +57,28 @@ public sealed class DuetsSessionTests
     }
 
     [Fact]
-    public async Task CreateAsync_passes_the_session_owned_declarations_to_the_async_factory()
+    public async Task CreateAsync_does_not_register_type_builtins_without_clr_interop()
     {
-        TypeDeclarations? capturedDeclarations = null;
-
-        using var session = await DuetsSession.CreateAsync(async declarations =>
-            {
-                capturedDeclarations = declarations;
-                return await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations);
-            }
+        using var session = await DuetsSession.CreateAsync(
+            async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations),
+            configuration => configuration.UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
-        session.RegisterTypeBuiltins();
-
-        Assert.Same(capturedDeclarations, session.Declarations);
-
-        var files = FakeRuntimeAssets.GetLanguageServiceFiles((TypeScriptService) session.Transpiler);
-        Assert.Contains(files.Values, content => content.Contains("declare const typings:"));
+        Assert.Equal("undefined", session.Evaluate("typeof typings").ToString());
     }
 
     [Fact]
-    public void Create_disposes_transpilers_when_engine_construction_fails()
-    {
-        var transpiler = new DisposableTranspiler();
-
-        Assert.Throws<InvalidOperationException>(() =>
-            DuetsSession.Create(
-                _ => transpiler,
-                _ => throw new InvalidOperationException("boom")
-            )
-        );
-
-        Assert.True(transpiler.IsDisposed);
-    }
-
-    [Fact]
-    public void Create_passes_the_session_owned_declarations_to_the_sync_factory()
+    public async Task CreateAsync_passes_the_session_owned_declarations_to_identity_transpilers()
     {
         TypeDeclarations? capturedDeclarations = null;
 
-        using var session = DuetsSession.Create(declarations =>
+        using var session = await DuetsSession.CreateAsync(
+            declarations =>
             {
                 capturedDeclarations = declarations;
-                return new IdentityTranspiler();
-            }
+                return Task.FromResult<ITranspiler>(new IdentityTranspiler());
+            },
+            configuration => configuration.UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
         Assert.Same(capturedDeclarations, session.Declarations);
@@ -92,10 +86,56 @@ public sealed class DuetsSessionTests
     }
 
     [Fact]
-    public void Dispose_disposes_transpilers_created_by_the_sync_factory()
+    public async Task CreateAsync_passes_the_session_owned_declarations_to_the_async_factory()
+    {
+        TypeDeclarations? capturedDeclarations = null;
+
+        using var session = await DuetsSession.CreateAsync(
+            async declarations =>
+            {
+                capturedDeclarations = declarations;
+                return await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations);
+            },
+            configuration => configuration.UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
+        );
+
+        Assert.Same(capturedDeclarations, session.Declarations);
+    }
+
+    [Fact]
+    public async Task CreateAsync_registers_type_builtins_when_clr_interop_is_enabled()
+    {
+        using var session = await DuetsSession.CreateAsync(
+            async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations),
+            configuration => configuration.UseJint(opts => opts.AllowClr())
+        );
+
+        var files = FakeRuntimeAssets.GetLanguageServiceFiles((TypeScriptService) session.Transpiler);
+        Assert.Contains(files.Values, content => content.Contains("declare const typings:"));
+        Assert.Equal("object", session.Evaluate("typeof typings").ToString());
+    }
+
+    [Fact]
+    public async Task CreateAsync_requires_an_engine_configuration()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DuetsSession.CreateAsync(
+                _ => Task.FromResult<ITranspiler>(new IdentityTranspiler()),
+                _ =>
+                {
+                }
+            )
+        );
+    }
+
+    [Fact]
+    public async Task Dispose_disposes_transpilers_created_by_async_factories()
     {
         var transpiler = new DisposableTranspiler();
-        var session = DuetsSession.Create(_ => transpiler);
+        var session = await DuetsSession.CreateAsync(
+            _ => Task.FromResult<ITranspiler>(transpiler),
+            configuration => configuration.UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        );
 
         session.Dispose();
 
@@ -107,9 +147,8 @@ public sealed class DuetsSessionTests
     {
         using var session = await DuetsSession.CreateAsync(
             async declarations => await TypeScriptService.CreateAsync(declarations, null, true),
-            opts => opts.AllowClr()
+            configuration => configuration.UseJint(opts => opts.AllowClr())
         );
-        session.RegisterTypeBuiltins();
         session.Execute(
             """
             typings.usingNamespace('System.Linq');

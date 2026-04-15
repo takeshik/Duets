@@ -1,5 +1,4 @@
 using Duets.Tests.TestSupport;
-using Jint.Native;
 
 namespace Duets.Tests;
 
@@ -23,7 +22,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Console_log_multiple_args_are_space_joined()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         ScriptConsoleEntry? entry = null;
         engine.ConsoleLogged += e => entry = e;
 
@@ -36,7 +35,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Console_log_object_is_formatted()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         ScriptConsoleEntry? entry = null;
         engine.ConsoleLogged += e => entry = e;
 
@@ -56,7 +55,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Console_log_string_is_not_quoted()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         ScriptConsoleEntry? entry = null;
         engine.ConsoleLogged += e => entry = e;
 
@@ -69,79 +68,79 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Dollar_exception_captures_exception_from_evaluate()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         var ex = engine.Evaluate("$exception");
 
-        Assert.NotEqual(JsValue.Undefined, ex);
-        Assert.NotEqual(JsValue.Null, ex);
+        Assert.False(ex.IsUndefined());
+        Assert.False(ex.IsNull());
     }
 
     [Fact]
     public void Dollar_exception_captures_exception_from_execute()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         Assert.ThrowsAny<Exception>(() => engine.Execute("null.prop"));
         var ex = engine.Evaluate("$exception");
 
-        Assert.NotEqual(JsValue.Undefined, ex);
-        Assert.NotEqual(JsValue.Null, ex);
+        Assert.False(ex.IsUndefined());
+        Assert.False(ex.IsNull());
     }
 
     [Fact]
     public void Dollar_exception_is_cleared_after_successful_evaluate()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         engine.Evaluate("1 + 1");
         var ex = engine.Evaluate("$exception");
 
-        Assert.Equal(JsValue.Undefined, ex);
+        Assert.True(ex.IsUndefined());
     }
 
     [Fact]
     public void Dollar_exception_is_cleared_after_successful_execute()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         engine.Execute("var x = 1;");
         var ex = engine.Evaluate("$exception");
 
-        Assert.Equal(JsValue.Undefined, ex);
+        Assert.True(ex.IsUndefined());
     }
 
     [Fact]
     public void Dollar_underscore_is_cleared_after_execute()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Evaluate("42");
         engine.Execute("var x = 1;");
         var result = engine.Evaluate("$_");
 
-        Assert.Equal(JsValue.Undefined, result);
+        Assert.True(result.IsUndefined());
     }
 
     [Fact]
     public void Dollar_underscore_is_cleared_when_evaluate_throws()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Evaluate("42");
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         var result = engine.Evaluate("$_");
 
-        Assert.Equal(JsValue.Undefined, result);
+        Assert.True(result.IsUndefined());
     }
 
     [Fact]
     public void Dollar_underscore_tracks_last_evaluated_value()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Evaluate("42");
         var result = engine.Evaluate("$_");
@@ -152,7 +151,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Dump_emits_console_log_entry_and_returns_value()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         ScriptConsoleEntry? entry = null;
         engine.ConsoleLogged += e => entry = e;
 
@@ -167,7 +166,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Dump_returns_value_unchanged_enabling_expression_chaining()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         var entries = new List<ScriptConsoleEntry>();
         engine.ConsoleLogged += e => entries.Add(e);
 
@@ -188,7 +187,7 @@ public sealed class ScriptEngineTests
             }
         );
 
-        using var engine = new ScriptEngine(null, transpiler);
+        using var engine = JintTestRuntime.CreateEngine(transpiler: transpiler);
 
         engine.Execute("const answer: number = 40 + 2;");
         var result = engine.Evaluate("answer");
@@ -203,7 +202,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public async Task Execute_is_safe_to_call_from_multiple_threads()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
         engine.Execute("var counter = 0;");
 
         await Task.WhenAll(
@@ -218,7 +217,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void Execute_state_persists_across_multiple_calls()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Execute("var counter = 10;");
         engine.Execute("counter += 5;");
@@ -230,7 +229,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void GetGlobalVariables_excludes_builtins_and_engine_special_variables()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Evaluate("42"); // sets $_
         var globals = engine.GetGlobalVariables();
@@ -245,7 +244,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void GetGlobalVariables_is_empty_when_no_user_variables_defined()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         var globals = engine.GetGlobalVariables();
 
@@ -255,7 +254,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void GetGlobalVariables_returns_user_defined_variables()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.Execute("var x = 1; var y = 2;");
         var globals = engine.GetGlobalVariables();
@@ -268,7 +267,7 @@ public sealed class ScriptEngineTests
     [Fact]
     public void SetValue_exposes_host_values_to_script_execution()
     {
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         engine.SetValue("offset", 5);
 

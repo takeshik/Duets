@@ -1,6 +1,9 @@
 # Architecture Overview
 
-Duets is an embeddable TypeScript console for .NET. It is designed to be added to any .NET application — including mobile, game engines, and other constrained environments — for live debugging and runtime scripting. The scripting language is TypeScript ([ADR-2](decisions/2_use-typescript-as-the-scripting-language.md)), which transpiles to JavaScript at eval time.
+Duets is an embeddable TypeScript console for .NET. It is designed to be added to any .NET application — including
+mobile, game engines, and other constrained environments — for live debugging and runtime scripting. The scripting
+language is TypeScript ([ADR-2](decisions/2_use-typescript-as-the-scripting-language.md)), which transpiles to
+JavaScript at eval time.
 
 ## Core Design Constraint
 
@@ -12,16 +15,28 @@ Duets is an embeddable TypeScript console for .NET. It is designed to be added t
 
 The main library consists of the following components:
 
-- **DuetsSession** — Canonical entry point and top-level context ([ADR-25](decisions/25_session-as-canonical-entry-point.md)). Owns `TypeDeclarations`, the active `ITranspiler`, and `ScriptEngine` as a unit. Created exclusively via `CreateAsync`, which absorbs async transpiler initialization. Uses `BabelTranspiler` by default; callers opt into `TypeScriptService` via a factory or builder argument. Each session is an isolated evaluation context; multiple concurrent sessions require no shared locking. Exposes `session.Declarations` (`ITypeDeclarationProvider` / `ITypeDeclarationRegistrar`) for callers that opt into CLR type registration or need to wire `ReplService`.
-- **TypeDeclarations** — Thread-safe, transpiler-agnostic runtime store for type declarations ([ADR-25](decisions/25_session-as-canonical-entry-point.md)). Owns CLR type registration, namespace placeholders, raw `.d.ts` registration, and change notifications. Exposes two narrow views: `ITypeDeclarationProvider` (snapshot + change events) and `ITypeDeclarationRegistrar` (registration commands). Uses `ClrDeclarationGenerator` internally. Normally owned by `DuetsSession`; available directly for advanced composition.
+- **DuetsSession** — Canonical entry point and top-level context ([ADR-25](decisions/25_session-as-canonical-entry-point.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)). Owns `TypeDeclarations`, the active `ITranspiler`, and an abstract `ScriptEngine` as a unit. The core package does not choose a runtime backend by itself; callers configure the backend through `DuetsSessionConfiguration` extensions supplied by backend packages.
+- **TypeDeclarations** — Thread-safe, transpiler-agnostic runtime store for type declarations ([ADR-25](decisions/25_session-as-canonical-entry-point.md)). Owns CLR type registration, namespace placeholders, raw `.d.ts` registration, and change notifications. Exposes two narrow views: `ITypeDeclarationProvider` (snapshot + change events) and `ITypeDeclarationRegistrar` (registration commands). Uses `ClrDeclarationGenerator` internally.
 - **ClrDeclarationGenerator** — Uses reflection to generate TypeScript type declarations (`.d.ts`) from .NET types. Called by `TypeDeclarations` when a CLR type is registered ([ADR-8](decisions/8_use-addextralib-to-inject-dts-declarations-for-completions.md)).
-- **TypeScriptService** — Hosts a Jint engine ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) that runs the official TypeScript compiler. Responsible for transpilation (TS → JS) and server-side completions. Requires an `ITypeDeclarationProvider` passed to `CreateAsync`; mirrors registered declarations into the in-process language service so `GetCompletions()` reflects runtime CLR registrations ([ADR-25](decisions/25_session-as-canonical-entry-point.md)). Holds no declaration registration APIs. Downloads and caches `typescript.js` from unpkg at runtime ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). Provides `InjectStdLibAsync()` to optionally inject `lib.es5.d.ts` into the server-side language service for callers that use `GetCompletions` directly ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
-- **BabelTranspiler** — Default `ITranspiler` ([ADR-25](decisions/25_session-as-canonical-entry-point.md), [ADR-19](decisions/19_babel-transpiler-as-typescript-7-migration-path.md)). Runs `@babel/standalone` in a dedicated Jint engine. Provides transpilation only; no language service or completion support. Has no dependency on `TypeDeclarations`.
-- **ScriptEngine** — Hosts a separate Jint engine for executing user code ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md)). Configured by the consumer to expose .NET assemblies and values. Requires an `ITranspiler` (e.g. `BabelTranspiler` or `TypeScriptService`) at construction; `Execute`/`Evaluate` always transpile before running ([ADR-10](decisions/10_extract-itranspiler-interface-for-scriptengine.md)). Owns an `ExtensionMethodRegistry` and installs a `MemberAccessor` hook at construction so that extension methods registered after construction are dispatched correctly ([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
-- **ReplService** — Wires everything together into a web-based REPL ([ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). Serves the Monaco editor UI as embedded resources, provides an SSE endpoint for live type declaration updates, and a `POST /eval` endpoint that transpiles and executes code. Depends on `ITypeDeclarationProvider` for the declaration SSE stream.
-- **ScriptBuiltins / ScriptTypings** — Provides the `typings` global object and the `clrTypeOf` global function to scripts via `ScriptEngine.RegisterTypeBuiltins(ITypeDeclarationRegistrar)`. `typings` exposes `importType`, `scanAssembly`, `scanAssemblyOf`, `importAssembly`, `importAssemblyOf`, `importNamespace`, `usingNamespace`, and `addExtensionMethods` for managing type declarations from within running scripts ([ADR-13](decisions/13_script-built-ins-and-typings-object.md), [ADR-14](decisions/14_assembly-derivation-from-type-reference.md), [ADR-15](decisions/15_namespace-skeleton-dummy-member.md), [ADR-24](decisions/24_typings-api-redesign.md), [ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)). `addExtensionMethods` registers a static extension-method container into the engine's `ExtensionMethodRegistry` and emits interface augmentation declarations for completions. Depends on `ITypeDeclarationRegistrar`.
+- **ITranspiler** — Engine-neutral transpilation boundary ([ADR-10](decisions/10_extract-itranspiler-interface-for-scriptengine.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)). Concrete implementations may be hosted by different JavaScript runtimes or replaced by future wasm-backed approaches.
+- **ScriptEngine** — Abstract runtime-neutral execution facade ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)). `Execute` and `Evaluate` always transpile before running, track `$_` and `$exception`, expose console events, and surface runtime values through `ScriptValue` instead of engine-specific value types.
+- **ScriptValue** — Runtime-neutral wrapper around a JavaScript value ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)). Provides the minimal cross-runtime operations Duets needs (`IsUndefined`, `IsNull`, `IsObject`, `ToObject`, display string).
+- **ReplService** — Wires everything together into a web-based REPL ([ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). Serves the Monaco editor UI as embedded resources, provides an SSE endpoint for live type declaration updates, and a `POST /eval` endpoint that transpiles and executes code. Depends on `ITypeDeclarationProvider` for the declaration SSE stream, not on a specific runtime backend.
 
-**Important:** TypeScriptService and ScriptEngine each own an independent Jint engine ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md)). The TypeScript compiler engine must not be used to run user code, and vice versa.
+### Duets.Jint
+
+The Jint integration package contains the existing Jint-centered implementation, now outside the core package
+([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)):
+
+- `JintScriptEngine`
+- `TypeScriptService`
+- `BabelTranspiler`
+- `ScriptTypings`
+- `ExtensionMethodRegistry`
+- `DuetsSessionConfigurationExtensions`
+
+Jint remains the backend with full extension-method support via `MemberAccessor`
+([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
 
 ### HttpHarker (HTTP server library)
 
@@ -41,6 +56,9 @@ It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sand
 
 The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.
 
+At the moment the sandbox still defaults to the Jint backend; the package split in ADR-27 makes backend selection
+possible, but a runtime-selection CLI surface is follow-up work.
+
 ### samples/ (usage examples)
 
 Runnable file-based app examples (`.cs` files at repository root level) showing standard library usage ([ADR-16](decisions/16_samples-directory-and-sandbox-role-clarification.md)). Each file is self-contained and executable via `dotnet run samples/<file>.cs`. These are the recommended starting point for new users.
@@ -53,8 +71,8 @@ Runnable file-based app examples (`.cs` files at repository root level) showing 
 flowchart LR
     U["User\n(Monaco Editor)"]
     RS[ReplService]
-    TS["TypeScriptService\n(Jint engine A)"]
-    SE["ScriptEngine\n(Jint engine B)"]
+    TS["ITranspiler\n(runtime-hosted)"]
+    SE["ScriptEngine\n(runtime backend)"]
 
     U -->|"POST /eval\nTypeScript source"| RS
     RS -->|Transpile| TS
@@ -76,7 +94,11 @@ flowchart LR
 
 ## Runtime Dependencies
 
-TypeScript compiler (`typescript.js`), Monaco Editor loader (`loader.js`), and optionally the ES5 standard library (`lib.es5.d.ts`) are fetched from unpkg on first use and cached in the system temp directory for 7 days ([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md)). This avoids bundling large JS files in the library assembly. `lib.es5.d.ts` is only fetched when `InjectStdLibAsync()` is called ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
+TypeScript compiler (`typescript.js`), Monaco Editor loader (`loader.js`), and optionally the ES5 standard library
+(`lib.es5.d.ts`) are fetched from unpkg on first use and cached in the system temp directory for 7 days
+([ADR-6](decisions/6_fetch-and-cache-runtime-js-assets-from-cdn.md), [ADR-18](decisions/18_pluggable-asset-source-abstraction.md)).
+This avoids bundling large JS files in the library assembly. `lib.es5.d.ts` is only fetched when a runtime-hosted
+`TypeScriptService` injects it for server-side completions ([ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
 
 ## Versioning and CI
 
@@ -86,5 +108,5 @@ Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdb
 
 | Package | Role |
 |---|---|
-| [Jint](https://github.com/sebastienros/jint) | JavaScript engine for running the TypeScript compiler and user scripts ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md)) |
+| [Jint](https://github.com/sebastienros/jint) | JavaScript runtime backend used by `Duets.Jint` ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)) |
 | [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated versioning from Git history and tags ([ADR-17](decisions/17_versioning-strategy-and-ci.md)) |

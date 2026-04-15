@@ -7,10 +7,10 @@ using Jint.Runtime.Interop;
 using System.Runtime.CompilerServices;
 #endif
 
-namespace Duets;
+namespace Duets.Jint;
 
 /// <summary>Provides script-accessible built-in functions for managing TypeScript type declarations.</summary>
-public sealed class ScriptTypings
+internal sealed class ScriptTypings
 {
     public ScriptTypings(
         ITypeDeclarationRegistrar declarations,

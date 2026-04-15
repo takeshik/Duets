@@ -1,3 +1,4 @@
+using Duets.Jint;
 using Duets.Tests.TestSupport;
 
 namespace Duets.Tests;

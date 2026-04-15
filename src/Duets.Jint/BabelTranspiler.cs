@@ -1,7 +1,7 @@
 using Jint;
 using Jint.Native;
 
-namespace Duets;
+namespace Duets.Jint;
 
 /// <summary>
 /// Configuration options for <see cref="BabelTranspiler"/>, controlling how the Babel bundle is fetched.
@@ -88,7 +88,7 @@ public class BabelTranspiler : ITranspiler,
             this._engine = newEngine;
             this._babel = babel;
             this._babelTransform = babelTransform;
-            this.Version = v.IsUndefined() ? null : v.AsString();
+            this.Version = v.Equals(JsValue.Undefined) ? null : v.AsString();
             previousEngine?.Dispose();
         }
         catch

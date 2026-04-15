@@ -1,8 +1,7 @@
-using System.Text;
 using Jint;
 using Jint.Native;
 
-namespace Duets;
+namespace Duets.Jint;
 
 /// <summary>
 /// Configuration options for <see cref="TypeScriptService"/>, controlling how runtime JS assets are fetched.
@@ -73,9 +72,7 @@ public class TypeScriptService : ITranspiler,
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
         var typeScriptJs = await this._options.TypeScriptJs.GetAsync(forceDownloadCodes);
-        await using var stream = typeof(TypeScriptService).Assembly.GetManifestResourceStream("Duets.Resources.ReplStaticFiles.language-service.js")!;
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var languageServiceJs = await reader.ReadToEndAsync();
+        var languageServiceJs = await ScriptEngineResources.LoadLanguageServiceJsAsync();
 
         var newEngine = new Engine();
         try
@@ -154,13 +151,13 @@ public class TypeScriptService : ITranspiler,
             var completions = service.Get("getCompletionsAtPosition")
                 .Call(service, [fileName, position, new JsObject(this._engine)]);
 
-            if (completions.IsNull() || completions.IsUndefined())
+            if (completions.Equals(JsValue.Null) || completions.Equals(JsValue.Undefined))
             {
                 return [];
             }
 
             var entries = completions.Get("entries");
-            if (entries.IsNull() || entries.IsUndefined())
+            if (entries.Equals(JsValue.Null) || entries.Equals(JsValue.Undefined))
             {
                 return [];
             }
@@ -169,7 +166,7 @@ public class TypeScriptService : ITranspiler,
                 .Select(v => new CompletionEntry(
                         v.Get("name").AsString(),
                         v.Get("kind").AsString(),
-                        v.Get("sortText").IsUndefined() ? null : v.Get("sortText").AsString()
+                        v.Get("sortText").Equals(JsValue.Undefined) ? null : v.Get("sortText").AsString()
                     )
                 )
                 .ToList();
@@ -254,6 +251,7 @@ public class TypeScriptService : ITranspiler,
     {
         if (this._engine == null) return;
 
+        // TODO: Cache $$host/addFile after ResetAsync so declaration replay does not repeat global/property lookup.
         var host = this._engine.GetValue("$$host");
         host.Get("addFile").Call(host, [declaration.FileName, declaration.Content]);
     }

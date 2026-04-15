@@ -1,22 +1,12 @@
+using Duets.Tests.TestSupport;
+
 namespace Duets.Tests;
 
 public sealed class InspectTests
 {
-    private sealed class IdentityTranspiler : ITranspiler
-    {
-        public string Transpile(
-            string input,
-            string? fileName = null,
-            IList<Diagnostic>? diagnostics = null,
-            string? moduleName = null)
-        {
-            return input;
-        }
-    }
-
     private static ScriptEngine CreateEngine()
     {
-        return new ScriptEngine(null, new IdentityTranspiler());
+        return JintTestRuntime.CreateEngine();
     }
 
     private static string Inspect(ScriptEngine engine, string expr)

@@ -2,7 +2,7 @@ using Jint;
 using Jint.Native;
 using Jint.Runtime.Interop;
 
-namespace Duets;
+namespace Duets.Jint;
 
 internal static class JsArrayConverter
 {

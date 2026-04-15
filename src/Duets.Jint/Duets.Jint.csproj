@@ -10,36 +10,28 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageId>Duets</PackageId>
+    <PackageId>Duets.Jint</PackageId>
     <Authors>takeshik</Authors>
-    <Description>Embeddable TypeScript console for .NET applications.</Description>
+    <Description>Jint backend and Jint-based transpilers for Duets.</Description>
     <Copyright>Copyright © Takeshi KIRIYA (aka takeshik) &lt;takeshik@tksk.io&gt;</Copyright>
     <PackageProjectUrl>https://github.com/takeshik/Duets</PackageProjectUrl>
     <RepositoryUrl>https://github.com/takeshik/Duets</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>TypeScript JavaScript REPL debug</PackageTags>
+    <PackageTags>TypeScript JavaScript REPL debug Jint</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HttpHarker\HttpHarker.csproj" />
+    <ProjectReference Include="..\Duets\Duets.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Jint" />
     <PackageReference Include="PolySharp" PrivateAssets="all" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
-    <PackageReference Include="System.Text.Json" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
-    <PackageReference Include="System.Threading.Channels" Condition="'$(TargetFramework)' == 'netstandard2.1'" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\shared\*.cs" Link="(shared)\%(Filename)%(Extension)" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\ScriptEngineInit.js" />
-    <EmbeddedResource Include="Resources\ScriptEngineInit.d.ts" />
-    <EmbeddedResource Include="Resources\ReplStaticFiles\index.html" />
-    <EmbeddedResource Include="Resources\ReplStaticFiles\language-service.js" />
   </ItemGroup>
 
   <ItemGroup>

@@ -31,7 +31,7 @@ public sealed class ReplServiceTests
     public async Task Eval_endpoint_returns_a_failed_payload_when_script_execution_throws()
     {
         var declarations = new TypeDeclarations();
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         await DuetsServerFixture.RunAsync(
             server =>
@@ -58,7 +58,7 @@ public sealed class ReplServiceTests
     public async Task Eval_endpoint_returns_the_evaluation_result_and_console_logs()
     {
         var declarations = new TypeDeclarations();
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         await DuetsServerFixture.RunAsync(
             server =>
@@ -88,7 +88,7 @@ public sealed class ReplServiceTests
     public async Task MonacoLoader_endpoint_returns_the_injected_asset_content()
     {
         var declarations = new TypeDeclarations();
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         await DuetsServerFixture.RunAsync(
             server =>
@@ -113,7 +113,7 @@ public sealed class ReplServiceTests
     {
         var declarations = new TypeDeclarations();
         declarations.RegisterDeclaration("declare const existing: number;");
-        using var engine = new ScriptEngine(null, new IdentityTranspiler());
+        using var engine = JintTestRuntime.CreateEngine();
 
         await DuetsServerFixture.RunAsync(
             server =>
