@@ -4,13 +4,15 @@
 // - registering CLR extension methods at script runtime via typings.addExtensionMethods(...)
 // - calling LINQ extension methods with instance syntax on CLR arrays
 // - converting a CLR array back to a native JavaScript array via util.toJsArray(...)
-#:project ../src/Duets/Duets.csproj
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
-session.RegisterTypeBuiltins();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint(opts => opts.AllowClr()));
 session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 session.SetValue("numbers", new[] { 1, 2, 3 });
 

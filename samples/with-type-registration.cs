@@ -8,15 +8,18 @@
 // for server-side completions), pass a factory to CreateAsync:
 //
 //   using var session = await DuetsSession.CreateAsync(
-//       decls => TypeScriptService.CreateAsync(decls),
-//       opts => opts.AllowClr());
-#:project ../src/Duets/Duets.csproj
+//       async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true),
+//       config => config.UseJint(opts => opts.AllowClr()));
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
-session.RegisterTypeBuiltins();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint(opts => opts.AllowClr()));
+// typings is registered automatically when AllowClr is enabled
 
 // From a script, use `typings` to register types for runtime access AND completions:
 //

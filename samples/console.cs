@@ -3,11 +3,14 @@
 // DuetsSession exposes a ConsoleLogged event that fires whenever script code
 // calls console.log/warn/error/info/debug. Subscribe to it to route output
 // to your application's logging infrastructure.
-#:project ../src/Duets/Duets.csproj
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 
-using var session = await DuetsSession.CreateAsync();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint());
 
 // Subscribe before executing any code.
 session.ConsoleLogged += entry =>

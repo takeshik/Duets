@@ -3,11 +3,14 @@
 // util.inspect formats any value as a readable string (like Node.js util.inspect).
 // dump(value) prints the value to the console and returns it unchanged, so it can
 // be inserted anywhere in an expression chain without breaking it.
-#:project ../src/Duets/Duets.csproj
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 
-using var session = await DuetsSession.CreateAsync();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint());
 session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 
 session.Execute("""

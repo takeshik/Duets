@@ -2,14 +2,16 @@
 //
 // Serves a browser-based Monaco editor with TypeScript completions and live
 // CLR type updates via SSE. Open http://127.0.0.1:17375/ after startup.
-#:project ../src/Duets/Duets.csproj
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 using HttpHarker;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(opts => opts.AllowClr());
-session.RegisterTypeBuiltins();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint(opts => opts.AllowClr()));
 
 using var server = new HttpServer("http://127.0.0.1:17375/");
 using var repl = server

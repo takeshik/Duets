@@ -14,11 +14,14 @@
 //
 //   GetGlobalVariables() — returns a snapshot of every name the user has
 //                   defined, excluding built-ins and engine internals.
-#:project ../src/Duets/Duets.csproj
+#:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
+using Duets.Jint;
 
-using var session = await DuetsSession.CreateAsync();
+using var session = await DuetsSession.CreateAsync(
+    async _ => await BabelTranspiler.CreateAsync(),
+    config => config.UseJint());
 
 // $_ — last evaluated value
 session.Evaluate("Math.PI * 2");
