@@ -25,18 +25,15 @@ The main library consists of the following components:
 
 ### Duets.Jint
 
-The Jint integration package contains the existing Jint-centered implementation, now outside the core package
+The Jint integration package provides the Jint-backed runtime implementation
 ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)):
 
-- `JintScriptEngine`
-- `TypeScriptService`
-- `BabelTranspiler`
-- `ScriptTypings`
-- `ExtensionMethodRegistry`
-- `DuetsSessionConfigurationExtensions`
-
-Jint remains the backend with full extension-method support via `MemberAccessor`
-([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
+- **JintScriptEngine** — Concrete `ScriptEngine` backed by Jint. Manages the user script execution environment, CLR interop via `AllowClr`, and wires `ExtensionMethodRegistry` into the Jint `MemberAccessor` hook ([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
+- **TypeScriptService** — Hosts the official TypeScript compiler (`typescript.js`) in a dedicated Jint engine instance separate from user code, providing both transpilation and server-side completions ([ADR-5](decisions/5_separate-jint-engines-for-typescript-compiler-and-user-code.md), [ADR-12](decisions/12_language-service-host-rewrite-and-nolib.md)).
+- **BabelTranspiler** — `ITranspiler` implementation backed by `@babel/standalone` running in Jint; the forward-compatibility path for TypeScript 7 ([ADR-19](decisions/19_babel-transpiler-as-typescript-7-migration-path.md)).
+- **ScriptTypings** — Provides the `typings` global object in the script environment, exposing type registration APIs (`importType`, `importAssembly`, `usingNamespace`, `addExtensionMethods`, etc.) ([ADR-13](decisions/13_script-built-ins-and-typings-object.md), [ADR-24](decisions/24_typings-api-redesign.md)).
+- **ExtensionMethodRegistry** — Thread-safe registry for runtime extension method dispatch via Jint's `MemberAccessor` hook ([ADR-26](decisions/26_extension-method-support-via-member-accessor-hook.md)).
+- **DuetsSessionConfigurationExtensions** — Provides `UseJint()` on `DuetsSessionConfiguration`; the entry point for configuring the Jint backend.
 
 ### HttpHarker (HTTP server library)
 
@@ -55,9 +52,6 @@ It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sand
 | `batch` | `batch` | JSONL in → JSONL out; agent-friendly stateful session |
 
 The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.
-
-At the moment the sandbox still defaults to the Jint backend; the package split in ADR-27 makes backend selection
-possible, but a runtime-selection CLI surface is follow-up work.
 
 ### samples/ (usage examples)
 
