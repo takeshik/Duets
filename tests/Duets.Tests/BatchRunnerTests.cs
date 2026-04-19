@@ -5,25 +5,35 @@ using Duets.Tests.TestSupport;
 namespace Duets.Tests;
 
 [CollectionDefinition("Console", DisableParallelization = true)]
-public sealed class ConsoleCollectionDefinition
+public sealed class ConsoleCollectionDefinition : ICollectionFixture<TranspilerAssetsFixture>
 {
 }
 
 [Collection("Console")]
 public sealed class BatchRunnerTests
 {
-    private static Task<SandboxContext> CreateContextAsync()
+    public BatchRunnerTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    {
+        this._assets = assets;
+        this._output = output;
+        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+    }
+
+    private readonly TranspilerAssetsFixture _assets;
+    private readonly ITestOutputHelper _output;
+
+    private Task<SandboxContext> CreateContextAsync()
     {
         return SandboxContext.CreateAsync(
-            declarations => FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true),
-            FakeRuntimeAssets.CreateBabelTranspilerAsync
+            declarations => this._assets.CreateTypeScriptServiceAsync(declarations, true),
+            this._assets.CreateBabelTranspilerAsync
         );
     }
 
     [Fact]
     public async Task RunAsync_types_dump_returns_declaration_contents()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
         var input = new StringReader("{\"op\":\"types-dump\"}\n");
         var output = new StringWriter();
         var originalIn = Console.In;

@@ -4,8 +4,19 @@ using Jint;
 
 namespace Duets.Tests;
 
+[Collection("TranspilerAssets")]
 public sealed class DuetsSessionTests
 {
+    public DuetsSessionTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    {
+        this._assets = assets;
+        this._output = output;
+        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+    }
+
+    private readonly TranspilerAssetsFixture _assets;
+    private readonly ITestOutputHelper _output;
+
     private sealed class DisposableTranspiler : ITranspiler,
         IDisposable
     {
@@ -60,7 +71,7 @@ public sealed class DuetsSessionTests
     public async Task CreateAsync_does_not_register_type_builtins_without_clr_interop()
     {
         using var session = await DuetsSession.CreateAsync(
-            async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations),
+            async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations),
             configuration => configuration.UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
@@ -94,7 +105,7 @@ public sealed class DuetsSessionTests
             async declarations =>
             {
                 capturedDeclarations = declarations;
-                return await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations);
+                return await this._assets.CreateTypeScriptServiceAsync(declarations);
             },
             configuration => configuration.UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
@@ -106,11 +117,11 @@ public sealed class DuetsSessionTests
     public async Task CreateAsync_registers_type_builtins_when_clr_interop_is_enabled()
     {
         using var session = await DuetsSession.CreateAsync(
-            async declarations => await FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations),
+            async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations),
             configuration => configuration.UseJint(opts => opts.AllowClr())
         );
 
-        var files = FakeRuntimeAssets.GetLanguageServiceFiles((TypeScriptService) session.Transpiler);
+        var files = TypeScriptServiceTestHelpers.GetLanguageServiceFiles((TypeScriptService) session.Transpiler);
         Assert.Contains(files.Values, content => content.Contains("declare const typings:"));
         Assert.Equal("object", session.Evaluate("typeof typings").ToString());
     }
@@ -146,7 +157,7 @@ public sealed class DuetsSessionTests
     public async Task Extension_method_array_augmentations_do_not_break_array_completions()
     {
         using var session = await DuetsSession.CreateAsync(
-            async declarations => await TypeScriptService.CreateAsync(declarations, null, true),
+            async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations, true),
             configuration => configuration.UseJint(opts => opts.AllowClr())
         );
         session.Execute(

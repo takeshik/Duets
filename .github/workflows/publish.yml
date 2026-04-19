@@ -40,6 +40,19 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release --verbosity normal
 
+      - name: Resolve latest JS asset versions
+        run: |
+          BABEL_VER=$(curl -sf https://registry.npmjs.org/%40babel%2Fstandalone/latest | jq -r .version)
+          TS_VER=$(curl -sf https://registry.npmjs.org/typescript/latest | jq -r .version)
+          echo "BABEL_VERSION=$BABEL_VER" >> "$GITHUB_ENV"
+          echo "TS_VERSION=$TS_VER" >> "$GITHUB_ENV"
+
+      - name: Cache JS test assets
+        uses: actions/cache@v4
+        with:
+          path: /tmp/duets-test-assets
+          key: test-assets-babel-${{ env.BABEL_VERSION }}-ts-${{ env.TS_VERSION }}
+
       - name: Test
         run: dotnet test --no-build -c Release -- --report-trx
 

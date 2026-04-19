@@ -4,20 +4,31 @@ using Duets.Tests.TestTypes.NamespaceTargets;
 
 namespace Duets.Tests;
 
+[Collection("TranspilerAssets")]
 public sealed class SandboxContextTests
 {
-    private static Task<SandboxContext> CreateContextAsync()
+    public SandboxContextTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    {
+        this._assets = assets;
+        this._output = output;
+        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+    }
+
+    private readonly TranspilerAssetsFixture _assets;
+    private readonly ITestOutputHelper _output;
+
+    private Task<SandboxContext> CreateContextAsync()
     {
         return SandboxContext.CreateAsync(
-            declarations => FakeRuntimeAssets.CreateInitializedTypeScriptServiceAsync(declarations, true),
-            FakeRuntimeAssets.CreateBabelTranspilerAsync
+            declarations => this._assets.CreateTypeScriptServiceAsync(declarations, true),
+            this._assets.CreateBabelTranspilerAsync
         );
     }
 
     [Fact]
     public async Task CreateAsync_enables_typescript_completions_and_registers_typings_builtins()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
 
         var completions = ctx.GetCompletions("Math.", 5);
         var (result, _) = ctx.Evaluate("typeof typings");
@@ -29,7 +40,7 @@ public sealed class SandboxContextTests
     [Fact]
     public async Task GetCompletions_requires_the_typescript_transpiler()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
         await ctx.SetTranspilerAsync(TranspilerKind.Babel);
 
         var exception = Assert.Throws<InvalidOperationException>(() => ctx.GetCompletions("Math.", 5));
@@ -40,7 +51,7 @@ public sealed class SandboxContextTests
     [Fact]
     public async Task RegisterType_returns_the_full_name_and_records_declarations()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
 
         var fullName = ctx.RegisterType(typeof(NamespaceAlpha).AssemblyQualifiedName!);
 
@@ -51,7 +62,7 @@ public sealed class SandboxContextTests
     [Fact]
     public async Task ResetAsync_clears_previously_registered_type_declarations()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
         ctx.RegisterType(typeof(NamespaceAlpha).AssemblyQualifiedName!);
 
         await ctx.ResetAsync();
@@ -62,7 +73,7 @@ public sealed class SandboxContextTests
     [Fact]
     public async Task SetTranspilerAsync_switches_to_babel_and_still_allows_type_registration()
     {
-        await using var ctx = await CreateContextAsync();
+        await using var ctx = await this.CreateContextAsync();
 
         await ctx.SetTranspilerAsync(TranspilerKind.Babel);
         var (result, _) = ctx.Evaluate("const answer: number = 40 + 2; answer");

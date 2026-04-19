@@ -7,13 +7,23 @@ namespace Duets.Tests;
 /// Integration tests for <see cref="BabelTranspiler"/> using the real Babel bundle.
 /// The bundle is fetched from unpkg on first run and cached in the system temp directory.
 /// </summary>
+[Collection("TranspilerAssets")]
 public sealed class BabelTranspilerIntegrationTests : IAsyncLifetime
 {
+    public BabelTranspilerIntegrationTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    {
+        this._assets = assets;
+        this._output = output;
+    }
+
+    private readonly TranspilerAssetsFixture _assets;
+    private readonly ITestOutputHelper _output;
     private BabelTranspiler _transpiler = null!;
 
     public async ValueTask InitializeAsync()
     {
-        this._transpiler = await BabelTranspiler.CreateAsync();
+        this._transpiler = await this._assets.CreateBabelTranspilerAsync();
+        this._output.WriteLine($"Babel {this._transpiler.Version}");
     }
 
     public ValueTask DisposeAsync()
