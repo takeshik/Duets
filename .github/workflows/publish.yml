@@ -48,7 +48,7 @@ jobs:
           echo "TS_VERSION=$TS_VER" >> "$GITHUB_ENV"
 
       - name: Cache JS test assets
-        uses: actions/cache@v4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /tmp/duets-test-assets
           key: test-assets-babel-${{ env.BABEL_VERSION }}-ts-${{ env.TS_VERSION }}
