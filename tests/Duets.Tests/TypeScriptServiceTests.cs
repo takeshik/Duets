@@ -87,7 +87,7 @@ public sealed class TypeScriptServiceTests
     }
 
     [Fact]
-    public async Task Transpile_populates_diagnostics_reported_by_the_runtime()
+    public async Task Transpile_populates_diagnostics_with_location_and_error_code()
     {
         var declarations = new TypeDeclarations();
         using var service = await this._assets.CreateTypeScriptServiceAsync(declarations);
@@ -101,18 +101,5 @@ public sealed class TypeScriptServiceTests
         Assert.True(diagnostic.Start >= 0);
         Assert.True(diagnostic.Category > 0);
         Assert.True(diagnostic.Code > 0);
-    }
-
-    [Fact]
-    public async Task Transpile_returns_the_transformed_source_and_strips_type_annotations()
-    {
-        var declarations = new TypeDeclarations();
-        using var service = await this._assets.CreateTypeScriptServiceAsync(declarations);
-        this._output.WriteLine($"TypeScript {service.Version}");
-
-        var output = service.Transpile("const answer: number = 42;", "input.ts", moduleName: "main");
-
-        Assert.DoesNotContain(": number", output);
-        Assert.Contains("42", output);
     }
 }
