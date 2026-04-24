@@ -33,9 +33,11 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 - `Duets.slnx` — Solution file (XML-based slnx format)
 - `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects
 - `src/`
-  - `Duets/` — Core library (public API)
+  - `Duets/` — Core library (public API): session, declarations, transpiler interface, REPL service
     - `Resources/ReplStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `ReplService` at
       runtime
+  - `Duets.Jint/` — [Jint](https://github.com/sebastienros/jint) backend package: `JintScriptEngine`,
+    `BabelTranspiler`, `TypeScriptService`, `ExtensionMethodRegistry`, `DuetsSessionConfigurationExtensions`
   - `HttpHarker/` — Standalone lightweight HTTP server library (may be extracted to its own repo)
   - `Duets.Sandbox/` — Multi-mode debugging CLI (batch, repl, serve, complete); not part of the public API
   - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly);
@@ -85,13 +87,6 @@ After modifying code, run:
 ```bash
 dotnet jb cleanupcode Duets.slnx --include="<changed files>"
 ```
-
-## Key Dependencies
-
-| Package | Purpose |
-|---|---|
-| [Jint](https://github.com/sebastienros/jint) | JavaScript engine — runs the TypeScript compiler and user scripts |
-| [Mio](https://github.com/takeshik/Mio) | File path utilities (`DirectoryPath`, `FilePath`) |
 
 ## Testing
 
