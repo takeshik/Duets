@@ -6,8 +6,10 @@ namespace Duets;
 /// and <see cref="ScriptEngine"/> as a unit.
 /// </summary>
 /// <remarks>
-/// Obtain an instance via <see cref="CreateAsync(Func{TypeDeclarations, Task{ITranspiler}}, Action{DuetsSessionConfiguration})"/>
+/// Obtain an instance via <see cref="CreateAsync(Action{DuetsSessionConfiguration})"/>
 /// and configure the desired backend through extensions provided by backend packages.
+/// When no engine or transpiler is configured explicitly, defaults registered by the
+/// loaded backend package (e.g. Duets.Jint) are used automatically.
 /// Each session creates and owns one <see cref="TypeDeclarations"/>
 /// instance and passes that instance to the selected transpiler factory so the declaration
 /// store stays consistent across the whole session. Create multiple sessions for concurrent
@@ -39,27 +41,20 @@ public sealed class DuetsSession : IDisposable
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
 
     /// <summary>
-    /// Creates a session using a transpiler factory and session configuration.
-    /// The transpiler factory receives the session-owned <see cref="TypeDeclarations"/> instance,
-    /// preventing the engine and transpiler from being wired to different declaration stores.
+    /// Creates a session with optional explicit configuration.
+    /// When no engine or transpiler is specified, defaults registered by the loaded backend
+    /// package are used. Call <see cref="DuetsSessionConfiguration.UseEngine"/> or
+    /// <see cref="DuetsSessionConfiguration.UseTranspiler(Func{TypeDeclarations,Task{ITranspiler}})"/>
+    /// for advanced control, or use the convenience extensions provided by backend packages.
     /// </summary>
-    public static Task<DuetsSession> CreateAsync(
-        Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory,
-        Action<DuetsSessionConfiguration> configure)
+    public static Task<DuetsSession> CreateAsync(Action<DuetsSessionConfiguration>? configure = null)
     {
-        if (transpilerFactory == null)
-        {
-            throw new ArgumentNullException(nameof(transpilerFactory));
-        }
-
-        if (configure == null)
-        {
-            throw new ArgumentNullException(nameof(configure));
-        }
-
         var configuration = new DuetsSessionConfiguration();
-        configure(configuration);
-        return CreateCoreAsync(transpilerFactory, configuration.GetRequiredEngineFactory());
+        configure?.Invoke(configuration);
+        return CreateCoreAsync(
+            configuration.GetRequiredTranspilerFactory(),
+            configuration.GetRequiredEngineFactory()
+        );
     }
 
     /// <summary>Transpiles and executes TypeScript code in this session.</summary>

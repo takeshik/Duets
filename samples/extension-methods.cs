@@ -10,9 +10,7 @@ using Duets;
 using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config => config.UseJint(opts => opts.AllowClr()));
 session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 session.SetValue("numbers", new[] { 1, 2, 3 });
 

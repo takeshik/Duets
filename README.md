@@ -46,12 +46,10 @@ dotnet run samples/web-repl.cs                # browser-based Monaco editor
 
 ### Minimal: transpile and evaluate
 
-[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — `DuetsSession` is the single entry point. `CreateAsync` downloads and caches the transpiler on first run.
+[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — `DuetsSession` is the single entry point. Referencing `Duets.Jint` is enough; `CreateAsync` discovers the backend automatically and downloads and caches the transpiler bundle on first run.
 
 ```csharp
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint());
+using var session = await DuetsSession.CreateAsync();
 var result = session.Evaluate("Math.sqrt(2)");
 Console.WriteLine(result); // 1.4142135623730951
 ```
@@ -61,9 +59,8 @@ Console.WriteLine(result); // 1.4142135623730951
 [`samples/with-type-registration.cs`](samples/with-type-registration.cs) — Enable `AllowClr` to expose .NET types to scripts and get IntelliSense-style completions. The `typings` global is registered automatically:
 
 ```csharp
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config => config
+    .UseJint(opts => opts.AllowClr()));
 
 // From a script:
 //   typings.usingNamespace("System.IO")    // C# using semantics: scatter types as globals + completions
@@ -81,9 +78,8 @@ using var session = await DuetsSession.CreateAsync(
 [`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions:
 
 ```csharp
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config => config
+    .UseJint(opts => opts.AllowClr()));
 
 using var server = new HttpServer("http://127.0.0.1:17375/");
 using var repl = server

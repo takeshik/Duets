@@ -5,20 +5,18 @@
 // to both scripts and the Monaco IntelliSense completions.
 //
 // To use TypeScriptService instead of the default BabelTranspiler (required
-// for server-side completions), pass a factory to CreateAsync:
+// for server-side completions), select it explicitly:
 //
-//   using var session = await DuetsSession.CreateAsync(
-//       async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true),
-//       config => config.UseJint(opts => opts.AllowClr()));
+//   using var session = await DuetsSession.CreateAsync(config => config
+//       .UseTranspiler(decls => TypeScriptService.CreateAsync(decls, injectStdLib: true))
+//       .UseJint(opts => opts.AllowClr()));
 #:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
 using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config => config.UseJint(opts => opts.AllowClr()));
 // typings is registered automatically when AllowClr is enabled
 
 // From a script, use `typings` to register types for runtime access AND completions:

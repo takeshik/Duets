@@ -6,11 +6,8 @@
 #:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
-using Duets.Jint;
 
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint());
+using var session = await DuetsSession.CreateAsync();
 session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 
 session.Execute("""

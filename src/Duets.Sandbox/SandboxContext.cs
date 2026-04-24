@@ -219,9 +219,9 @@ internal sealed class SandboxContext : IAsyncDisposable
         };
 
         await Console.Error.WriteAsync($"Initializing {kindName} engine...");
-        var session = await DuetsSession.CreateAsync(
-            factory,
-            configuration => configuration.UseJint(opts => opts.AllowClr())
+        var session = await DuetsSession.CreateAsync(config => config
+            .UseTranspiler(factory)
+            .UseJint(opts => opts.AllowClr())
         );
         await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
         return session;

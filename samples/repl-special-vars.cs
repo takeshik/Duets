@@ -17,11 +17,8 @@
 #:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
-using Duets.Jint;
 
-using var session = await DuetsSession.CreateAsync(
-    async _ => await BabelTranspiler.CreateAsync(),
-    config => config.UseJint());
+using var session = await DuetsSession.CreateAsync();
 
 // $_ — last evaluated value
 session.Evaluate("Math.PI * 2");
