@@ -31,65 +31,39 @@ To build from source, the repository requires the [.NET 10 SDK](https://dotnet.m
 
 ## Quick Start
 
-Runnable examples live in [`samples/`](samples/). Each file is a self-contained file-based app:
-
-```bash
-dotnet run samples/minimal-eval.cs            # transpile and evaluate
-dotnet run samples/with-type-registration.cs  # expose .NET types to scripts
-dotnet run samples/extension-methods.cs       # LINQ extension methods on CLR objects
-dotnet run samples/console.cs                 # script console output via ConsoleLogged
-dotnet run samples/inspect-and-dump.cs        # util.inspect and dump
-dotnet run samples/repl-special-vars.cs       # $_, $exception, GetGlobalVariables
-dotnet run samples/server-side-completions.cs # TypeScriptService and GetCompletions
-dotnet run samples/web-repl.cs                # browser-based Monaco editor
-```
-
-### Minimal: transpile and evaluate
-
-[`samples/minimal-eval.cs`](samples/minimal-eval.cs) — `DuetsSession` is the single entry point. Referencing `Duets.Jint` is enough; `CreateAsync` discovers the backend automatically and downloads and caches the transpiler bundle on first run.
+Add `Duets.Jint` — no Node.js required:
 
 ```csharp
 using var session = await DuetsSession.CreateAsync();
-var result = session.Evaluate("Math.sqrt(2)");
-Console.WriteLine(result); // 1.4142135623730951
+Console.WriteLine(session.Evaluate("Math.sqrt(2)")); // 1.4142135623730951
 ```
 
-### With .NET type registration
-
-[`samples/with-type-registration.cs`](samples/with-type-registration.cs) — Enable `AllowClr` to expose .NET types to scripts and get IntelliSense-style completions. The `typings` global is registered automatically:
+To call .NET types from TypeScript, enable CLR interop:
 
 ```csharp
 using var session = await DuetsSession.CreateAsync(config => config
     .UseJint(opts => opts.AllowClr()));
 
-// From a script:
-//   typings.usingNamespace("System.IO")    // C# using semantics: scatter types as globals + completions
-//   typings.importNamespace("System.IO")   // keep namespace prefix
-//   typings.importType(System.IO.File)     // single type via CLR reference
-//   typings.scanAssembly("System.Net.Http") // namespace skeletons only
-//   typings.importAssembly("System.Net.Http") // all public types
-//
-//   var Linq = importNamespace("System.Linq");
-//   typings.addExtensionMethods(Linq.Enumerable) // LINQ operators as instance methods + completions
+session.Execute("typings.usingNamespace('System.IO')");
+
+Console.WriteLine(session.Evaluate("""
+    const files: string[] = Directory.GetFiles('.');
+    files.map(f => Path.GetFileName(f)).join(', ')
+    """));
 ```
 
-### With web REPL
-
-[`samples/web-repl.cs`](samples/web-repl.cs) — Serve a browser-based Monaco editor with live completions:
+To serve a browser-based TypeScript console with Monaco editor and live .NET type completions:
 
 ```csharp
 using var session = await DuetsSession.CreateAsync(config => config
     .UseJint(opts => opts.AllowClr()));
 
 using var server = new HttpServer("http://127.0.0.1:17375/");
-using var repl = server
-    .UseContentTypeDetection()
-    .UseRepl(session);
-
-await server.RunAsync();
+server.UseContentTypeDetection().UseRepl(session);
+await server.RunAsync(); // open http://127.0.0.1:17375/
 ```
 
-Open `http://127.0.0.1:17375/` in a browser to access the TypeScript console.
+More examples in [`samples/`](samples/).
 
 ### Editor Keybindings
 
