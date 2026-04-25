@@ -52,7 +52,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 ## Architecture & Design
 
 - [docs/architecture.md](docs/architecture.md) — Current architecture snapshot. Read this before making structural
-  changes.
+  changes or answering any design or feasibility question.
 - [docs/decisions/index.md](docs/decisions/index.md) — ADR index: Title, Keywords, and Abstract for all ADRs. Read this
   to identify relevant decisions before reading full ADRs.
 - [docs/decisions/](docs/decisions/) — Architecture Decision Records (ADRs). ADR-N is at `docs/decisions/<N>_*.md`.
