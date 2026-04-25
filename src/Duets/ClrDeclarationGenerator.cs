@@ -9,6 +9,12 @@ namespace Duets;
 /// </summary>
 public class ClrDeclarationGenerator
 {
+    /// <summary>Initializes a new instance with an optional JSDoc provider.</summary>
+    public ClrDeclarationGenerator(IJsDocProvider? jsDocProvider = null)
+    {
+        this._jsDocProvider = jsDocProvider;
+    }
+
     private static readonly HashSet<Type> _numericTypes =
     [
         typeof(byte), typeof(sbyte),
@@ -32,6 +38,8 @@ public class ClrDeclarationGenerator
         typeof(Dictionary<,>),
     ];
 
+    private readonly IJsDocProvider? _jsDocProvider;
+
     /// <summary>
     /// Returns the bare TypeScript identifier name for a CLR type — the simple name with any
     /// backtick arity suffix removed (e.g. <c>List`1</c> → <c>List</c>).
@@ -52,7 +60,7 @@ public class ClrDeclarationGenerator
     {
         var sb = new StringBuilder();
         var visited = new HashSet<Type>();
-        WriteDeclaration(sb, targetType, visited);
+        this.WriteDeclaration(sb, targetType, visited);
         return sb.ToString();
     }
 
@@ -81,226 +89,11 @@ public class ClrDeclarationGenerator
         {
             foreach (var target in GetAugmentationTargets(group.Key))
             {
-                WriteExtensionAugmentation(sb, group.Key, target, [.. group], visited);
+                this.WriteExtensionAugmentation(sb, group.Key, target, [.. group], visited);
             }
         }
 
         return sb.ToString();
-    }
-
-    private static void WriteDeclaration(StringBuilder sb, Type type, HashSet<Type> visited)
-    {
-        // Constructed generic types (e.g. List<string>) are treated as their open form (List<T>)
-        if (type.IsGenericType && !type.IsGenericTypeDefinition)
-        {
-            type = type.GetGenericTypeDefinition();
-        }
-
-        if (!visited.Add(type)) return;
-
-        var ns = type.Namespace;
-        var typeIndent = ns != null ? "  " : "";
-
-        if (ns != null)
-        {
-            sb.AppendLine($"declare namespace {ns} {{");
-        }
-
-        if (type.IsEnum)
-        {
-            WriteEnumDeclaration(sb, type, typeIndent);
-        }
-        else if (type.IsInterface)
-        {
-            WriteInterfaceDeclaration(sb, type, visited, typeIndent);
-        }
-        else
-        {
-            WriteClassDeclaration(sb, type, visited, typeIndent);
-        }
-
-        if (ns != null)
-        {
-            sb.AppendLine("}");
-        }
-    }
-
-    private static void WriteClassDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
-    {
-        var header = BuildTypeHeader(type);
-        var keyword = typeIndent.Length == 0 ? "declare class" : "class";
-
-        var baseType = type.BaseType;
-        var extendsClause = "";
-        if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
-        {
-            extendsClause = $" extends {MapType(baseType, visited)}";
-        }
-
-        var implementedInterfaces = GetDirectlyImplementedInterfaces(type);
-        var implementsClause = implementedInterfaces.Count > 0
-            ? $" implements {string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))}"
-            : "";
-
-        sb.AppendLine($"{typeIndent}{keyword} {header}{extendsClause}{implementsClause} {{");
-
-        var memberIndent = typeIndent + "  ";
-
-        WriteConstructors(sb, type, visited, memberIndent);
-        WriteFields(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
-        WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
-        WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
-
-        WriteFields(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-
-        sb.AppendLine($"{typeIndent}}}");
-
-        if (implementedInterfaces.Count > 0)
-        {
-            var interfaceKeyword = typeIndent.Length == 0 ? "declare interface" : "interface";
-            sb.AppendLine(
-                $"{typeIndent}{interfaceKeyword} {header} extends " +
-                $"{string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))} {{}}"
-            );
-        }
-    }
-
-    private static void WriteInterfaceDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
-    {
-        var header = BuildTypeHeader(type);
-        var keyword = typeIndent.Length == 0 ? "declare interface" : "interface";
-        sb.AppendLine($"{typeIndent}{keyword} {header} {{");
-        var memberIndent = typeIndent + "  ";
-        WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        sb.AppendLine($"{typeIndent}}}");
-    }
-
-    private static void WriteEnumDeclaration(StringBuilder sb, Type type, string typeIndent)
-    {
-        var keyword = typeIndent.Length == 0 ? "declare enum" : "enum";
-        sb.AppendLine($"{typeIndent}{keyword} {type.Name} {{");
-        var names = Enum.GetNames(type);
-#if NETSTANDARD2_1
-        var underlyingType = Enum.GetUnderlyingType(type);
-        var values = Enum.GetValues(type).Cast<object>().Select(v => Convert.ChangeType(v, underlyingType)).ToArray();
-#else
-        var values = Enum.GetValuesAsUnderlyingType(type).Cast<object>().ToArray();
-#endif
-        var memberIndent = typeIndent + "  ";
-        for (var i = 0; i < names.Length; i++)
-        {
-            sb.AppendLine($"{memberIndent}{names[i]} = {values[i]},");
-        }
-
-        sb.AppendLine($"{typeIndent}}}");
-    }
-
-    private static void WriteConstructors(StringBuilder sb, Type type, HashSet<Type> visited, string indent)
-    {
-        foreach (var ctor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
-        {
-            var paramParts = new List<string>();
-            var ok = true;
-            foreach (var param in ctor.GetParameters())
-            {
-                if (param.ParameterType.IsByRef || param.ParameterType.IsPointer)
-                {
-                    ok = false;
-                    break;
-                }
-
-                paramParts.Add($"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: {MapType(param.ParameterType, visited)}");
-            }
-
-            if (ok)
-            {
-                sb.AppendLine($"{indent}constructor({string.Join(", ", paramParts)});");
-            }
-        }
-    }
-
-    private static void WriteFields(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
-    {
-        foreach (var field in type.GetFields(flags))
-        {
-            var tsType = MapType(field.FieldType, visited);
-            sb.AppendLine($"{indent}/** {field.FieldType.Name} {field.Name} */");
-            sb.AppendLine($"{indent}{prefix}{field.Name}: {tsType};");
-        }
-    }
-
-    private static void WriteProperties(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
-    {
-        foreach (var prop in type.GetProperties(flags))
-        {
-            if (prop.GetIndexParameters().Length > 0) continue;
-            var tsType = MapType(prop.PropertyType, visited);
-            var readonlyModifier = prop.SetMethod?.IsPublic == true ? "" : "readonly ";
-            sb.AppendLine($"{indent}/** {prop.PropertyType.Name} {prop.Name} */");
-            sb.AppendLine($"{indent}{prefix}{readonlyModifier}{prop.Name}: {tsType};");
-        }
-    }
-
-    private static void WriteMethods(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
-    {
-        // Collect .NET definitions keyed by TS signature (preserving insertion order)
-        var entries = new List<(string? tsSig, List<string> netSigs)>();
-        var tsSigIndex = new Dictionary<string, int>();
-
-        foreach (var method in type.GetMethods(flags).Where(m => !m.IsSpecialName))
-        {
-            var tsSig = TryBuildMethodSignature(method, visited);
-            var netSig = FormatClrSignature(method);
-
-            if (tsSig == null)
-            {
-                entries.Add((null, [netSig]));
-            }
-            else
-            {
-                var sigKey = $"{prefix}{tsSig}"; // dedup key without indent
-                var line = $"{indent}{prefix}{tsSig};";
-                if (tsSigIndex.TryGetValue(sigKey, out var idx))
-                {
-                    entries[idx].netSigs.Add(netSig); // append .NET definition to the same TS signature
-                }
-                else
-                {
-                    tsSigIndex[sigKey] = entries.Count;
-                    entries.Add((line, [netSig]));
-                }
-            }
-        }
-
-        foreach (var (tsSig, netSigs) in entries)
-        {
-            if (tsSig == null)
-            {
-                sb.AppendLine($"{indent}// [skipped] {prefix}{netSigs[0]}");
-            }
-            else
-            {
-                if (netSigs.Count == 1)
-                {
-                    sb.AppendLine($"{indent}/** {netSigs[0]} */");
-                }
-                else
-                {
-                    sb.AppendLine($"{indent}/**");
-                    foreach (var n in netSigs)
-                    {
-                        sb.AppendLine($"{indent} * - {n}");
-                    }
-
-                    sb.AppendLine($"{indent} */");
-                }
-
-                sb.AppendLine(tsSig);
-            }
-        }
     }
 
     /// <summary>
@@ -423,92 +216,26 @@ public class ClrDeclarationGenerator
         return $"{name}<{args}>";
     }
 
-    private static void WriteExtensionAugmentation(
-        StringBuilder sb,
-        Type receiverType,
-        ExtensionAugmentationTarget augmentationTarget,
-        MethodInfo[] methods,
-        HashSet<Type> visited)
+    private static void WriteJsDocBlock(StringBuilder sb, string indent, string body)
     {
-        var ns = augmentationTarget.Namespace;
-        var typeIndent = ns != null ? "  " : "";
-        var memberIndent = typeIndent + "  ";
+        var lines = body.Split('\n');
+        var trimmed = lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
+        if (trimmed.Length == 0) return;
 
-        if (ns != null) sb.AppendLine($"declare namespace {ns} {{");
-
-        var keyword = augmentationTarget.UseDeclareKeyword ? "declare interface" : "interface";
-        sb.AppendLine(
-            $"{typeIndent}{keyword} {augmentationTarget.ScriptTypeName}{augmentationTarget.TypeParamStr} {{"
-        );
-
-        // Collect entries with overload-collapsing (same pattern as WriteMethods)
-        var entries = new List<(string? tsSig, List<string> netSigs)>();
-        var tsSigIndex = new Dictionary<string, int>();
-
-        foreach (var method in methods)
+        if (trimmed.Length == 1)
         {
-            // Build substitution: method's first-param generic args → interface type param names.
-            // e.g. for Select(this IEnumerable<TSource>, ...) targeting IEnumerable<T>:
-            //   TSource (method's generic param) → "T" (interface's type param name)
-            var firstParamType = method.GetParameters()[0].ParameterType;
-            var firstParamArgs = GetTypeParameterSlots(firstParamType);
-
-            var substitution = new Dictionary<Type, string>();
-            for (var i = 0; i < Math.Min(firstParamArgs.Length, augmentationTarget.TypeParamNames.Length); i++)
-            {
-                substitution[firstParamArgs[i]] = augmentationTarget.TypeParamNames[i];
-            }
-
-            var tsSig = TryBuildExtensionMethodSignature(method, substitution, visited);
-            var netSig = FormatClrSignature(method);
-
-            if (tsSig is null)
-            {
-                entries.Add((null, [netSig]));
-            }
-            else
-            {
-                if (tsSigIndex.TryGetValue(tsSig, out var idx))
-                {
-                    entries[idx].netSigs.Add(netSig);
-                }
-                else
-                {
-                    tsSigIndex[tsSig] = entries.Count;
-                    entries.Add(($"{memberIndent}{tsSig};", [netSig]));
-                }
-            }
+            sb.AppendLine($"{indent}/** {trimmed[0]} */");
         }
-
-        foreach (var (tsSig, netSigs) in entries)
+        else
         {
-            if (tsSig is null)
+            sb.AppendLine($"{indent}/**");
+            foreach (var line in trimmed)
             {
-                sb.AppendLine($"{memberIndent}// [skipped] {netSigs[0]}");
+                sb.AppendLine($"{indent} * {line}");
             }
-            else
-            {
-                if (netSigs.Count == 1)
-                {
-                    sb.AppendLine($"{memberIndent}/** {netSigs[0]} */");
-                }
-                else
-                {
-                    sb.AppendLine($"{memberIndent}/**");
-                    foreach (var n in netSigs)
-                    {
-                        sb.AppendLine($"{memberIndent} * - {n}");
-                    }
 
-                    sb.AppendLine($"{memberIndent} */");
-                }
-
-                sb.AppendLine(tsSig);
-            }
+            sb.AppendLine($"{indent} */");
         }
-
-        sb.AppendLine($"{typeIndent}}}");
-        if (ns != null) sb.AppendLine("}");
     }
 
     private static List<ExtensionAugmentationTarget> GetAugmentationTargets(Type targetType)
@@ -979,6 +706,349 @@ public class ClrDeclarationGenerator
     {
         string[] reserved = ["arguments", "default", "delete", "export", "import", "in", "instanceof", "new", "return", "this", "typeof", "void"];
         return Array.IndexOf(reserved, name) >= 0 ? $"_{name}" : name;
+    }
+
+    private void WriteEnumDeclaration(StringBuilder sb, Type type, string typeIndent)
+    {
+        var jsDoc = this._jsDocProvider?.Get(type);
+        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        var keyword = typeIndent.Length == 0 ? "declare enum" : "enum";
+        sb.AppendLine($"{typeIndent}{keyword} {type.Name} {{");
+        var names = Enum.GetNames(type);
+#if NETSTANDARD2_1
+        var underlyingType = Enum.GetUnderlyingType(type);
+        var values = Enum.GetValues(type).Cast<object>().Select(v => Convert.ChangeType(v, underlyingType)).ToArray();
+#else
+        var values = Enum.GetValuesAsUnderlyingType(type).Cast<object>().ToArray();
+#endif
+        var memberIndent = typeIndent + "  ";
+        for (var i = 0; i < names.Length; i++)
+        {
+            sb.AppendLine($"{memberIndent}{names[i]} = {values[i]},");
+        }
+
+        sb.AppendLine($"{typeIndent}}}");
+    }
+
+    private void WriteDeclaration(StringBuilder sb, Type type, HashSet<Type> visited)
+    {
+        // Constructed generic types (e.g. List<string>) are treated as their open form (List<T>)
+        if (type.IsGenericType && !type.IsGenericTypeDefinition)
+        {
+            type = type.GetGenericTypeDefinition();
+        }
+
+        if (!visited.Add(type)) return;
+
+        var ns = type.Namespace;
+        var typeIndent = ns != null ? "  " : "";
+
+        if (ns != null)
+        {
+            sb.AppendLine($"declare namespace {ns} {{");
+        }
+
+        if (type.IsEnum)
+        {
+            this.WriteEnumDeclaration(sb, type, typeIndent);
+        }
+        else if (type.IsInterface)
+        {
+            this.WriteInterfaceDeclaration(sb, type, visited, typeIndent);
+        }
+        else
+        {
+            this.WriteClassDeclaration(sb, type, visited, typeIndent);
+        }
+
+        if (ns != null)
+        {
+            sb.AppendLine("}");
+        }
+    }
+
+    private void WriteClassDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
+    {
+        var jsDoc = this._jsDocProvider?.Get(type);
+        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        var header = BuildTypeHeader(type);
+        var keyword = typeIndent.Length == 0 ? "declare class" : "class";
+
+        var baseType = type.BaseType;
+        var extendsClause = "";
+        if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
+        {
+            extendsClause = $" extends {MapType(baseType, visited)}";
+        }
+
+        var implementedInterfaces = GetDirectlyImplementedInterfaces(type);
+        var implementsClause = implementedInterfaces.Count > 0
+            ? $" implements {string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))}"
+            : "";
+
+        sb.AppendLine($"{typeIndent}{keyword} {header}{extendsClause}{implementsClause} {{");
+
+        var memberIndent = typeIndent + "  ";
+
+        this.WriteConstructors(sb, type, visited, memberIndent);
+        this.WriteFields(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
+        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
+        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
+
+        this.WriteFields(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+
+        sb.AppendLine($"{typeIndent}}}");
+
+        if (implementedInterfaces.Count > 0)
+        {
+            var interfaceKeyword = typeIndent.Length == 0 ? "declare interface" : "interface";
+            sb.AppendLine(
+                $"{typeIndent}{interfaceKeyword} {header} extends " +
+                $"{string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))} {{}}"
+            );
+        }
+    }
+
+    private void WriteInterfaceDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
+    {
+        var jsDoc = this._jsDocProvider?.Get(type);
+        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        var header = BuildTypeHeader(type);
+        var keyword = typeIndent.Length == 0 ? "declare interface" : "interface";
+        sb.AppendLine($"{typeIndent}{keyword} {header} {{");
+        var memberIndent = typeIndent + "  ";
+        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        sb.AppendLine($"{typeIndent}}}");
+    }
+
+    private void WriteConstructors(StringBuilder sb, Type type, HashSet<Type> visited, string indent)
+    {
+        foreach (var ctor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var paramParts = new List<string>();
+            var ok = true;
+            foreach (var param in ctor.GetParameters())
+            {
+                if (param.ParameterType.IsByRef || param.ParameterType.IsPointer)
+                {
+                    ok = false;
+                    break;
+                }
+
+                paramParts.Add($"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: {MapType(param.ParameterType, visited)}");
+            }
+
+            if (ok)
+            {
+                var jsDoc = this._jsDocProvider?.Get(ctor);
+                if (jsDoc != null) WriteJsDocBlock(sb, indent, jsDoc);
+                sb.AppendLine($"{indent}constructor({string.Join(", ", paramParts)});");
+            }
+        }
+    }
+
+    private void WriteFields(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    {
+        foreach (var field in type.GetFields(flags))
+        {
+            var tsType = MapType(field.FieldType, visited);
+            var jsDoc = this._jsDocProvider?.Get(field);
+            if (jsDoc != null)
+            {
+                WriteJsDocBlock(sb, indent, jsDoc);
+            }
+            else
+            {
+                sb.AppendLine($"{indent}/** {field.FieldType.Name} {field.Name} */");
+            }
+
+            sb.AppendLine($"{indent}{prefix}{field.Name}: {tsType};");
+        }
+    }
+
+    private void WriteProperties(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    {
+        foreach (var prop in type.GetProperties(flags))
+        {
+            if (prop.GetIndexParameters().Length > 0) continue;
+            var tsType = MapType(prop.PropertyType, visited);
+            var readonlyModifier = prop.SetMethod?.IsPublic == true ? "" : "readonly ";
+            var jsDoc = this._jsDocProvider?.Get(prop);
+            if (jsDoc != null)
+            {
+                WriteJsDocBlock(sb, indent, jsDoc);
+            }
+            else
+            {
+                sb.AppendLine($"{indent}/** {prop.PropertyType.Name} {prop.Name} */");
+            }
+
+            sb.AppendLine($"{indent}{prefix}{readonlyModifier}{prop.Name}: {tsType};");
+        }
+    }
+
+    private void WriteMethods(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    {
+        // Collect .NET definitions keyed by TS signature (preserving insertion order)
+        var entries = new List<(string? tsSig, List<string> netSigs, MethodInfo? singleMethod)>();
+        var tsSigIndex = new Dictionary<string, int>();
+
+        foreach (var method in type.GetMethods(flags).Where(m => !m.IsSpecialName))
+        {
+            var tsSig = TryBuildMethodSignature(method, visited);
+            var netSig = FormatClrSignature(method);
+
+            if (tsSig == null)
+            {
+                entries.Add((null, [netSig], null));
+            }
+            else
+            {
+                var sigKey = $"{prefix}{tsSig}"; // dedup key without indent
+                var line = $"{indent}{prefix}{tsSig};";
+                if (tsSigIndex.TryGetValue(sigKey, out var idx))
+                {
+                    var (existingSig, existingNetSigs, _) = entries[idx];
+                    existingNetSigs.Add(netSig); // append .NET definition to the same TS signature
+                    entries[idx] = (existingSig, existingNetSigs, null); // clear single method on collision
+                }
+                else
+                {
+                    tsSigIndex[sigKey] = entries.Count;
+                    entries.Add((line, [netSig], method));
+                }
+            }
+        }
+
+        foreach (var (tsSig, netSigs, singleMethod) in entries)
+        {
+            if (tsSig == null)
+            {
+                sb.AppendLine($"{indent}// [skipped] {prefix}{netSigs[0]}");
+            }
+            else
+            {
+                var jsDoc = singleMethod != null ? this._jsDocProvider?.Get(singleMethod) : null;
+                if (jsDoc != null)
+                {
+                    WriteJsDocBlock(sb, indent, jsDoc);
+                }
+                else if (netSigs.Count == 1)
+                {
+                    sb.AppendLine($"{indent}/** {netSigs[0]} */");
+                }
+                else
+                {
+                    sb.AppendLine($"{indent}/**");
+                    foreach (var n in netSigs)
+                    {
+                        sb.AppendLine($"{indent} * - {n}");
+                    }
+
+                    sb.AppendLine($"{indent} */");
+                }
+
+                sb.AppendLine(tsSig);
+            }
+        }
+    }
+
+    private void WriteExtensionAugmentation(
+        StringBuilder sb,
+        Type receiverType,
+        ExtensionAugmentationTarget augmentationTarget,
+        MethodInfo[] methods,
+        HashSet<Type> visited)
+    {
+        var ns = augmentationTarget.Namespace;
+        var typeIndent = ns != null ? "  " : "";
+        var memberIndent = typeIndent + "  ";
+
+        if (ns != null) sb.AppendLine($"declare namespace {ns} {{");
+
+        var keyword = augmentationTarget.UseDeclareKeyword ? "declare interface" : "interface";
+        sb.AppendLine(
+            $"{typeIndent}{keyword} {augmentationTarget.ScriptTypeName}{augmentationTarget.TypeParamStr} {{"
+        );
+
+        // Collect entries with overload-collapsing (same pattern as WriteMethods)
+        var entries = new List<(string? tsSig, List<string> netSigs, MethodInfo? singleMethod)>();
+        var tsSigIndex = new Dictionary<string, int>();
+
+        foreach (var method in methods)
+        {
+            // Build substitution: method's first-param generic args → interface type param names.
+            // e.g. for Select(this IEnumerable<TSource>, ...) targeting IEnumerable<T>:
+            //   TSource (method's generic param) → "T" (interface's type param name)
+            var firstParamType = method.GetParameters()[0].ParameterType;
+            var firstParamArgs = GetTypeParameterSlots(firstParamType);
+
+            var substitution = new Dictionary<Type, string>();
+            for (var i = 0; i < Math.Min(firstParamArgs.Length, augmentationTarget.TypeParamNames.Length); i++)
+            {
+                substitution[firstParamArgs[i]] = augmentationTarget.TypeParamNames[i];
+            }
+
+            var tsSig = TryBuildExtensionMethodSignature(method, substitution, visited);
+            var netSig = FormatClrSignature(method);
+
+            if (tsSig is null)
+            {
+                entries.Add((null, [netSig], null));
+            }
+            else
+            {
+                if (tsSigIndex.TryGetValue(tsSig, out var idx))
+                {
+                    var (existingSig, existingNetSigs, _) = entries[idx];
+                    existingNetSigs.Add(netSig);
+                    entries[idx] = (existingSig, existingNetSigs, null);
+                }
+                else
+                {
+                    tsSigIndex[tsSig] = entries.Count;
+                    entries.Add(($"{memberIndent}{tsSig};", [netSig], method));
+                }
+            }
+        }
+
+        foreach (var (tsSig, netSigs, singleMethod) in entries)
+        {
+            if (tsSig is null)
+            {
+                sb.AppendLine($"{memberIndent}// [skipped] {netSigs[0]}");
+            }
+            else
+            {
+                var jsDoc = singleMethod != null ? this._jsDocProvider?.Get(singleMethod) : null;
+                if (jsDoc != null)
+                {
+                    WriteJsDocBlock(sb, memberIndent, jsDoc);
+                }
+                else if (netSigs.Count == 1)
+                {
+                    sb.AppendLine($"{memberIndent}/** {netSigs[0]} */");
+                }
+                else
+                {
+                    sb.AppendLine($"{memberIndent}/**");
+                    foreach (var n in netSigs)
+                    {
+                        sb.AppendLine($"{memberIndent} * - {n}");
+                    }
+
+                    sb.AppendLine($"{memberIndent} */");
+                }
+
+                sb.AppendLine(tsSig);
+            }
+        }
+
+        sb.AppendLine($"{typeIndent}}}");
+        if (ns != null) sb.AppendLine("}");
     }
 
     private enum ProjectedTypeKind

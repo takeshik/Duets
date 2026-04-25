@@ -78,12 +78,11 @@ internal sealed class JintScriptEngine : ScriptEngine
             ? ns => this.Call(originalImportNs, ns)
             : null;
 
-        var generator = new ClrDeclarationGenerator();
         Action<Type> registerExtensionMethods = containerType =>
         {
             if (this.ExtensionMethods.Register(containerType))
             {
-                declarations.RegisterDeclaration(generator.GenerateExtensionMethodsTs(containerType));
+                declarations.RegisterExtensionMethodContainer(containerType);
             }
         };
 

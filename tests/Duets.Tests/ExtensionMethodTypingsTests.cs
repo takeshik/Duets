@@ -12,6 +12,8 @@ public sealed class ExtensionMethodTypingsTests
 {
     private sealed class CountingRegistrar : ITypeDeclarationRegistrar
     {
+        private static readonly ClrDeclarationGenerator _generator = new();
+
         public List<string> RawDeclarations { get; } = [];
 
         public void RegisterType(Type type)
@@ -25,6 +27,11 @@ public sealed class ExtensionMethodTypingsTests
 
         public void RegisterNamespace(string namespaceName)
         {
+        }
+
+        public void RegisterExtensionMethodContainer(Type containerType)
+        {
+            this.RawDeclarations.Add(_generator.GenerateExtensionMethodsTs(containerType));
         }
     }
 

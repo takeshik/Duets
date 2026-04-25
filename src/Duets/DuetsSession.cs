@@ -18,15 +18,20 @@ namespace Duets;
 public sealed class DuetsSession : IDisposable
 {
     private DuetsSession(
+        JsDocProviders jsDocProviders,
         TypeDeclarations declarations,
         ITranspiler transpiler,
         ScriptEngine engine)
     {
+        this.JsDocProviders = jsDocProviders;
         this.Declarations = declarations;
         this.Transpiler = transpiler;
         this.Engine = engine;
         engine.ConsoleLogged += this.OnConsoleLogged;
     }
+
+    /// <summary>The JSDoc provider repository for this session.</summary>
+    public JsDocProviders JsDocProviders { get; }
 
     /// <summary>The runtime declaration store for this session.</summary>
     public TypeDeclarations Declarations { get; }
@@ -95,7 +100,10 @@ public sealed class DuetsSession : IDisposable
         Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory,
         Func<ITranspiler, ScriptEngine> engineFactory)
     {
-        var declarations = new TypeDeclarations();
+        var jsDocProviders = new JsDocProviders();
+        var generator = new ClrDeclarationGenerator(jsDocProviders);
+        var declarations = new TypeDeclarations(generator);
+        jsDocProviders.ProviderAdded += declarations.RefreshDeclarations;
         var transpiler = await transpilerFactory(declarations);
         ScriptEngine? engine = null;
         try
@@ -106,7 +114,7 @@ public sealed class DuetsSession : IDisposable
                 engine.RegisterTypeBuiltins(declarations);
             }
 
-            return new DuetsSession(declarations, transpiler, engine);
+            return new DuetsSession(jsDocProviders, declarations, transpiler, engine);
         }
         catch
         {

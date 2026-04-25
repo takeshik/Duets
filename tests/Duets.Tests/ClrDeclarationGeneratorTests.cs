@@ -4,6 +4,23 @@ namespace Duets.Tests;
 
 public sealed class ClrDeclarationGeneratorTests
 {
+    // ── JSDoc provider integration ────────────────────────────────────────────
+
+    private static XmlDocumentationProvider XmlProvider(string membersXml)
+    {
+        return new XmlDocumentationProvider(
+            $"""
+            <?xml version="1.0"?>
+            <doc>
+              <assembly><name>Test</name></assembly>
+              <members>
+            {membersXml}
+              </members>
+            </doc>
+            """
+        );
+    }
+
     [Fact]
     public void GenerateTypeDefTs_collapses_overloads_with_same_typescript_signature_into_grouped_jsdoc()
     {
@@ -16,6 +33,27 @@ public sealed class ClrDeclarationGeneratorTests
         // Both CLR signatures are listed in the grouped JSDoc comment
         Assert.Contains("* - String Format(Int32 value)", actual);
         Assert.Contains("* - String Format(Int64 value)", actual);
+    }
+
+    [Fact]
+    public void GenerateTypeDefTs_does_not_use_xml_doc_for_multi_overload_methods()
+    {
+        // Format(int) has an XML entry, but both int/long overloads collapse to the same TS
+        // signature — provider is not consulted when multiple CLR sigs share one TS sig
+        var provider = XmlProvider(
+            """
+                <member name="M:Duets.Tests.TestTypes.Declarations.OverloadSample.Format(System.Int32)">
+                  <summary>Formats an integer value.</summary>
+                </member>
+            """
+        );
+        var generator = new ClrDeclarationGenerator(provider);
+
+        var actual = generator.GenerateTypeDefTs(typeof(OverloadSample));
+
+        Assert.Contains("* - String Format(Int32 value)", actual);
+        Assert.Contains("* - String Format(Int64 value)", actual);
+        Assert.DoesNotContain("Formats an integer value.", actual);
     }
 
     [Fact]
@@ -121,6 +159,86 @@ public sealed class ClrDeclarationGeneratorTests
         Assert.Contains("static StaticOp(enabled: boolean): void;", actual);
         Assert.Contains("GetBase(): Duets.Tests.TestTypes.Declarations.DeclarationBase;", actual);
         Assert.Contains("WeirdMap: any;", actual);
+    }
+
+    [Fact]
+    public void GenerateTypeDefTs_replaces_method_with_xml_doc_including_params_and_returns()
+    {
+        // LoadAsync has XML; Convert does not → Convert keeps CLR sig fallback
+        var provider = XmlProvider(
+            """
+                <member name="M:Duets.Tests.TestTypes.Declarations.DeclarationSample.LoadAsync(System.String,System.Nullable`1{System.Int32})">
+                  <summary>Loads data asynchronously.</summary>
+                  <param name="value">The value to load.</param>
+                  <param name="optional">Optional count.</param>
+                  <returns>The loaded string.</returns>
+                </member>
+            """
+        );
+        var generator = new ClrDeclarationGenerator(provider);
+
+        var actual = generator.GenerateTypeDefTs(typeof(DeclarationSample));
+
+        Assert.Contains("* Loads data asynchronously.", actual);
+        Assert.Contains("* @param value The value to load.", actual);
+        Assert.Contains("* @param optional Optional count.", actual);
+        Assert.Contains("* @returns The loaded string.", actual);
+        // Method without XML entry falls back to CLR sig
+        Assert.Contains("/** String Convert(", actual);
+    }
+
+    [Fact]
+    public void GenerateTypeDefTs_replaces_targeted_constructor_with_xml_doc()
+    {
+        var provider = XmlProvider(
+            """
+                <member name="M:Duets.Tests.TestTypes.Declarations.ConstructorSample.#ctor(System.String,System.Int32)">
+                  <summary>Initializes a new instance.</summary>
+                </member>
+            """
+        );
+        var generator = new ClrDeclarationGenerator(provider);
+
+        var actual = generator.GenerateTypeDefTs(typeof(ConstructorSample));
+
+        Assert.Contains("/** Initializes a new instance. */", actual);
+    }
+
+    [Fact]
+    public void GenerateTypeDefTs_replaces_targeted_field_with_xml_doc()
+    {
+        var provider = XmlProvider(
+            """
+                <member name="F:Duets.Tests.TestTypes.Declarations.DeclarationSample.GlobalCount">
+                  <summary>Global instance counter.</summary>
+                </member>
+            """
+        );
+        var generator = new ClrDeclarationGenerator(provider);
+
+        var actual = generator.GenerateTypeDefTs(typeof(DeclarationSample));
+
+        Assert.Contains("/** Global instance counter. */", actual);
+        Assert.DoesNotContain("/** Int32 GlobalCount */", actual);
+    }
+
+    [Fact]
+    public void GenerateTypeDefTs_replaces_targeted_property_with_xml_doc_and_falls_back_for_others()
+    {
+        // Names has an XML entry; Scores does not → Scores must keep the CLR sig comment
+        var provider = XmlProvider(
+            """
+                <member name="P:Duets.Tests.TestTypes.Declarations.DeclarationSample.Names">
+                  <summary>Gets or sets the list of names.</summary>
+                </member>
+            """
+        );
+        var generator = new ClrDeclarationGenerator(provider);
+
+        var actual = generator.GenerateTypeDefTs(typeof(DeclarationSample));
+
+        Assert.Contains("/** Gets or sets the list of names. */", actual);
+        Assert.Contains("/** Dictionary`2 Scores */", actual);
     }
 
     [Fact]
