@@ -128,6 +128,46 @@ public sealed class DuetsSessionTests
     }
 
     [Fact]
+    public async Task Dispose_throws_while_async_operation_is_pending()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var transpiler = new DisposableTranspiler();
+        using var session = await DuetsSession.CreateAsync(config => config
+            .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
+            .UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        );
+
+        var gate = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.SetValue("waitAsync", new Func<Task>(() => gate.Task));
+
+        var evaluationTask = session.EvaluateAsync("(async () => { await waitAsync(); return 42; })()", cancellationToken);
+
+        Assert.False(evaluationTask.IsCompleted);
+        var exception = Assert.Throws<InvalidOperationException>(() => session.Dispose());
+        Assert.Contains("Concurrent use of a DuetsSession is not supported.", exception.Message);
+
+        gate.SetResult(null);
+
+        var result = await evaluationTask;
+        Assert.Equal("42", result.ToString());
+        Assert.False(transpiler.IsDisposed);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_allows_reentrant_engine_callbacks()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var session = await DuetsSession.CreateAsync(config => config
+            .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
+            .UseJint(opts => opts.AllowClr())
+        );
+
+        var result = await session.EvaluateAsync("typings.importNamespace('System.IO'); 42", cancellationToken);
+
+        Assert.Equal("42", result.ToString());
+    }
+
+    [Fact]
     public async Task Extension_method_array_augmentations_do_not_break_array_completions()
     {
         using var session = await DuetsSession.CreateAsync(config => config
@@ -150,5 +190,30 @@ public sealed class DuetsSessionTests
         var rangeCompletions = transpiler.GetCompletions("Enumerable.Range(1, 10).", "Enumerable.Range(1, 10).".Length);
         Assert.Contains(rangeCompletions, entry => entry.Name == "map");
         Assert.Contains(rangeCompletions, entry => entry.Name == "Select");
+    }
+
+    [Fact]
+    public async Task SetValue_throws_while_async_operation_is_pending()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        using var session = await DuetsSession.CreateAsync(config => config
+            .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
+            .UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        );
+
+        var gate = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        session.SetValue("waitAsync", new Func<Task>(() => gate.Task));
+
+        var evaluationTask = session.EvaluateAsync("(async () => { await waitAsync(); return 42; })()", cancellationToken);
+
+        Assert.False(evaluationTask.IsCompleted);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => session.SetValue("x", 1));
+        Assert.Contains("Concurrent use of a DuetsSession is not supported.", exception.Message);
+
+        gate.SetResult(null);
+
+        var result = await evaluationTask;
+        Assert.Equal("42", result.ToString());
     }
 }

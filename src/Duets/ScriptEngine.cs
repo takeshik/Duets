@@ -44,6 +44,24 @@ public abstract class ScriptEngine : IDisposable
         }
     }
 
+    public async Task ExecuteAsync(string tsCode, CancellationToken cancellationToken = default)
+    {
+        var jsCode = this.Transpiler.Transpile(tsCode);
+
+        try
+        {
+            await this.ExecuteJavaScriptAsync(jsCode, cancellationToken);
+            this.SetSpecialValue("$_", this.UndefinedValue);
+            this.SetSpecialValue("$exception", this.UndefinedValue);
+        }
+        catch (Exception ex)
+        {
+            this.SetSpecialValue("$_", this.UndefinedValue);
+            this.SetException(ex);
+            throw;
+        }
+    }
+
     public ScriptValue Evaluate(string tsCode)
     {
         var jsCode = this.Transpiler.Transpile(tsCode);
@@ -63,9 +81,32 @@ public abstract class ScriptEngine : IDisposable
         }
     }
 
+    public async Task<ScriptValue> EvaluateAsync(string tsCode, CancellationToken cancellationToken = default)
+    {
+        var jsCode = this.Transpiler.Transpile(tsCode);
+
+        try
+        {
+            var ret = await this.EvaluateJavaScriptAsync(jsCode, cancellationToken);
+            this.SetSpecialValue("$_", ret);
+            this.SetSpecialValue("$exception", this.UndefinedValue);
+            return ret;
+        }
+        catch (Exception ex)
+        {
+            this.SetSpecialValue("$_", this.UndefinedValue);
+            this.SetException(ex);
+            throw;
+        }
+    }
+
     protected abstract void ExecuteJavaScript(string code);
 
+    protected abstract Task ExecuteJavaScriptAsync(string code, CancellationToken cancellationToken);
+
     protected abstract ScriptValue EvaluateJavaScript(string code);
+
+    protected abstract Task<ScriptValue> EvaluateJavaScriptAsync(string code, CancellationToken cancellationToken);
 
     protected abstract void SetSpecialValue(string name, ScriptValue value);
 

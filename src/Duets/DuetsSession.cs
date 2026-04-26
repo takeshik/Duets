@@ -30,6 +30,12 @@ public sealed class DuetsSession : IDisposable
         engine.ConsoleLogged += this.OnConsoleLogged;
     }
 
+    private const string ConcurrentOperationMessage =
+        "Concurrent use of a DuetsSession is not supported. Create a separate session for each concurrent operation.";
+
+    private int _operationInProgress;
+    private bool _disposed;
+
     /// <summary>The JSDoc provider repository for this session.</summary>
     public JsDocProviders JsDocProviders { get; }
 
@@ -65,35 +71,59 @@ public sealed class DuetsSession : IDisposable
     /// <summary>Transpiles and executes TypeScript code in this session.</summary>
     public void Execute(string tsCode)
     {
+        using var _ = this.EnterOperation();
+        this.ThrowIfDisposed();
         this.Engine.Execute(tsCode);
+    }
+
+    /// <summary>Transpiles and executes TypeScript code in this session, properly awaiting any top-level promises.</summary>
+    public Task ExecuteAsync(string tsCode, CancellationToken cancellationToken = default)
+    {
+        return this.ExecuteCoreAsync(tsCode, cancellationToken);
     }
 
     /// <summary>Transpiles and evaluates TypeScript code, returning the result.</summary>
     public ScriptValue Evaluate(string tsCode)
     {
+        using var _ = this.EnterOperation();
+        this.ThrowIfDisposed();
         return this.Engine.Evaluate(tsCode);
+    }
+
+    /// <summary>Transpiles and evaluates TypeScript code, returning the resolved result of any top-level promise.</summary>
+    public Task<ScriptValue> EvaluateAsync(string tsCode, CancellationToken cancellationToken = default)
+    {
+        return this.EvaluateCoreAsync(tsCode, cancellationToken);
     }
 
     /// <summary>Returns a snapshot of every name the user has defined in this session, excluding built-ins.</summary>
     public IReadOnlyDictionary<ScriptValue, ScriptValue> GetGlobalVariables()
     {
+        using var _ = this.EnterOperation();
+        this.ThrowIfDisposed();
         return this.Engine.GetGlobalVariables();
     }
 
     /// <summary>Sets a global variable in the session's script engine.</summary>
     public void SetValue(string name, object value)
     {
+        using var _ = this.EnterOperation();
+        this.ThrowIfDisposed();
         this.Engine.SetValue(name, value);
     }
 
     public void Dispose()
     {
+        using var _ = this.EnterOperation();
+        if (this._disposed) return;
         this.Engine.ConsoleLogged -= this.OnConsoleLogged;
         this.Engine.Dispose();
         if (this.Transpiler is IDisposable disposable)
         {
             disposable.Dispose();
         }
+
+        this._disposed = true;
     }
 
     private static async Task<DuetsSession> CreateCoreAsync(
@@ -127,5 +157,47 @@ public sealed class DuetsSession : IDisposable
     private void OnConsoleLogged(ScriptConsoleEntry entry)
     {
         this.ConsoleLogged?.Invoke(entry);
+    }
+
+    private OperationScope EnterOperation(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Interlocked.CompareExchange(ref this._operationInProgress, 1, 0) != 0)
+        {
+            throw new InvalidOperationException(ConcurrentOperationMessage);
+        }
+
+        return new OperationScope(this);
+    }
+
+    private async Task ExecuteCoreAsync(string tsCode, CancellationToken cancellationToken)
+    {
+        using var _ = this.EnterOperation(cancellationToken);
+        this.ThrowIfDisposed();
+        await this.Engine.ExecuteAsync(tsCode, cancellationToken);
+    }
+
+    private async Task<ScriptValue> EvaluateCoreAsync(string tsCode, CancellationToken cancellationToken)
+    {
+        using var _ = this.EnterOperation(cancellationToken);
+        this.ThrowIfDisposed();
+        return await this.Engine.EvaluateAsync(tsCode, cancellationToken);
+    }
+
+    private void ThrowIfDisposed()
+    {
+#if NETSTANDARD2_1
+        if (this._disposed) throw new ObjectDisposedException(this.GetType().FullName);
+#else
+        ObjectDisposedException.ThrowIf(this._disposed, this);
+#endif
+    }
+
+    private readonly struct OperationScope(DuetsSession session) : IDisposable
+    {
+        public void Dispose()
+        {
+            Volatile.Write(ref session._operationInProgress, 0);
+        }
     }
 }

@@ -115,6 +115,15 @@ internal sealed class JintScriptEngine : ScriptEngine
         }
     }
 
+    protected override Task ExecuteJavaScriptAsync(string code, CancellationToken cancellationToken)
+    {
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            return this._jintEngine.ExecuteAsync(code, cancellationToken: cancellationToken);
+        }
+    }
+
     protected override ScriptValue EvaluateJavaScript(string code)
     {
         var prepared = Engine.PrepareScript(code);
@@ -123,6 +132,24 @@ internal sealed class JintScriptEngine : ScriptEngine
             this.ThrowIfDisposed();
             var ret = this._jintEngine.Evaluate(prepared);
             return new ScriptValue(JintScriptValueAdapter.Instance, ret);
+        }
+    }
+
+    protected override Task<ScriptValue> EvaluateJavaScriptAsync(string code, CancellationToken cancellationToken)
+    {
+        Task<JsValue> ret;
+        var prepared = Engine.PrepareScript(code);
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            ret = this._jintEngine.EvaluateAsync(prepared, cancellationToken);
+        }
+
+        return WrapAsync(ret);
+
+        static async Task<ScriptValue> WrapAsync(Task<JsValue> task)
+        {
+            return new ScriptValue(JintScriptValueAdapter.Instance, await task);
         }
     }
 
