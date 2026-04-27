@@ -113,7 +113,7 @@ public sealed class ScriptTypingsTests
 
         // Type is accessible at runtime without namespace prefix
         Assert.False(
-            harness.Engine.Evaluate(typeName).IsUndefined(),
+            harness.Engine.Evaluate(typeName) == ScriptValue.Undefined,
             $"{typeName} should be a global after usingNamespace('{ns}')"
         );
 
@@ -264,7 +264,7 @@ public sealed class ScriptTypingsTests
         harness.Engine.Execute("var ns = typings.importNamespace('Duets.Tests.TestTypes.NamespaceTargets')");
         var result = harness.Engine.Evaluate("new ns.NamespaceAlpha()");
 
-        Assert.True(result.IsObject());
+        Assert.NotNull(result.ToObject());
         Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
         Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceBeta"));
     }
@@ -395,7 +395,7 @@ public sealed class ScriptTypingsTests
         var result = harness.Engine.Evaluate("new NamespaceAlpha()");
         var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
 
-        Assert.True(result.IsObject());
+        Assert.NotNull(result.ToObject());
         Assert.Contains(declarations, content => content.Contains("declare var NamespaceAlpha:"));
         Assert.Contains(declarations, content => content.Contains("declare var NamespaceBeta:"));
         Assert.Contains(declarations, content => content.Contains("class NamespaceAlpha"));

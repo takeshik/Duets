@@ -40,8 +40,6 @@ internal sealed class JintScriptEngine : ScriptEngine
     private readonly object _sync = new();
     private bool _disposed;
 
-    protected override ScriptValue UndefinedValue => new(JintScriptValueAdapter.Instance, JsValue.Undefined);
-
     public override bool CanRegisterTypeBuiltins => !this.GetValue("importNamespace").Equals(JsValue.Undefined);
 
     /// <summary>Registry of extension method container types made available via <c>MemberAccessor</c>.</summary>
@@ -65,8 +63,8 @@ internal sealed class JintScriptEngine : ScriptEngine
                 .GetOwnProperties()
                 .Where(x => !this._predefinedGlobalKeys.Contains(x.Key.ToString()))
                 .ToDictionary(
-                    x => new ScriptValue(JintScriptValueAdapter.Instance, x.Key),
-                    x => new ScriptValue(JintScriptValueAdapter.Instance, x.Value.Value)
+                    x => (ScriptValue) new JintScriptValue(x.Key),
+                    x => (ScriptValue) new JintScriptValue(x.Value.Value)
                 );
         }
     }
@@ -131,7 +129,7 @@ internal sealed class JintScriptEngine : ScriptEngine
         {
             this.ThrowIfDisposed();
             var ret = this._jintEngine.Evaluate(prepared);
-            return new ScriptValue(JintScriptValueAdapter.Instance, ret);
+            return new JintScriptValue(ret);
         }
     }
 
@@ -149,22 +147,24 @@ internal sealed class JintScriptEngine : ScriptEngine
 
         static async Task<ScriptValue> WrapAsync(Task<JsValue> task)
         {
-            return new ScriptValue(JintScriptValueAdapter.Instance, await task);
+            return new JintScriptValue(await task);
         }
     }
 
-    protected override void SetSpecialValue(string name, ScriptValue value)
+    protected override void SetNativeValue(string name, ScriptValue value)
     {
+        var jsValue = value switch
+        {
+            JintScriptValue jv => jv.Value,
+            _ when value == ScriptValue.Undefined => JsValue.Undefined,
+            _ when value == ScriptValue.Null => JsValue.Null,
+            _ => throw new ArgumentException("ScriptValue from incompatible backend."),
+        };
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            this._jintEngine.SetValue(name, (JsValue) value.RawValue);
+            this._jintEngine.SetValue(name, jsValue);
         }
-    }
-
-    protected override void SetException(Exception exception)
-    {
-        this.SetValue("$exception", exception);
     }
 
     public override void Dispose()

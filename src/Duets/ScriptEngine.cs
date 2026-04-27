@@ -13,14 +13,17 @@ public abstract class ScriptEngine : IDisposable
 
     protected ITranspiler Transpiler { get; }
 
-    protected abstract ScriptValue UndefinedValue { get; }
-
     public abstract bool CanRegisterTypeBuiltins { get; }
 
     /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
 
     public abstract void SetValue(string name, object value);
+
+    public void SetValue(string name, ScriptValue value)
+    {
+        this.SetNativeValue(name, value);
+    }
 
     public abstract IReadOnlyDictionary<ScriptValue, ScriptValue> GetGlobalVariables();
 
@@ -33,13 +36,13 @@ public abstract class ScriptEngine : IDisposable
         try
         {
             this.ExecuteJavaScript(jsCode);
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetSpecialValue("$exception", this.UndefinedValue);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ScriptValue.Undefined);
         }
         catch (Exception ex)
         {
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetException(ex);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ex);
             throw;
         }
     }
@@ -51,13 +54,13 @@ public abstract class ScriptEngine : IDisposable
         try
         {
             await this.ExecuteJavaScriptAsync(jsCode, cancellationToken);
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetSpecialValue("$exception", this.UndefinedValue);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ScriptValue.Undefined);
         }
         catch (Exception ex)
         {
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetException(ex);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ex);
             throw;
         }
     }
@@ -69,14 +72,14 @@ public abstract class ScriptEngine : IDisposable
         try
         {
             var ret = this.EvaluateJavaScript(jsCode);
-            this.SetSpecialValue("$_", ret);
-            this.SetSpecialValue("$exception", this.UndefinedValue);
+            this.SetValue("$_", ret);
+            this.SetValue("$exception", ScriptValue.Undefined);
             return ret;
         }
         catch (Exception ex)
         {
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetException(ex);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ex);
             throw;
         }
     }
@@ -88,17 +91,19 @@ public abstract class ScriptEngine : IDisposable
         try
         {
             var ret = await this.EvaluateJavaScriptAsync(jsCode, cancellationToken);
-            this.SetSpecialValue("$_", ret);
-            this.SetSpecialValue("$exception", this.UndefinedValue);
+            this.SetValue("$_", ret);
+            this.SetValue("$exception", ScriptValue.Undefined);
             return ret;
         }
         catch (Exception ex)
         {
-            this.SetSpecialValue("$_", this.UndefinedValue);
-            this.SetException(ex);
+            this.SetValue("$_", ScriptValue.Undefined);
+            this.SetValue("$exception", ex);
             throw;
         }
     }
+
+    protected abstract void SetNativeValue(string name, ScriptValue value);
 
     protected abstract void ExecuteJavaScript(string code);
 
@@ -107,10 +112,6 @@ public abstract class ScriptEngine : IDisposable
     protected abstract ScriptValue EvaluateJavaScript(string code);
 
     protected abstract Task<ScriptValue> EvaluateJavaScriptAsync(string code, CancellationToken cancellationToken);
-
-    protected abstract void SetSpecialValue(string name, ScriptValue value);
-
-    protected abstract void SetException(Exception exception);
 
     protected void RaiseConsoleLogged(ScriptConsoleEntry entry)
     {

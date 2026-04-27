@@ -1,57 +1,100 @@
+using System.Runtime.CompilerServices;
+
 namespace Duets;
 
 /// <summary>Engine-neutral wrapper around a JavaScript value.</summary>
-public sealed class ScriptValue : IEquatable<ScriptValue>
+public abstract class ScriptValue : IEquatable<ScriptValue>
 {
-    public ScriptValue(IScriptValueAdapter adapter, object rawValue)
+    public static ScriptValue Undefined { get; } = new UndefinedValue();
+
+    public static ScriptValue Null { get; } = new NullValue();
+
+    public static bool operator ==(ScriptValue? left, ScriptValue? right)
     {
-        this._adapter = adapter;
-        this.RawValue = rawValue;
+        return left is null ? right is null : left.Equals(right);
     }
 
-    private readonly IScriptValueAdapter _adapter;
-
-    public object RawValue { get; }
-
-    public override string ToString()
+    public static bool operator !=(ScriptValue? left, ScriptValue? right)
     {
-        return this._adapter.ToDisplayString(this.RawValue);
+        return !(left == right);
     }
 
-    public override bool Equals(object? obj)
+    public abstract override string ToString();
+
+    public sealed override bool Equals(object? obj)
     {
         return this.Equals(obj as ScriptValue);
     }
 
     public override int GetHashCode()
     {
-        return this._adapter.GetHashCode(this.RawValue);
+        return this is UndefinedValue ? 0 : this.GetHashCodeCore();
     }
 
-    public bool IsUndefined()
+    public abstract object? ToObject();
+
+    protected virtual bool EqualsCore(ScriptValue other)
     {
-        return this._adapter.IsUndefined(this.RawValue);
+        throw new InvalidOperationException("Cannot compare ScriptValues from different backends.");
     }
 
-    public bool IsNull()
+    protected virtual int GetHashCodeCore()
     {
-        return this._adapter.IsNull(this.RawValue);
-    }
-
-    public bool IsObject()
-    {
-        return this._adapter.IsObject(this.RawValue);
-    }
-
-    public object? ToObject()
-    {
-        return this._adapter.ToObject(this.RawValue);
+        return RuntimeHelpers.GetHashCode(this);
     }
 
     public bool Equals(ScriptValue? other)
     {
-        return other is not null
-            && ReferenceEquals(this._adapter, other._adapter)
-            && this._adapter.AreEqual(this.RawValue, other.RawValue);
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        if (this is UndefinedValue) return other.EqualsCore(this);
+        if (this is NullValue) return other.EqualsCore(this);
+        return this.EqualsCore(other);
+    }
+
+    private sealed class UndefinedValue : ScriptValue
+    {
+        public override object? ToObject()
+        {
+            return null;
+        }
+
+        public override string ToString()
+        {
+            return "undefined";
+        }
+
+        protected override bool EqualsCore(ScriptValue other)
+        {
+            return false;
+        }
+
+        protected override int GetHashCodeCore()
+        {
+            return 0;
+        }
+    }
+
+    private sealed class NullValue : ScriptValue
+    {
+        public override object? ToObject()
+        {
+            return null;
+        }
+
+        public override string ToString()
+        {
+            return "null";
+        }
+
+        protected override bool EqualsCore(ScriptValue other)
+        {
+            return false;
+        }
+
+        protected override int GetHashCodeCore()
+        {
+            return 1;
+        }
     }
 }

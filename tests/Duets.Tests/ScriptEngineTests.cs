@@ -73,8 +73,8 @@ public sealed class ScriptEngineTests
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         var ex = engine.Evaluate("$exception");
 
-        Assert.False(ex.IsUndefined());
-        Assert.False(ex.IsNull());
+        Assert.False(ex == ScriptValue.Undefined);
+        Assert.False(ex == ScriptValue.Null);
     }
 
     [Fact]
@@ -85,8 +85,8 @@ public sealed class ScriptEngineTests
         Assert.ThrowsAny<Exception>(() => engine.Execute("null.prop"));
         var ex = engine.Evaluate("$exception");
 
-        Assert.False(ex.IsUndefined());
-        Assert.False(ex.IsNull());
+        Assert.False(ex == ScriptValue.Undefined);
+        Assert.False(ex == ScriptValue.Null);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class ScriptEngineTests
         engine.Evaluate("1 + 1");
         var ex = engine.Evaluate("$exception");
 
-        Assert.True(ex.IsUndefined());
+        Assert.True(ex == ScriptValue.Undefined);
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class ScriptEngineTests
         engine.Execute("var x = 1;");
         var ex = engine.Evaluate("$exception");
 
-        Assert.True(ex.IsUndefined());
+        Assert.True(ex == ScriptValue.Undefined);
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class ScriptEngineTests
         engine.Execute("var x = 1;");
         var result = engine.Evaluate("$_");
 
-        Assert.True(result.IsUndefined());
+        Assert.True(result == ScriptValue.Undefined);
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class ScriptEngineTests
         Assert.ThrowsAny<Exception>(() => engine.Evaluate("null.prop"));
         var result = engine.Evaluate("$_");
 
-        Assert.True(result.IsUndefined());
+        Assert.True(result == ScriptValue.Undefined);
     }
 
     [Fact]
@@ -262,6 +262,34 @@ public sealed class ScriptEngineTests
         var keys = globals.Keys.Select(k => k.ToString()).ToHashSet();
         Assert.Contains("x", keys);
         Assert.Contains("y", keys);
+    }
+
+    [Fact]
+    public void ScriptValue_Null_hash_code_matches_sentinel()
+    {
+        using var engine = JintTestRuntime.CreateEngine();
+        var engineNull = engine.Evaluate("null");
+
+        Assert.Equal(ScriptValue.Null.GetHashCode(), engineNull.GetHashCode());
+    }
+
+    [Fact]
+    public void ScriptValue_Undefined_equality_is_symmetric()
+    {
+        using var engine = JintTestRuntime.CreateEngine();
+        var engineUndefined = engine.Evaluate("undefined");
+
+        Assert.True(engineUndefined == ScriptValue.Undefined);
+        Assert.True(ScriptValue.Undefined == engineUndefined);
+    }
+
+    [Fact]
+    public void ScriptValue_Undefined_hash_code_matches_sentinel()
+    {
+        using var engine = JintTestRuntime.CreateEngine();
+        var engineUndefined = engine.Evaluate("undefined");
+
+        Assert.Equal(ScriptValue.Undefined.GetHashCode(), engineUndefined.GetHashCode());
     }
 
     [Fact]
