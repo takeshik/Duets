@@ -239,4 +239,30 @@ internal sealed class JintScriptEngine : ScriptEngine
         ObjectDisposedException.ThrowIf(this._disposed, this);
 #endif
     }
+
+    private sealed class JintScriptValueConverter : IScriptValueConverter<JsValue>
+    {
+        internal static JintScriptValueConverter Instance { get; } = new();
+
+        public ScriptValue Wrap(JsValue value)
+        {
+            return value.Type switch
+            {
+                Types.Undefined => ScriptValue.Undefined,
+                Types.Null => ScriptValue.Null,
+                _ => new JintScriptValue(value),
+            };
+        }
+
+        public JsValue Unwrap(ScriptValue value)
+        {
+            return value switch
+            {
+                JintScriptValue jv => jv.Value,
+                _ when value == ScriptValue.Undefined => JsValue.Undefined,
+                _ when value == ScriptValue.Null => JsValue.Null,
+                _ => throw new ArgumentException("ScriptValue from incompatible backend."),
+            };
+        }
+    }
 }
