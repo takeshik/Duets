@@ -6,7 +6,7 @@ namespace Duets;
 /// </summary>
 public static class DuetsBackendRegistry
 {
-    internal static Func<ITranspiler, ScriptEngine>? DefaultEngineFactory { get; private set; }
+    internal static Func<ITranspiler, IScriptEngine>? DefaultEngineFactory { get; private set; }
 
     internal static Func<TypeDeclarations, Task<ITranspiler>>? DefaultTranspilerFactory { get; private set; }
 
@@ -14,7 +14,7 @@ public static class DuetsBackendRegistry
     /// Registers the default engine factory. Intended to be called once from a backend
     /// package's module initializer. Throws if a default has already been registered.
     /// </summary>
-    public static void RegisterDefaultEngine(Func<ITranspiler, ScriptEngine> factory)
+    public static void RegisterDefaultEngine(Func<ITranspiler, IScriptEngine> factory)
     {
         if (factory == null)
         {

@@ -1,14 +1,15 @@
 using Jint;
 using Jint.Native;
+using Jint.Runtime;
 using Jint.Runtime.Interop;
 
 namespace Duets.Jint;
 
-/// <summary>Jint-backed <see cref="ScriptEngine"/> implementation.</summary>
-internal sealed class JintScriptEngine : ScriptEngine
+/// <summary>Jint-backed <see cref="IScriptEngine"/> implementation.</summary>
+internal sealed class JintScriptEngine : ScriptEngine<JsValue>
 {
     public JintScriptEngine(Action<Options>? configure, ITranspiler transpiler)
-        : base(transpiler)
+        : base(transpiler, JintScriptValueConverter.Instance)
     {
         var extensionMethods = new ExtensionMethodRegistry();
         this.ExtensionMethods = extensionMethods;
@@ -54,6 +55,15 @@ internal sealed class JintScriptEngine : ScriptEngine
         }
     }
 
+    protected override void SetValue(string name, JsValue value)
+    {
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            this._jintEngine.SetValue(name, value);
+        }
+    }
+
     public override IReadOnlyDictionary<ScriptValue, ScriptValue> GetGlobalVariables()
     {
         lock (this._sync)
@@ -63,8 +73,8 @@ internal sealed class JintScriptEngine : ScriptEngine
                 .GetOwnProperties()
                 .Where(x => !this._predefinedGlobalKeys.Contains(x.Key.ToString()))
                 .ToDictionary(
-                    x => (ScriptValue) new JintScriptValue(x.Key),
-                    x => (ScriptValue) new JintScriptValue(x.Value.Value)
+                    x => this.Converter.Wrap(x.Key),
+                    x => this.Converter.Wrap(x.Value.Value)
                 );
         }
     }
@@ -103,7 +113,7 @@ internal sealed class JintScriptEngine : ScriptEngine
         declarations.RegisterDeclaration(ScriptEngineResources.LoadScriptEngineInitDts());
     }
 
-    protected override void ExecuteJavaScript(string code)
+    protected override void ExecuteJs(string code)
     {
         var prepared = Engine.PrepareScript(code);
         lock (this._sync)
@@ -113,7 +123,7 @@ internal sealed class JintScriptEngine : ScriptEngine
         }
     }
 
-    protected override Task ExecuteJavaScriptAsync(string code, CancellationToken cancellationToken)
+    protected override Task ExecuteJsAsync(string code, CancellationToken cancellationToken)
     {
         lock (this._sync)
         {
@@ -122,49 +132,28 @@ internal sealed class JintScriptEngine : ScriptEngine
         }
     }
 
-    protected override ScriptValue EvaluateJavaScript(string code)
+    protected override JsValue EvaluateJs(string code)
     {
         var prepared = Engine.PrepareScript(code);
         lock (this._sync)
         {
             this.ThrowIfDisposed();
-            var ret = this._jintEngine.Evaluate(prepared);
-            return new JintScriptValue(ret);
+            return this._jintEngine.Evaluate(prepared);
         }
     }
 
-    protected override Task<ScriptValue> EvaluateJavaScriptAsync(string code, CancellationToken cancellationToken)
+    protected override async Task<JsValue> EvaluateJsAsync(
+        string code, CancellationToken cancellationToken)
     {
-        Task<JsValue> ret;
         var prepared = Engine.PrepareScript(code);
+        Task<JsValue> ret;
         lock (this._sync)
         {
             this.ThrowIfDisposed();
             ret = this._jintEngine.EvaluateAsync(prepared, cancellationToken);
         }
 
-        return WrapAsync(ret);
-
-        static async Task<ScriptValue> WrapAsync(Task<JsValue> task)
-        {
-            return new JintScriptValue(await task);
-        }
-    }
-
-    protected override void SetNativeValue(string name, ScriptValue value)
-    {
-        var jsValue = value switch
-        {
-            JintScriptValue jv => jv.Value,
-            _ when value == ScriptValue.Undefined => JsValue.Undefined,
-            _ when value == ScriptValue.Null => JsValue.Null,
-            _ => throw new ArgumentException("ScriptValue from incompatible backend."),
-        };
-        lock (this._sync)
-        {
-            this.ThrowIfDisposed();
-            this._jintEngine.SetValue(name, jsValue);
-        }
+        return await ret;
     }
 
     public override void Dispose()

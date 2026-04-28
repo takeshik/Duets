@@ -12,14 +12,14 @@ public sealed class DuetsSessionConfiguration
     {
     }
 
-    private Func<ITranspiler, ScriptEngine>? _engineFactory;
+    private Func<ITranspiler, IScriptEngine>? _engineFactory;
     private Func<TypeDeclarations, Task<ITranspiler>>? _transpilerFactory;
 
     /// <summary>
     /// Selects the script engine factory for the session being created.
     /// Intended for advanced callers and backend package extensions.
     /// </summary>
-    public DuetsSessionConfiguration UseEngine(Func<ITranspiler, ScriptEngine> engineFactory)
+    public DuetsSessionConfiguration UseEngine(Func<ITranspiler, IScriptEngine> engineFactory)
     {
         if (engineFactory == null)
         {
@@ -69,7 +69,7 @@ public sealed class DuetsSessionConfiguration
         return this.UseTranspiler(_ => transpilerFactory());
     }
 
-    internal Func<ITranspiler, ScriptEngine> GetRequiredEngineFactory()
+    internal Func<ITranspiler, IScriptEngine> GetRequiredEngineFactory()
     {
         return this._engineFactory
             ?? DuetsBackendRegistry.DefaultEngineFactory

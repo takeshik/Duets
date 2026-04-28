@@ -39,12 +39,12 @@ public sealed class ExtensionMethodTypingsTests
     // Runtime: MemberAccessor dispatch via ExtensionMethodRegistry
     // -------------------------------------------------------------------------
 
-    private static (TypeDeclarations declarations, ScriptEngine engine) CreateEngine()
+    private static (TypeDeclarations declarations, IScriptEngine engine) CreateEngine()
     {
         var declarations = new TypeDeclarations();
         var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
-                typeof(ScriptEngine).Assembly,
+                typeof(IScriptEngine).Assembly,
                 typeof(JintScriptEngine).Assembly
             )
         );
@@ -63,7 +63,7 @@ public sealed class ExtensionMethodTypingsTests
         var declarations = new CountingRegistrar();
         using var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
-                typeof(ScriptEngine).Assembly,
+                typeof(IScriptEngine).Assembly,
                 typeof(JintScriptEngine).Assembly
             )
         );

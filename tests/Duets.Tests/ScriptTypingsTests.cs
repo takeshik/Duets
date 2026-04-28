@@ -16,7 +16,7 @@ public sealed class ScriptTypingsTests
             allowClr
                 ? options => options.AllowClr(
                     Assembly.GetExecutingAssembly(),
-                    typeof(ScriptEngine).Assembly,
+                    typeof(IScriptEngine).Assembly,
                     typeof(JintScriptEngine).Assembly,
                     typeof(Assembly).Assembly
                 )
@@ -37,10 +37,10 @@ public sealed class ScriptTypingsTests
         return new Harness(declarations, engine);
     }
 
-    private sealed class Harness(TypeDeclarations declarations, ScriptEngine engine) : IDisposable
+    private sealed class Harness(TypeDeclarations declarations, IScriptEngine engine) : IDisposable
     {
         public TypeDeclarations Declarations { get; } = declarations;
-        public ScriptEngine Engine { get; } = engine;
+        public IScriptEngine Engine { get; } = engine;
 
         public IReadOnlyList<TypeDeclaration> GetNonBuiltinDeclarations()
         {
@@ -173,7 +173,7 @@ public sealed class ScriptTypingsTests
 
         var exception = Assert.Throws<ArgumentException>(() =>
             {
-                typings.ImportAssemblyOf(new JsString("Duets.ScriptEngine"));
+                typings.ImportAssemblyOf(new JsString("Duets.IScriptEngine"));
             }
         );
 
@@ -326,7 +326,7 @@ public sealed class ScriptTypingsTests
 
         var exception = Assert.Throws<ArgumentException>(() =>
             {
-                typings.ScanAssemblyOf(new JsString("Duets.ScriptEngine"));
+                typings.ScanAssemblyOf(new JsString("Duets.IScriptEngine"));
             }
         );
 
@@ -353,7 +353,7 @@ public sealed class ScriptTypingsTests
         var declarations = new TypeDeclarations();
         var typings = new ScriptTypings(declarations);
         var engine = new Engine(options => options.AllowClr());
-        var assemblyRef = ObjectWrapper.Create(engine, typeof(ScriptEngine).Assembly, typeof(Assembly));
+        var assemblyRef = ObjectWrapper.Create(engine, typeof(IScriptEngine).Assembly, typeof(Assembly));
 
         typings.ScanAssembly(assemblyRef);
 
@@ -366,7 +366,7 @@ public sealed class ScriptTypingsTests
     {
         using var harness = CreateHarness();
 
-        harness.Engine.Execute($"typings.scanAssembly('{typeof(ScriptEngine).Assembly.FullName}')");
+        harness.Engine.Execute($"typings.scanAssembly('{typeof(IScriptEngine).Assembly.FullName}')");
 
         var declaration = Assert.Single(harness.GetNonBuiltinDeclarations());
         Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);

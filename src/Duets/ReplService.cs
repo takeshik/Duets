@@ -23,12 +23,12 @@ public static class ReplServiceExtensions
 
 /// <summary>
 /// Web-based TypeScript REPL service. Serves the Monaco editor UI, proxies eval requests to
-/// <see cref="ScriptEngine"/>, and streams type declaration updates to the browser via SSE.
+/// <see cref="IScriptEngine"/>, and streams type declaration updates to the browser via SSE.
 /// </summary>
 public class ReplService : IDisposable
 {
     internal ReplService(
-        ITypeDeclarationProvider declarations, ScriptEngine scriptEngine, HttpServer server, string root = "/",
+        ITypeDeclarationProvider declarations, IScriptEngine scriptEngine, HttpServer server, string root = "/",
         IAssetSource? monacoLoader = null)
     {
         this._declarations = declarations;
@@ -50,7 +50,7 @@ public class ReplService : IDisposable
     }
 
     private readonly ITypeDeclarationProvider _declarations;
-    private readonly ScriptEngine _scriptEngine;
+    private readonly IScriptEngine _scriptEngine;
     private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeDeclaration?>> _sseWriters = new();
     private readonly Lazy<Task<string>> _monacoLoader;
 

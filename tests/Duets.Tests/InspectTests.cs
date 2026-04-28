@@ -4,17 +4,17 @@ namespace Duets.Tests;
 
 public sealed class InspectTests
 {
-    private static ScriptEngine CreateEngine()
+    private static IScriptEngine CreateEngine()
     {
         return JintTestRuntime.CreateEngine();
     }
 
-    private static string Inspect(ScriptEngine engine, string expr)
+    private static string Inspect(IScriptEngine engine, string expr)
     {
         return engine.Evaluate($"util.inspect({expr})").ToString()!;
     }
 
-    private static string Inspect(ScriptEngine engine, string expr, string opts)
+    private static string Inspect(IScriptEngine engine, string expr, string opts)
     {
         return engine.Evaluate($"util.inspect({expr}, {opts})").ToString()!;
     }

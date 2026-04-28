@@ -3,7 +3,7 @@ namespace Duets;
 /// <summary>
 /// Top-level context for a single isolated TypeScript evaluation environment.
 /// Owns <see cref="TypeDeclarations"/>, the active <see cref="ITranspiler"/>,
-/// and <see cref="ScriptEngine"/> as a unit.
+/// and <see cref="IScriptEngine"/> as a unit.
 /// </summary>
 /// <remarks>
 /// Obtain an instance via <see cref="CreateAsync(Action{DuetsSessionConfiguration})"/>
@@ -21,7 +21,7 @@ public sealed class DuetsSession : IDisposable
         JsDocProviders jsDocProviders,
         TypeDeclarations declarations,
         ITranspiler transpiler,
-        ScriptEngine engine)
+        IScriptEngine engine)
     {
         this.JsDocProviders = jsDocProviders;
         this.Declarations = declarations;
@@ -46,7 +46,7 @@ public sealed class DuetsSession : IDisposable
     public ITranspiler Transpiler { get; }
 
     /// <summary>The script execution engine for this session.</summary>
-    internal ScriptEngine Engine { get; }
+    internal IScriptEngine Engine { get; }
 
     /// <summary>Raised synchronously each time script code calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
@@ -128,14 +128,14 @@ public sealed class DuetsSession : IDisposable
 
     private static async Task<DuetsSession> CreateCoreAsync(
         Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory,
-        Func<ITranspiler, ScriptEngine> engineFactory)
+        Func<ITranspiler, IScriptEngine> engineFactory)
     {
         var jsDocProviders = new JsDocProviders();
         var generator = new ClrDeclarationGenerator(jsDocProviders);
         var declarations = new TypeDeclarations(generator);
         jsDocProviders.ProviderAdded += declarations.RefreshDeclarations;
         var transpiler = await transpilerFactory(declarations);
-        ScriptEngine? engine = null;
+        IScriptEngine? engine = null;
         try
         {
             engine = engineFactory(transpiler);
