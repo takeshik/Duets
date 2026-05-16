@@ -1,0 +1,12 @@
+{
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "dotnet scripts/format.cs"
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,16 @@
 {
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dotnet \"$CLAUDE_PROJECT_DIR/scripts/format.cs\""
+          }
+        ]
+      }
+    ]
+  },
   "enabledPlugins": {
     "dotnet@dotnet-agent-skills": true,
     "dotnet-diag@dotnet-agent-skills": true,
