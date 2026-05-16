@@ -19,6 +19,7 @@ Thumbs.db
 /.vs/
 /.idea/
 /_ReSharper.*/
+*.csproj.lscache
 *.user
 *.psess
 *.vsp
