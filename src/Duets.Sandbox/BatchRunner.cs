@@ -83,7 +83,8 @@ internal sealed class BatchRunner(SandboxContext session)
     {
         while (Console.ReadLine() is { } line)
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
             var op = "?";
             try
             {
@@ -110,16 +111,14 @@ internal sealed class BatchRunner(SandboxContext session)
                     "types-dump" => new
                     {
                         ok = true,
-                        types = session.GetTypeDeclarations()
-                            .Select(d => new
-                                {
-                                    d.FileName,
-                                    d.Content,
-                                }
-                            )
+                        types = session
+                            .GetTypeDeclarations()
+                            .Select(d => new { d.FileName, d.Content })
                             .ToArray(),
                     },
-                    "set-transpiler" => await this.SetTranspilerAsync(cmd.GetProperty("transpiler").GetString()!),
+                    "set-transpiler" => await this.SetTranspilerAsync(
+                        cmd.GetProperty("transpiler").GetString()!
+                    ),
                     "reset" => await this.ResetAsync(),
                     "help" => new { ok = true, content = _help },
                     _ => new { ok = false, error = $"Unknown op: {op}" },
@@ -145,16 +144,21 @@ internal sealed class BatchRunner(SandboxContext session)
         try
         {
             var (result, logs) = session.Evaluate(code);
-            var logEntries = logs.Count > 0
-                ? logs.Select(l => new
+            var logEntries =
+                logs.Count > 0
+                    ? logs.Select(l => new
                         {
                             level = l.Level.ToString().ToLowerInvariant(),
                             text = l.Text,
-                        }
-                    )
-                    .ToArray()
-                : null;
-            return new { ok = true, result, logs = logEntries };
+                        })
+                        .ToArray()
+                    : null;
+            return new
+            {
+                ok = true,
+                result,
+                logs = logEntries,
+            };
         }
         catch (Exception ex)
         {
@@ -190,7 +194,8 @@ internal sealed class BatchRunner(SandboxContext session)
 
     private async Task<object> ServerStartAsync(JsonElement cmd)
     {
-        if (session.IsServerRunning) return new { ok = false, error = "Server is already running" };
+        if (session.IsServerRunning)
+            return new { ok = false, error = "Server is already running" };
         var port = cmd.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 17375;
         session.StartWebServer(port);
         await Task.CompletedTask;
@@ -199,7 +204,8 @@ internal sealed class BatchRunner(SandboxContext session)
 
     private async Task<object> ServerStopAsync()
     {
-        if (!session.IsServerRunning) return new { ok = false, error = "Server is not running" };
+        if (!session.IsServerRunning)
+            return new { ok = false, error = "Server is not running" };
         await session.StopWebServerAsync();
         return new { ok = true };
     }

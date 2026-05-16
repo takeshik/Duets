@@ -63,9 +63,7 @@ namespace Duets.Tests.TestTypes.Declarations
 
     public class ConstructorSample
     {
-        public ConstructorSample(string name, int count)
-        {
-        }
+        public ConstructorSample(string name, int count) { }
     }
 
     public class TypeMappingSample
@@ -73,9 +71,7 @@ namespace Duets.Tests.TestTypes.Declarations
         public bool Flag { get; set; }
         public Dictionary<Guid, string> WeirdMap { get; set; } = new();
 
-        public static void StaticOp(bool enabled)
-        {
-        }
+        public static void StaticOp(bool enabled) { }
 
         public Task Run()
         {

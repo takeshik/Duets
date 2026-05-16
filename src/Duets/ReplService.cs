@@ -14,8 +14,10 @@ public static class ReplServiceExtensions
 {
     public static ReplService UseRepl(
         this HttpServer server,
-        DuetsSession session, string root = "/",
-        IAssetSource? monacoLoader = null)
+        DuetsSession session,
+        string root = "/",
+        IAssetSource? monacoLoader = null
+    )
     {
         return new ReplService(session.Declarations, session.Engine, server, root, monacoLoader);
     }
@@ -28,13 +30,19 @@ public static class ReplServiceExtensions
 public class ReplService : IDisposable
 {
     internal ReplService(
-        ITypeDeclarationProvider declarations, IScriptEngine scriptEngine, HttpServer server, string root = "/",
-        IAssetSource? monacoLoader = null)
+        ITypeDeclarationProvider declarations,
+        IScriptEngine scriptEngine,
+        HttpServer server,
+        string root = "/",
+        IAssetSource? monacoLoader = null
+    )
     {
         this._declarations = declarations;
         this._scriptEngine = scriptEngine;
-        var monacoLoaderSource = monacoLoader
-            ?? AssetSources.Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
+        var monacoLoaderSource =
+            monacoLoader
+            ?? AssetSources
+                .Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "monaco-loader.js"));
         this._monacoLoader = new Lazy<Task<string>>(() => monacoLoaderSource.GetAsync());
         declarations.DeclarationChanged += this.OnDeclarationChanged;
@@ -42,16 +50,22 @@ public class ReplService : IDisposable
             .UseSimpleRouting(
                 root,
                 routes =>
-                    routes.MapGet("/monaco-loader.js", this.HandleMonacoLoaderAsync)
+                    routes
+                        .MapGet("/monaco-loader.js", this.HandleMonacoLoaderAsync)
                         .MapGet("/type-declaration-events", this.HandleSseAsync)
                         .MapPost("/eval", this.HandleEvalAsync)
             )
-            .UseEmbeddedResources(typeof(ReplService).Assembly, "Duets.Resources.ReplStaticFiles", root);
+            .UseEmbeddedResources(
+                typeof(ReplService).Assembly,
+                "Duets.Resources.ReplStaticFiles",
+                root
+            );
     }
 
     private readonly ITypeDeclarationProvider _declarations;
     private readonly IScriptEngine _scriptEngine;
-    private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeDeclaration?>> _sseWriters = new();
+    private readonly ConcurrentDictionary<Guid, ChannelWriter<TypeDeclaration?>> _sseWriters =
+        new();
     private readonly Lazy<Task<string>> _monacoLoader;
 
     public void Dispose()
@@ -157,11 +171,13 @@ public class ReplService : IDisposable
                 ["result"] = resultStr,
                 ["ok"] = ok,
                 ["logs"] = new JsonArray(
-                    logs.Select(l => (JsonNode) new JsonObject
-                            {
-                                ["level"] = l.Level.ToString().ToLowerInvariant(),
-                                ["text"] = l.Text,
-                            }
+                    logs.Select(l =>
+                            (JsonNode)
+                                new JsonObject
+                                {
+                                    ["level"] = l.Level.ToString().ToLowerInvariant(),
+                                    ["text"] = l.Text,
+                                }
                         )
                         .ToArray()
                 ),

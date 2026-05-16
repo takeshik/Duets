@@ -1,5 +1,4 @@
 <Project>
-
   <PropertyGroup>
     <Nullable>enable</Nullable>
     <Features>nullablePublicOnly;strict</Features>
@@ -28,5 +27,4 @@
   <ItemGroup Condition="'$(Configuration)' != 'Release'">
     <InternalsVisibleTo Include="LINQPadQuery" />
   </ItemGroup>
-
 </Project>

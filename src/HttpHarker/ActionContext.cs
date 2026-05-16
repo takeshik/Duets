@@ -9,7 +9,8 @@ namespace HttpHarker;
 public sealed record HttpActionContext(
     HttpListenerRequest Request,
     HttpListenerResponse Response,
-    IReadOnlyDictionary<string, string> Args)
+    IReadOnlyDictionary<string, string> Args
+)
 {
     public async Task CloseAsync(HttpContent content)
     {
@@ -25,8 +26,10 @@ public sealed record HttpActionContext(
 
         foreach (var (name, values) in content.Headers)
         {
-            if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase)) continue;
-            if (string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (string.Equals(name, "Content-Length", StringComparison.OrdinalIgnoreCase))
+                continue;
             this.Response.Headers[name] = string.Join(", ", values);
         }
 

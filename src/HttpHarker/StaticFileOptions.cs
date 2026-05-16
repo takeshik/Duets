@@ -19,7 +19,8 @@ public sealed class StaticFileOptions
 
     public bool EnableSpaFallback { get; set; }
 
-    public Func<HttpListenerRequest, bool> SpaFallbackPredicate { get; set; } = DefaultSpaFallbackPredicate;
+    public Func<HttpListenerRequest, bool> SpaFallbackPredicate { get; set; } =
+        DefaultSpaFallbackPredicate;
 
     public bool EnableETag { get; set; }
 
@@ -30,8 +31,18 @@ public sealed class StaticFileOptions
 
     private static bool DefaultSpaFallbackPredicate(HttpListenerRequest request)
     {
-        if (!string.Equals(request.HttpMethod, HttpMethod.Get.Method, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(request.HttpMethod, HttpMethod.Head.Method, StringComparison.OrdinalIgnoreCase))
+        if (
+            !string.Equals(
+                request.HttpMethod,
+                HttpMethod.Get.Method,
+                StringComparison.OrdinalIgnoreCase
+            )
+            && !string.Equals(
+                request.HttpMethod,
+                HttpMethod.Head.Method,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             return false;
         }

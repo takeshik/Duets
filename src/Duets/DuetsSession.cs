@@ -21,7 +21,8 @@ public sealed class DuetsSession : IDisposable
         JsDocProviders jsDocProviders,
         TypeDeclarations declarations,
         ITranspiler transpiler,
-        IScriptEngine engine)
+        IScriptEngine engine
+    )
     {
         this.JsDocProviders = jsDocProviders;
         this.Declarations = declarations;
@@ -58,7 +59,9 @@ public sealed class DuetsSession : IDisposable
     /// <see cref="DuetsSessionConfiguration.UseTranspiler(Func{TypeDeclarations,Task{ITranspiler}})"/>
     /// for advanced control, or use the convenience extensions provided by backend packages.
     /// </summary>
-    public static Task<DuetsSession> CreateAsync(Action<DuetsSessionConfiguration>? configure = null)
+    public static Task<DuetsSession> CreateAsync(
+        Action<DuetsSessionConfiguration>? configure = null
+    )
     {
         var configuration = new DuetsSessionConfiguration();
         configure?.Invoke(configuration);
@@ -91,7 +94,10 @@ public sealed class DuetsSession : IDisposable
     }
 
     /// <summary>Transpiles and evaluates TypeScript code, returning the resolved result of any top-level promise.</summary>
-    public Task<ScriptValue> EvaluateAsync(string tsCode, CancellationToken cancellationToken = default)
+    public Task<ScriptValue> EvaluateAsync(
+        string tsCode,
+        CancellationToken cancellationToken = default
+    )
     {
         return this.EvaluateCoreAsync(tsCode, cancellationToken);
     }
@@ -115,7 +121,8 @@ public sealed class DuetsSession : IDisposable
     public void Dispose()
     {
         using var _ = this.EnterOperation();
-        if (this._disposed) return;
+        if (this._disposed)
+            return;
         this.Engine.ConsoleLogged -= this.OnConsoleLogged;
         this.Engine.Dispose();
         if (this.Transpiler is IDisposable disposable)
@@ -128,7 +135,8 @@ public sealed class DuetsSession : IDisposable
 
     private static async Task<DuetsSession> CreateCoreAsync(
         Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory,
-        Func<ITranspiler, IScriptEngine> engineFactory)
+        Func<ITranspiler, IScriptEngine> engineFactory
+    )
     {
         var jsDocProviders = new JsDocProviders();
         var generator = new ClrDeclarationGenerator(jsDocProviders);
@@ -177,7 +185,10 @@ public sealed class DuetsSession : IDisposable
         await this.Engine.ExecuteAsync(tsCode, cancellationToken);
     }
 
-    private async Task<ScriptValue> EvaluateCoreAsync(string tsCode, CancellationToken cancellationToken)
+    private async Task<ScriptValue> EvaluateCoreAsync(
+        string tsCode,
+        CancellationToken cancellationToken
+    )
     {
         using var _ = this.EnterOperation(cancellationToken);
         this.ThrowIfDisposed();
@@ -187,7 +198,8 @@ public sealed class DuetsSession : IDisposable
     private void ThrowIfDisposed()
     {
 #if NETSTANDARD2_1
-        if (this._disposed) throw new ObjectDisposedException(this.GetType().FullName);
+        if (this._disposed)
+            throw new ObjectDisposedException(this.GetType().FullName);
 #else
         ObjectDisposedException.ThrowIf(this._disposed, this);
 #endif

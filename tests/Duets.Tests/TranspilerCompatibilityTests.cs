@@ -39,9 +39,7 @@ public abstract class TranspilerCompatibilityTests : IAsyncLifetime
     [Fact]
     public void Transpile_expands_enum_to_runtime_object()
     {
-        var output = this.Transpiler.Transpile(
-            "enum Direction { Up, Down, Left, Right }"
-        );
+        var output = this.Transpiler.Transpile("enum Direction { Up, Down, Left, Right }");
 
         Assert.DoesNotContain("enum", output);
         Assert.Contains("Direction", output);
@@ -140,7 +138,10 @@ public abstract class TranspilerCompatibilityTests : IAsyncLifetime
 [Collection("TranspilerAssets")]
 public sealed class BabelTranspilerCompatibilityTests : TranspilerCompatibilityTests
 {
-    public BabelTranspilerCompatibilityTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    public BabelTranspilerCompatibilityTests(
+        TranspilerAssetsFixture assets,
+        ITestOutputHelper output
+    )
     {
         this._assets = assets;
         this._output = output;
@@ -160,7 +161,10 @@ public sealed class BabelTranspilerCompatibilityTests : TranspilerCompatibilityT
 [Collection("TranspilerAssets")]
 public sealed class TypeScriptServiceCompatibilityTests : TranspilerCompatibilityTests
 {
-    public TypeScriptServiceCompatibilityTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
+    public TypeScriptServiceCompatibilityTests(
+        TranspilerAssetsFixture assets,
+        ITestOutputHelper output
+    )
     {
         this._assets = assets;
         this._output = output;

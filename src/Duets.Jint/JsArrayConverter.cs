@@ -35,9 +35,10 @@ internal static class JsArrayConverter
         for (var i = 0; i < length; i++)
         {
             indices[dimension] = i;
-            items[i] = dimension == array.Rank - 1
-                ? ConvertElement(engine, array.GetValue(indices))
-                : BuildDimension(engine, array, indices, dimension + 1);
+            items[i] =
+                dimension == array.Rank - 1
+                    ? ConvertElement(engine, array.GetValue(indices))
+                    : BuildDimension(engine, array, indices, dimension + 1);
         }
 
         return new JsArray(engine, items);
@@ -45,8 +46,10 @@ internal static class JsArrayConverter
 
     private static JsValue ConvertElement(Engine engine, object? value)
     {
-        if (value is null) return JsValue.Null;
-        if (value is Array nestedArray) return ToJsArray(engine, nestedArray);
+        if (value is null)
+            return JsValue.Null;
+        if (value is Array nestedArray)
+            return ToJsArray(engine, nestedArray);
         return JsValue.FromObject(engine, value);
     }
 }

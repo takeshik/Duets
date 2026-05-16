@@ -27,9 +27,7 @@ public sealed class StaticFileMiddlewareTests
         return ms;
     }
 
-    private static Task RunAsync(
-        Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test)
+    private static Task RunAsync(Action<HttpServer> configure, Func<HttpClient, string, Task> test)
     {
         return ServerFixture.RunAsync(configure, test);
     }
@@ -59,13 +57,14 @@ public sealed class StaticFileMiddlewareTests
         var zip = BuildZip([("app.js", "")]);
 
         await RunAsync(
-            s => s.UseZipArchive(
-                zip,
-                "/",
-                o =>
-                    o.CacheControlSelector = suffix =>
-                        suffix.EndsWith(".js") ? "public, max-age=3600" : null
-            ),
+            s =>
+                s.UseZipArchive(
+                    zip,
+                    "/",
+                    o =>
+                        o.CacheControlSelector = suffix =>
+                            suffix.EndsWith(".js") ? "public, max-age=3600" : null
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "app.js");
@@ -82,13 +81,7 @@ public sealed class StaticFileMiddlewareTests
     [Fact]
     public async Task Content_type_resolved_from_file_extension()
     {
-        var zip = BuildZip(
-            [
-                ("page.html", "<p/>"),
-                ("style.css", "body{}"),
-                ("app.js", ""),
-            ]
-        );
+        var zip = BuildZip([("page.html", "<p/>"), ("style.css", "body{}"), ("app.js", "")]);
 
         await RunAsync(
             s => s.UseZipArchive(zip),
@@ -429,15 +422,16 @@ public sealed class StaticFileMiddlewareTests
         var zip = BuildZip([("index.html", "spa-root")]);
 
         await RunAsync(
-            s => s.UseZipArchive(
-                zip,
-                "/",
-                o =>
-                {
-                    o.EnableSpaFallback = true;
-                    o.SpaFallbackDocument = "index.html";
-                }
-            ),
+            s =>
+                s.UseZipArchive(
+                    zip,
+                    "/",
+                    o =>
+                    {
+                        o.EnableSpaFallback = true;
+                        o.SpaFallbackDocument = "index.html";
+                    }
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "some/deep/route");

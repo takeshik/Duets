@@ -53,12 +53,12 @@ public sealed class InspectTests
         using var engine = CreateEngine();
         Assert.Equal(
             """
-                [
-                  1,
-                  2,
-                  3
-                ]
-                """.Trim(),
+            [
+              1,
+              2,
+              3
+            ]
+            """.Trim(),
             Inspect(engine, "[1, 2, 3]")
         );
     }
@@ -72,10 +72,10 @@ public sealed class InspectTests
         engine.Execute("var a = {}; a.self = a;");
         Assert.Equal(
             """
-                {
-                  "self": "[Circular]"
-                }
-                """.Trim(),
+            {
+              "self": "[Circular]"
+            }
+            """.Trim(),
             Inspect(engine, "a")
         );
     }
@@ -108,10 +108,10 @@ public sealed class InspectTests
         var result = Inspect(engine, "[[1, 2]]", "{depth: 1}");
         Assert.Equal(
             """
-                [
-                  "[Array]"
-                ]
-                """.Trim(),
+            [
+              "[Array]"
+            ]
+            """.Trim(),
             result
         );
     }
@@ -123,10 +123,10 @@ public sealed class InspectTests
         var result = Inspect(engine, "{a: {b: {c: 1}}}", "{depth: 1}");
         Assert.Equal(
             """
-                {
-                  "a": "[Object]"
-                }
-                """.Trim(),
+            {
+              "a": "[Object]"
+            }
+            """.Trim(),
             result
         );
     }
@@ -155,11 +155,11 @@ public sealed class InspectTests
         using var engine = CreateEngine();
         Assert.Equal(
             """
-                {
-                  "x": 1,
-                  "y": 2
-                }
-                """.Trim(),
+            {
+              "x": 1,
+              "y": 2
+            }
+            """.Trim(),
             Inspect(engine, "{x: 1, y: 2}")
         );
     }
@@ -170,8 +170,8 @@ public sealed class InspectTests
         using var engine = CreateEngine();
         Assert.Equal(
             """
-                "hello"
-                """.Trim(),
+            "hello"
+            """.Trim(),
             Inspect(engine, "'hello'")
         );
     }

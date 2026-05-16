@@ -39,7 +39,8 @@ public sealed class ErrorPagesMiddleware : IMiddleware
         // If the response was already committed (route handler closed it), nothing left to do.
         try
         {
-            if (!context.Response.OutputStream.CanWrite) return;
+            if (!context.Response.OutputStream.CanWrite)
+                return;
         }
         catch (ObjectDisposedException)
         {

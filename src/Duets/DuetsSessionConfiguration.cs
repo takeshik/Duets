@@ -8,9 +8,7 @@ namespace Duets;
 /// </summary>
 public sealed class DuetsSessionConfiguration
 {
-    internal DuetsSessionConfiguration()
-    {
-    }
+    internal DuetsSessionConfiguration() { }
 
     private Func<ITranspiler, IScriptEngine>? _engineFactory;
     private Func<TypeDeclarations, Task<ITranspiler>>? _transpilerFactory;
@@ -39,7 +37,9 @@ public sealed class DuetsSessionConfiguration
     /// Selects the transpiler factory for the session being created.
     /// The factory receives the session-owned <see cref="TypeDeclarations"/> instance.
     /// </summary>
-    public DuetsSessionConfiguration UseTranspiler(Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory)
+    public DuetsSessionConfiguration UseTranspiler(
+        Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory
+    )
     {
         if (transpilerFactory == null)
         {
@@ -48,7 +48,9 @@ public sealed class DuetsSessionConfiguration
 
         if (this._transpilerFactory != null)
         {
-            throw new InvalidOperationException("The session transpiler has already been configured.");
+            throw new InvalidOperationException(
+                "The session transpiler has already been configured."
+            );
         }
 
         this._transpilerFactory = transpilerFactory;
@@ -74,8 +76,8 @@ public sealed class DuetsSessionConfiguration
         return this._engineFactory
             ?? DuetsBackendRegistry.DefaultEngineFactory
             ?? throw new InvalidOperationException(
-                "No script engine has been configured. " +
-                "Use a backend extension package (e.g. Duets.Jint) to register an engine."
+                "No script engine has been configured. "
+                    + "Use a backend extension package (e.g. Duets.Jint) to register an engine."
             );
     }
 
@@ -84,8 +86,8 @@ public sealed class DuetsSessionConfiguration
         return this._transpilerFactory
             ?? DuetsBackendRegistry.DefaultTranspilerFactory
             ?? throw new InvalidOperationException(
-                "No transpiler has been configured. " +
-                "Use a backend extension package (e.g. Duets.Jint) to register a transpiler."
+                "No transpiler has been configured. "
+                    + "Use a backend extension package (e.g. Duets.Jint) to register a transpiler."
             );
     }
 }

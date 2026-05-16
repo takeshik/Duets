@@ -11,14 +11,15 @@ public sealed class DuetsSessionTests
     {
         this._assets = assets;
         this._output = output;
-        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+        this._output.WriteLine(
+            $"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}"
+        );
     }
 
     private readonly TranspilerAssetsFixture _assets;
     private readonly ITestOutputHelper _output;
 
-    private sealed class DisposableTranspiler : ITranspiler,
-        IDisposable
+    private sealed class DisposableTranspiler : ITranspiler, IDisposable
     {
         public bool IsDisposed { get; private set; }
 
@@ -31,7 +32,8 @@ public sealed class DuetsSessionTests
             string input,
             string? fileName = null,
             IList<Diagnostic>? diagnostics = null,
-            string? moduleName = null)
+            string? moduleName = null
+        )
         {
             return input;
         }
@@ -43,9 +45,10 @@ public sealed class DuetsSessionTests
         var transpiler = new DisposableTranspiler();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            DuetsSession.CreateAsync(config => config
-                .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
-                .UseEngine(_ => throw new InvalidOperationException("boom"))
+            DuetsSession.CreateAsync(config =>
+                config
+                    .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
+                    .UseEngine(_ => throw new InvalidOperationException("boom"))
             )
         );
 
@@ -55,9 +58,12 @@ public sealed class DuetsSessionTests
     [Fact]
     public async Task CreateAsync_does_not_register_type_builtins_without_clr_interop()
     {
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations))
-            .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(async declarations =>
+                    await this._assets.CreateTypeScriptServiceAsync(declarations)
+                )
+                .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
         Assert.Equal("undefined", session.Evaluate("typeof typings").ToString());
@@ -68,14 +74,14 @@ public sealed class DuetsSessionTests
     {
         TypeDeclarations? capturedDeclarations = null;
 
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(async declarations =>
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(async declarations =>
                 {
                     capturedDeclarations = declarations;
                     return await this._assets.CreateTypeScriptServiceAsync(declarations);
-                }
-            )
-            .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
+                })
+                .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
         Assert.Same(capturedDeclarations, session.Declarations);
@@ -86,14 +92,14 @@ public sealed class DuetsSessionTests
     {
         TypeDeclarations? capturedDeclarations = null;
 
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(declarations =>
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(declarations =>
                 {
                     capturedDeclarations = declarations;
                     return Task.FromResult<ITranspiler>(new IdentityTranspiler());
-                }
-            )
-            .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
+                })
+                .UseEngine(transpiler => JintTestRuntime.CreateEngine(transpiler: transpiler))
         );
 
         Assert.Same(capturedDeclarations, session.Declarations);
@@ -103,12 +109,17 @@ public sealed class DuetsSessionTests
     [Fact]
     public async Task CreateAsync_registers_type_builtins_when_clr_interop_is_enabled()
     {
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations))
-            .UseJint(opts => opts.AllowClr())
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(async declarations =>
+                    await this._assets.CreateTypeScriptServiceAsync(declarations)
+                )
+                .UseJint(opts => opts.AllowClr())
         );
 
-        var files = TypeScriptServiceTestHelpers.GetLanguageServiceFiles((TypeScriptService) session.Transpiler);
+        var files = TypeScriptServiceTestHelpers.GetLanguageServiceFiles(
+            (TypeScriptService)session.Transpiler
+        );
         Assert.Contains(files.Values, content => content.Contains("declare const typings:"));
         Assert.Equal("object", session.Evaluate("typeof typings").ToString());
     }
@@ -117,9 +128,12 @@ public sealed class DuetsSessionTests
     public async Task Dispose_disposes_transpiler()
     {
         var transpiler = new DisposableTranspiler();
-        var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
-            .UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
+                .UseEngine(engineTranspiler =>
+                    JintTestRuntime.CreateEngine(transpiler: engineTranspiler)
+                )
         );
 
         session.Dispose();
@@ -132,15 +146,23 @@ public sealed class DuetsSessionTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var transpiler = new DisposableTranspiler();
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
-            .UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(_ => Task.FromResult<ITranspiler>(transpiler))
+                .UseEngine(engineTranspiler =>
+                    JintTestRuntime.CreateEngine(transpiler: engineTranspiler)
+                )
         );
 
-        var gate = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         session.SetValue("waitAsync", new Func<Task>(() => gate.Task));
 
-        var evaluationTask = session.EvaluateAsync("(async () => { await waitAsync(); return 42; })()", cancellationToken);
+        var evaluationTask = session.EvaluateAsync(
+            "(async () => { await waitAsync(); return 42; })()",
+            cancellationToken
+        );
 
         Assert.False(evaluationTask.IsCompleted);
         var exception = Assert.Throws<InvalidOperationException>(() => session.Dispose());
@@ -157,12 +179,16 @@ public sealed class DuetsSessionTests
     public async Task EvaluateAsync_allows_reentrant_engine_callbacks()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
-            .UseJint(opts => opts.AllowClr())
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
+                .UseJint(opts => opts.AllowClr())
         );
 
-        var result = await session.EvaluateAsync("typings.importNamespace('System.IO'); 42", cancellationToken);
+        var result = await session.EvaluateAsync(
+            "typings.importNamespace('System.IO'); 42",
+            cancellationToken
+        );
 
         Assert.Equal("42", result.ToString());
     }
@@ -170,9 +196,12 @@ public sealed class DuetsSessionTests
     [Fact]
     public async Task Extension_method_array_augmentations_do_not_break_array_completions()
     {
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(async declarations => await this._assets.CreateTypeScriptServiceAsync(declarations, true))
-            .UseJint(opts => opts.AllowClr())
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(async declarations =>
+                    await this._assets.CreateTypeScriptServiceAsync(declarations, true)
+                )
+                .UseJint(opts => opts.AllowClr())
         );
         session.Execute(
             """
@@ -181,13 +210,19 @@ public sealed class DuetsSessionTests
             """
         );
 
-        var transpiler = (TypeScriptService) session.Transpiler;
+        var transpiler = (TypeScriptService)session.Transpiler;
 
-        var arrayLiteralCompletions = transpiler.GetCompletions("const xs = [1,2,3]; xs.", "const xs = [1,2,3]; xs.".Length);
+        var arrayLiteralCompletions = transpiler.GetCompletions(
+            "const xs = [1,2,3]; xs.",
+            "const xs = [1,2,3]; xs.".Length
+        );
         Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "map");
         Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "Select");
 
-        var rangeCompletions = transpiler.GetCompletions("Enumerable.Range(1, 10).", "Enumerable.Range(1, 10).".Length);
+        var rangeCompletions = transpiler.GetCompletions(
+            "Enumerable.Range(1, 10).",
+            "Enumerable.Range(1, 10).".Length
+        );
         Assert.Contains(rangeCompletions, entry => entry.Name == "map");
         Assert.Contains(rangeCompletions, entry => entry.Name == "Select");
     }
@@ -196,15 +231,23 @@ public sealed class DuetsSessionTests
     public async Task SetValue_throws_while_async_operation_is_pending()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        using var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
-            .UseEngine(engineTranspiler => JintTestRuntime.CreateEngine(transpiler: engineTranspiler))
+        using var session = await DuetsSession.CreateAsync(config =>
+            config
+                .UseTranspiler(_ => Task.FromResult<ITranspiler>(new IdentityTranspiler()))
+                .UseEngine(engineTranspiler =>
+                    JintTestRuntime.CreateEngine(transpiler: engineTranspiler)
+                )
         );
 
-        var gate = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gate = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         session.SetValue("waitAsync", new Func<Task>(() => gate.Task));
 
-        var evaluationTask = session.EvaluateAsync("(async () => { await waitAsync(); return 42; })()", cancellationToken);
+        var evaluationTask = session.EvaluateAsync(
+            "(async () => { await waitAsync(); return 42; })()",
+            cancellationToken
+        );
 
         Assert.False(evaluationTask.IsCompleted);
 

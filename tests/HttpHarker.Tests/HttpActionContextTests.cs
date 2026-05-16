@@ -12,11 +12,11 @@ public sealed class HttpActionContextTests
     public async Task CloseAsync_contentType_and_body_sets_response()
     {
         await ServerFixture.RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.MapGet("/data", ctx => ctx.CloseAsync("text/plain", "hello"))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b => b.MapGet("/data", ctx => ctx.CloseAsync("text/plain", "hello"))
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "data");
@@ -32,11 +32,15 @@ public sealed class HttpActionContextTests
     {
         // Regression: passing "application/json; charset=utf-8" must not throw FormatException.
         await ServerFixture.RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.MapGet("/json", ctx => ctx.CloseAsync("application/json; charset=utf-8", "{}"))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b =>
+                        b.MapGet(
+                            "/json",
+                            ctx => ctx.CloseAsync("application/json; charset=utf-8", "{}")
+                        )
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "json");

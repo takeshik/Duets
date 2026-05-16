@@ -11,7 +11,8 @@ internal static class ServerFixture
 {
     public static async Task RunAsync(
         Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test)
+        Func<HttpClient, string, Task> test
+    )
     {
         var port = PickPort();
         var prefix = $"http://127.0.0.1:{port}/";
@@ -38,7 +39,10 @@ internal static class ServerFixture
             }
             catch (TimeoutException ex)
             {
-                throw new TimeoutException("HttpServer did not stop within 5 seconds after cancellation.", ex);
+                throw new TimeoutException(
+                    "HttpServer did not stop within 5 seconds after cancellation.",
+                    ex
+                );
             }
             catch
             {
@@ -52,7 +56,7 @@ internal static class ServerFixture
         // Use a TcpListener on port 0 to get an OS-assigned free port.
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
-        var port = ((IPEndPoint) listener.LocalEndpoint).Port;
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
     }

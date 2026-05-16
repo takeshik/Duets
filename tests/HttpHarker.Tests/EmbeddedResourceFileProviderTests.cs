@@ -9,7 +9,8 @@ namespace HttpHarker.Tests;
 /// </summary>
 public sealed class EmbeddedResourceFileProviderTests
 {
-    private static readonly Assembly ThisAssembly = typeof(EmbeddedResourceFileProviderTests).Assembly;
+    private static readonly Assembly ThisAssembly =
+        typeof(EmbeddedResourceFileProviderTests).Assembly;
     private const string Prefix = "HttpHarker.Tests.TestResources";
 
     [Fact]

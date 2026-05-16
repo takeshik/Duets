@@ -111,10 +111,7 @@ public sealed class ContentTypeProviderTests
     [Fact]
     public void Custom_fallback_is_invoked_for_unknown_key()
     {
-        var provider = new ContentTypeProvider(
-            _ => ".unknown",
-            _ => "text/plain"
-        );
+        var provider = new ContentTypeProvider(_ => ".unknown", _ => "text/plain");
 
         var result = provider.Resolve(".unknown", null!);
 

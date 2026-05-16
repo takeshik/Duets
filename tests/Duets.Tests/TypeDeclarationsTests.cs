@@ -41,8 +41,13 @@ public sealed class TypeDeclarationsTests
         declarations.DeclarationChanged += changes.Add;
 
         await Task.WhenAll(
-            Enumerable.Range(0, 20)
-                .Select(_ => Task.Run(() => declarations.RegisterDeclaration("declare const answer: number;")))
+            Enumerable
+                .Range(0, 20)
+                .Select(_ =>
+                    Task.Run(() =>
+                        declarations.RegisterDeclaration("declare const answer: number;")
+                    )
+                )
         );
 
         Assert.Single(declarations.GetDeclarations());
@@ -70,7 +75,10 @@ public sealed class TypeDeclarationsTests
         declarations.RegisterNamespace("Duets.Tests.TestTypes.NamespaceTargets");
 
         var placeholder = Assert.Single(declarations.GetDeclarations());
-        Assert.Equal("declare namespace Duets.Tests.TestTypes.NamespaceTargets { const $name: 'Duets.Tests.TestTypes.NamespaceTargets'; }\n", placeholder.Content);
+        Assert.Equal(
+            "declare namespace Duets.Tests.TestTypes.NamespaceTargets { const $name: 'Duets.Tests.TestTypes.NamespaceTargets'; }\n",
+            placeholder.Content
+        );
     }
 
     [Fact]
@@ -84,7 +92,10 @@ public sealed class TypeDeclarationsTests
         declarations.RegisterNamespace("Duets.Tests.TestTypes.NamespaceTargets");
 
         Assert.Equal(2, declarations.GetDeclarations().Count);
-        Assert.DoesNotContain(declarations.GetDeclarations(), declaration => declaration.Content.Contains("$name"));
+        Assert.DoesNotContain(
+            declarations.GetDeclarations(),
+            declaration => declaration.Content.Contains("$name")
+        );
     }
 
     [Fact]
@@ -95,8 +106,13 @@ public sealed class TypeDeclarationsTests
         declarations.DeclarationChanged += changes.Add;
 
         await Task.WhenAll(
-            Enumerable.Range(0, 20)
-                .Select(_ => Task.Run(() => declarations.RegisterNamespace("Duets.Tests.TestTypes.NamespaceTargets")))
+            Enumerable
+                .Range(0, 20)
+                .Select(_ =>
+                    Task.Run(() =>
+                        declarations.RegisterNamespace("Duets.Tests.TestTypes.NamespaceTargets")
+                    )
+                )
         );
 
         var placeholder = Assert.Single(declarations.GetDeclarations());
@@ -112,7 +128,8 @@ public sealed class TypeDeclarationsTests
         declarations.DeclarationChanged += changes.Add;
 
         await Task.WhenAll(
-            Enumerable.Range(0, 20)
+            Enumerable
+                .Range(0, 20)
                 .Select(_ => Task.Run(() => declarations.RegisterType(typeof(DeclarationSample))))
         );
 
@@ -149,7 +166,15 @@ public sealed class TypeDeclarationsTests
 
         Assert.Equal(3, changes.Count);
         Assert.Contains(changes, declaration => declaration.Content.Contains("const $name"));
-        Assert.Contains(changes, declaration => declaration.Content.Contains("class NamespaceAlpha"));
-        Assert.Contains(changes, declaration => declaration.Content == "declare namespace Duets.Tests.TestTypes.NamespaceTargets { }\n");
+        Assert.Contains(
+            changes,
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
+        Assert.Contains(
+            changes,
+            declaration =>
+                declaration.Content
+                == "declare namespace Duets.Tests.TestTypes.NamespaceTargets { }\n"
+        );
     }
 }

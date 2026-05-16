@@ -5,7 +5,8 @@ namespace HttpHarker;
 /// <summary>
 /// Provides file bytes from assembly manifest embedded resources.
 /// </summary>
-public sealed class EmbeddedResourceFileProvider(Assembly assembly, string resourcePrefix) : IFileProvider
+public sealed class EmbeddedResourceFileProvider(Assembly assembly, string resourcePrefix)
+    : IFileProvider
 {
     private readonly string _resourcePrefix = resourcePrefix.TrimEnd('.');
 

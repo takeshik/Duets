@@ -5,9 +5,7 @@ namespace HttpHarker.Tests;
 
 public sealed class SimpleRoutingMiddlewareTests
 {
-    private static Task RunAsync(
-        Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test)
+    private static Task RunAsync(Action<HttpServer> configure, Func<HttpClient, string, Task> test)
     {
         return ServerFixture.RunAsync(configure, test);
     }
@@ -30,16 +28,17 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Correct_method_is_dispatched(string method)
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                {
-                    b.MapGet("/r", ctx => Reply(ctx, "get"));
-                    b.MapPost("/r", ctx => Reply(ctx, "post"));
-                    b.MapPut("/r", ctx => Reply(ctx, "put"));
-                    b.MapDelete("/r", ctx => Reply(ctx, "delete"));
-                }
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b =>
+                    {
+                        b.MapGet("/r", ctx => Reply(ctx, "get"));
+                        b.MapPost("/r", ctx => Reply(ctx, "post"));
+                        b.MapPut("/r", ctx => Reply(ctx, "put"));
+                        b.MapDelete("/r", ctx => Reply(ctx, "delete"));
+                    }
+                ),
             async (client, prefix) =>
             {
                 var req = new HttpRequestMessage(new HttpMethod(method), prefix + "r");
@@ -58,11 +57,11 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Catch_all_captures_remaining_path_segments()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.MapGet("/files/{*path}", ctx => Reply(ctx, ctx.Args["path"]))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b => b.MapGet("/files/{*path}", ctx => Reply(ctx, ctx.Args["path"]))
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "files/a/b/c.txt");
@@ -76,8 +75,10 @@ public sealed class SimpleRoutingMiddlewareTests
     public void Catch_all_not_last_segment_throws_at_construction()
     {
         Assert.Throws<ArgumentException>(() =>
-            new HttpServer("http://localhost:9999/")
-                .UseSimpleRouting("/", b => b.MapGet("/{*rest}/extra", _ => Task.CompletedTask))
+            new HttpServer("http://localhost:9999/").UseSimpleRouting(
+                "/",
+                b => b.MapGet("/{*rest}/extra", _ => Task.CompletedTask)
+            )
         );
     }
 
@@ -85,8 +86,10 @@ public sealed class SimpleRoutingMiddlewareTests
     public void Empty_catch_all_name_throws_at_construction()
     {
         Assert.Throws<ArgumentException>(() =>
-            new HttpServer("http://localhost:9999/")
-                .UseSimpleRouting("/", b => b.MapGet("/files/{*}", _ => Task.CompletedTask))
+            new HttpServer("http://localhost:9999/").UseSimpleRouting(
+                "/",
+                b => b.MapGet("/files/{*}", _ => Task.CompletedTask)
+            )
         );
     }
 
@@ -98,8 +101,10 @@ public sealed class SimpleRoutingMiddlewareTests
     public void Empty_parameter_name_throws_at_construction()
     {
         Assert.Throws<ArgumentException>(() =>
-            new HttpServer("http://localhost:9999/")
-                .UseSimpleRouting("/", b => b.MapGet("/users/{}", _ => Task.CompletedTask))
+            new HttpServer("http://localhost:9999/").UseSimpleRouting(
+                "/",
+                b => b.MapGet("/users/{}", _ => Task.CompletedTask)
+            )
         );
     }
 
@@ -129,14 +134,15 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Literal_segment_takes_priority_over_parameter()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                {
-                    b.MapGet("/users/me", ctx => Reply(ctx, "me"));
-                    b.MapGet("/users/{id}", ctx => Reply(ctx, ctx.Args["id"]));
-                }
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b =>
+                    {
+                        b.MapGet("/users/me", ctx => Reply(ctx, "me"));
+                        b.MapGet("/users/{id}", ctx => Reply(ctx, ctx.Args["id"]));
+                    }
+                ),
             async (client, prefix) =>
             {
                 var meResp = await client.GetAsync(prefix + "users/me");
@@ -156,11 +162,11 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Map_with_explicit_method_registers_route()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.Map(HttpMethod.Patch, "/item", ctx => Reply(ctx, "patched"))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b => b.Map(HttpMethod.Patch, "/item", ctx => Reply(ctx, "patched"))
+                ),
             async (client, prefix) =>
             {
                 var req = new HttpRequestMessage(HttpMethod.Patch, prefix + "item");
@@ -188,11 +194,15 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Multiple_parameters_all_captured()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.MapGet("/a/{x}/b/{y}", ctx => Reply(ctx, $"{ctx.Args["x"]},{ctx.Args["y"]}"))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b =>
+                        b.MapGet(
+                            "/a/{x}/b/{y}",
+                            ctx => Reply(ctx, $"{ctx.Args["x"]},{ctx.Args["y"]}")
+                        )
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "a/foo/b/bar");
@@ -210,11 +220,7 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Routes_scoped_to_configured_root_prefix()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/api",
-                b =>
-                    b.MapGet("/ping", ctx => Reply(ctx, "pong"))
-            ),
+            s => s.UseSimpleRouting("/api", b => b.MapGet("/ping", ctx => Reply(ctx, "pong"))),
             async (client, prefix) =>
             {
                 var ok = await client.GetAsync(prefix + "api/ping");
@@ -234,11 +240,11 @@ public sealed class SimpleRoutingMiddlewareTests
     public async Task Single_parameter_segment_captured_in_args()
     {
         await RunAsync(
-            s => s.UseSimpleRouting(
-                "/",
-                b =>
-                    b.MapGet("/users/{id}", ctx => Reply(ctx, ctx.Args["id"]))
-            ),
+            s =>
+                s.UseSimpleRouting(
+                    "/",
+                    b => b.MapGet("/users/{id}", ctx => Reply(ctx, ctx.Args["id"]))
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "users/42");

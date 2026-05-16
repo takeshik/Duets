@@ -28,7 +28,10 @@ public abstract class ScriptEngine<TValue> : IScriptEngine
 
     protected abstract TValue EvaluateJs(string code);
 
-    protected abstract Task<TValue> EvaluateJsAsync(string code, CancellationToken cancellationToken);
+    protected abstract Task<TValue> EvaluateJsAsync(
+        string code,
+        CancellationToken cancellationToken
+    );
 
     protected void RaiseConsoleLogged(ScriptConsoleEntry entry)
     {
@@ -103,7 +106,10 @@ public abstract class ScriptEngine<TValue> : IScriptEngine
         }
     }
 
-    public async Task<ScriptValue> EvaluateAsync(string tsCode, CancellationToken cancellationToken = default)
+    public async Task<ScriptValue> EvaluateAsync(
+        string tsCode,
+        CancellationToken cancellationToken = default
+    )
     {
         var jsCode = this.Transpiler.Transpile(tsCode);
 

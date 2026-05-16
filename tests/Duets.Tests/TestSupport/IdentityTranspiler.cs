@@ -7,7 +7,8 @@ internal sealed class IdentityTranspiler : ITranspiler
         string input,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
-        string? moduleName = null)
+        string? moduleName = null
+    )
     {
         return input;
     }

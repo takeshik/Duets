@@ -5,9 +5,7 @@ namespace HttpHarker.Tests;
 
 public sealed class ErrorPagesMiddlewareTests
 {
-    private static Task RunAsync(
-        Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test)
+    private static Task RunAsync(Action<HttpServer> configure, Func<HttpClient, string, Task> test)
     {
         return ServerFixture.RunAsync(configure, test);
     }
@@ -22,14 +20,11 @@ public sealed class ErrorPagesMiddlewareTests
         await RunAsync(
             s =>
             {
-                s.UseErrorPages(b =>
-                    b.On(200, ctx => ctx.CloseAsync("text/plain", "error-page"))
-                );
+                s.UseErrorPages(b => b.On(200, ctx => ctx.CloseAsync("text/plain", "error-page")));
                 // A route handler that commits the response normally.
                 s.UseSimpleRouting(
                     "/",
-                    b =>
-                        b.MapGet("/ok", ctx => ctx.CloseAsync("text/plain", "ok"))
+                    b => b.MapGet("/ok", ctx => ctx.CloseAsync("text/plain", "ok"))
                 );
             },
             async (client, prefix) =>
@@ -50,9 +45,7 @@ public sealed class ErrorPagesMiddlewareTests
     public async Task Default_status_code_treated_as_404()
     {
         await RunAsync(
-            s => s.UseErrorPages(b =>
-                b.On(404, ctx => ctx.CloseAsync("text/plain", "404"))
-            ),
+            s => s.UseErrorPages(b => b.On(404, ctx => ctx.CloseAsync("text/plain", "404"))),
             async (client, prefix) =>
             {
                 // No route matched → server leaves status at 200 default → ErrorPages treats as 404.
@@ -116,11 +109,10 @@ public sealed class ErrorPagesMiddlewareTests
             s =>
             {
                 s.UseErrorPages(b =>
-                    {
-                        b.On(403, ctx => ctx.CloseAsync("text/plain", "forbidden page"));
-                        b.On(404, ctx => ctx.CloseAsync("text/plain", "not found page"));
-                    }
-                );
+                {
+                    b.On(403, ctx => ctx.CloseAsync("text/plain", "forbidden page"));
+                    b.On(404, ctx => ctx.CloseAsync("text/plain", "not found page"));
+                });
                 s.UseSimpleRouting(
                     "/",
                     b =>
@@ -157,7 +149,8 @@ public sealed class ErrorPagesMiddlewareTests
             s =>
             {
                 // Middleware that explicitly sets 500 then passes to next.
-                s.Use(async (ctx, next) =>
+                s.Use(
+                    async (ctx, next) =>
                     {
                         ctx.Response.StatusCode = 500;
                         await next();
@@ -184,9 +177,10 @@ public sealed class ErrorPagesMiddlewareTests
     public async Task Registered_handler_invoked_for_matching_status_code()
     {
         await RunAsync(
-            s => s.UseErrorPages(b =>
-                b.On(404, ctx => ctx.CloseAsync("text/plain", "not found page"))
-            ),
+            s =>
+                s.UseErrorPages(b =>
+                    b.On(404, ctx => ctx.CloseAsync("text/plain", "not found page"))
+                ),
             async (client, prefix) =>
             {
                 var resp = await client.GetAsync(prefix + "missing");

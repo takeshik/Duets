@@ -42,6 +42,7 @@ catch
 
 var exMessage = session.Evaluate("$exception ? $exception.message : String($exception)");
 Console.WriteLine($"$exception.message = {exMessage}");
+
 // $exception.message = Cannot read property 'missingProperty' of null
 
 // $exception is cleared after the next successful call

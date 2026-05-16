@@ -17,7 +17,8 @@ internal sealed class SandboxContext : IAsyncDisposable
         DuetsSession session,
         TranspilerKind activeTranspiler,
         Func<TypeDeclarations, Task<ITranspiler>> tsFactory,
-        Func<TypeDeclarations, Task<ITranspiler>> babelFactory)
+        Func<TypeDeclarations, Task<ITranspiler>> babelFactory
+    )
     {
         this._session = session;
         this.ActiveTranspiler = activeTranspiler;
@@ -37,21 +38,21 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public string TranspilerDescription => this._session.Transpiler.Description;
 
-    public bool IsServerRunning => this._webServer != null && this._webServerTask is { IsCompleted: false };
+    public bool IsServerRunning =>
+        this._webServer != null && this._webServerTask is { IsCompleted: false };
 
     internal static async Task<SandboxContext> CreateAsync(
         Func<TypeDeclarations, Task<TypeScriptService>>? tsFactory = null,
-        Func<Task<BabelTranspiler>>? babelFactory = null)
+        Func<Task<BabelTranspiler>>? babelFactory = null
+    )
     {
-        Func<TypeDeclarations, Task<ITranspiler>> tsF =
-            tsFactory is not null
-                ? async decls => await tsFactory(decls)
-                : async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true);
+        Func<TypeDeclarations, Task<ITranspiler>> tsF = tsFactory is not null
+            ? async decls => await tsFactory(decls)
+            : async decls => await TypeScriptService.CreateAsync(decls, injectStdLib: true);
 
-        Func<TypeDeclarations, Task<ITranspiler>> babelF =
-            babelFactory is not null
-                ? async _ => await babelFactory()
-                : async _ => await BabelTranspiler.CreateAsync();
+        Func<TypeDeclarations, Task<ITranspiler>> babelF = babelFactory is not null
+            ? async _ => await babelFactory()
+            : async _ => await BabelTranspiler.CreateAsync();
 
         var session = await CreateDuetsSessionAsync(TranspilerKind.TypeScript, tsF, babelF);
         return new SandboxContext(session, TranspilerKind.TypeScript, tsF, babelF);
@@ -77,7 +78,10 @@ internal sealed class SandboxContext : IAsyncDisposable
         }
     }
 
-    public IReadOnlyList<TypeScriptService.CompletionEntry> GetCompletions(string source, int position)
+    public IReadOnlyList<TypeScriptService.CompletionEntry> GetCompletions(
+        string source,
+        int position
+    )
     {
         if (this._session.Transpiler is not TypeScriptService ts)
         {
@@ -91,7 +95,8 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public string RegisterType(string typeName)
     {
-        var type = Type.GetType(typeName)
+        var type =
+            Type.GetType(typeName)
             ?? throw new InvalidOperationException($"Type not found: {typeName}");
         this._session.Declarations.RegisterType(type);
         return type.FullName!;
@@ -108,15 +113,19 @@ internal sealed class SandboxContext : IAsyncDisposable
         {
             "typescript" => TranspilerKind.TypeScript,
             "babel" => TranspilerKind.Babel,
-            _ => throw new ArgumentException($"Unknown transpiler: '{name}'. Valid values: typescript, babel"),
+            _ => throw new ArgumentException(
+                $"Unknown transpiler: '{name}'. Valid values: typescript, babel"
+            ),
         };
         await this.SetTranspilerAsync(kind);
     }
 
     public async Task SetTranspilerAsync(TranspilerKind kind)
     {
-        if (kind == this.ActiveTranspiler) return;
-        if (this._webServer != null) await this.StopWebServerAsync();
+        if (kind == this.ActiveTranspiler)
+            return;
+        if (this._webServer != null)
+            await this.StopWebServerAsync();
         var old = this._session;
         this._session = await CreateDuetsSessionAsync(kind, this._tsFactory, this._babelFactory);
         this.ActiveTranspiler = kind;
@@ -125,9 +134,14 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public async Task ResetAsync()
     {
-        if (this._webServer != null) await this.StopWebServerAsync();
+        if (this._webServer != null)
+            await this.StopWebServerAsync();
         var old = this._session;
-        this._session = await CreateDuetsSessionAsync(this.ActiveTranspiler, this._tsFactory, this._babelFactory);
+        this._session = await CreateDuetsSessionAsync(
+            this.ActiveTranspiler,
+            this._tsFactory,
+            this._babelFactory
+        );
         old.Dispose();
     }
 
@@ -135,10 +149,13 @@ internal sealed class SandboxContext : IAsyncDisposable
     {
         if (this._session.Transpiler is not TypeScriptService)
         {
-            throw new InvalidOperationException("The web server requires the TypeScript transpiler.");
+            throw new InvalidOperationException(
+                "The web server requires the TypeScript transpiler."
+            );
         }
 
-        if (this.IsServerRunning) return;
+        if (this.IsServerRunning)
+            return;
 
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
@@ -160,7 +177,8 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public async Task StopWebServerAsync()
     {
-        if (this._webServer == null) return;
+        if (this._webServer == null)
+            return;
         await this._webServerCts!.CancelAsync();
         try
         {
@@ -183,16 +201,15 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (this._webServerCts is { } cts) await cts.CancelAsync();
+        if (this._webServerCts is { } cts)
+            await cts.CancelAsync();
         if (this._webServerTask != null)
         {
             try
             {
                 await this._webServerTask;
             }
-            catch (OperationCanceledException)
-            {
-            }
+            catch (OperationCanceledException) { }
         }
 
         this._replService?.Dispose();
@@ -203,7 +220,8 @@ internal sealed class SandboxContext : IAsyncDisposable
     private static async Task<DuetsSession> CreateDuetsSessionAsync(
         TranspilerKind kind,
         Func<TypeDeclarations, Task<ITranspiler>> tsFactory,
-        Func<TypeDeclarations, Task<ITranspiler>> babelFactory)
+        Func<TypeDeclarations, Task<ITranspiler>> babelFactory
+    )
     {
         var factory = kind switch
         {
@@ -219,9 +237,8 @@ internal sealed class SandboxContext : IAsyncDisposable
         };
 
         await Console.Error.WriteAsync($"Initializing {kindName} engine...");
-        var session = await DuetsSession.CreateAsync(config => config
-            .UseTranspiler(factory)
-            .UseJint(opts => opts.AllowClr())
+        var session = await DuetsSession.CreateAsync(config =>
+            config.UseTranspiler(factory).UseJint(opts => opts.AllowClr())
         );
         await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
         return session;

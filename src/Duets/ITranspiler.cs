@@ -16,16 +16,12 @@ public interface ITranspiler
         string input,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
-        string? moduleName = null);
+        string? moduleName = null
+    );
 }
 
 /// <summary>A diagnostic emitted by the TypeScript compiler during transpilation.</summary>
-public record Diagnostic(
-    int Start,
-    int Length,
-    string MessageText,
-    int Category,
-    int Code)
+public record Diagnostic(int Start, int Length, string MessageText, int Category, int Code)
 {
     public override string ToString()
     {

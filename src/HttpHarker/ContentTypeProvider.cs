@@ -10,11 +10,14 @@ public sealed class ContentTypeProvider
     public ContentTypeProvider(
         Func<HttpListenerRequest, string?> keySelector,
         Func<HttpListenerRequest, string>? fallback = null,
-        IEqualityComparer<string>? keyComparer = null)
+        IEqualityComparer<string>? keyComparer = null
+    )
     {
         this.KeySelector = keySelector;
         this.Fallback = fallback ?? (_ => "application/octet-stream");
-        this._mappings = new Dictionary<string, string>(keyComparer ?? StringComparer.OrdinalIgnoreCase);
+        this._mappings = new Dictionary<string, string>(
+            keyComparer ?? StringComparer.OrdinalIgnoreCase
+        );
     }
 
     private readonly Dictionary<string, string> _mappings;
@@ -25,8 +28,9 @@ public sealed class ContentTypeProvider
 
     public static ContentTypeProvider CreateDefault()
     {
-        return new ContentTypeProvider(static request => Path.GetExtension(request.Url?.AbsolutePath ?? "")
-            )
+        return new ContentTypeProvider(static request =>
+            Path.GetExtension(request.Url?.AbsolutePath ?? "")
+        )
             .Add(".html", "text/html; charset=utf-8")
             .Add(".css", "text/css; charset=utf-8")
             .Add(".js", "application/javascript; charset=utf-8")

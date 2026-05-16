@@ -33,17 +33,17 @@ internal sealed class ExtensionMethodRegistry
         do
         {
             snapshot = this._methods;
-            if (this._registered.Contains(containerType)) return false;
+            if (this._registered.Contains(containerType))
+                return false;
 
             var incoming = containerType
                 .GetMethods(BindingFlags.Public | BindingFlags.Static)
                 .Where(m => m.IsDefined(typeof(ExtensionAttribute), false))
                 .GroupBy(m =>
-                    {
-                        var p = m.GetParameters()[0].ParameterType;
-                        return GetDispatchKey(p);
-                    }
-                )
+                {
+                    var p = m.GetParameters()[0].ParameterType;
+                    return GetDispatchKey(p);
+                })
                 .ToDictionary(g => g.Key, g => g.ToArray());
 
             merged = new Dictionary<Type, MethodInfo[]>(snapshot);
@@ -53,10 +53,12 @@ internal sealed class ExtensionMethodRegistry
                     ? [.. existing, .. methods]
                     : methods;
             }
-        } while (!ReferenceEquals(
+        } while (
+            !ReferenceEquals(
                 Interlocked.CompareExchange(ref this._methods, merged, snapshot),
                 snapshot
-            ));
+            )
+        );
 
         // Track registered containers (best-effort; minor racy double-registration is harmless)
         var newRegistered = new HashSet<Type>(this._registered) { containerType };
@@ -72,22 +74,33 @@ internal sealed class ExtensionMethodRegistry
     public JsValue? CreateMemberValue(Engine engine, object target, string memberName)
     {
         var candidates = this.FindCandidates(target.GetType(), memberName);
-        if (candidates.Count == 0) return null;
+        if (candidates.Count == 0)
+            return null;
 
-        return new ClrFunction(engine, memberName, (_, jsArgs) => this.Invoke(engine, target, candidates, jsArgs));
+        return new ClrFunction(
+            engine,
+            memberName,
+            (_, jsArgs) => this.Invoke(engine, target, candidates, jsArgs)
+        );
     }
 
     // Jint resolves CLR member names with the first character case-insensitive and the rest exact.
     private static bool NameMatches(string clrName, string jsName)
     {
-        if (clrName.Length != jsName.Length) return false;
-        if (clrName.Length == 0) return true;
+        if (clrName.Length != jsName.Length)
+            return false;
+        if (clrName.Length == 0)
+            return true;
         return char.ToLowerInvariant(clrName[0]) == char.ToLowerInvariant(jsName[0])
             && string.Equals(clrName[1..], jsName[1..], StringComparison.Ordinal);
     }
 
     private static bool TryConvertArguments(
-        Engine engine, ParameterInfo[] parameters, JsValue[] jsArgs, object?[] clrArgs)
+        Engine engine,
+        ParameterInfo[] parameters,
+        JsValue[] jsArgs,
+        object?[] clrArgs
+    )
     {
         for (var i = 0; i < jsArgs.Length; i++)
         {
@@ -114,7 +127,11 @@ internal sealed class ExtensionMethodRegistry
     // appears only in a delegate's return type). This lets us make the method concrete before
     // converting JS arguments, so Jint's type converter sees Func<Item, object> rather than the
     // open Func<Item, TResult>.
-    private static MethodInfo? MakeConcreteMethod(MethodInfo method, ParameterInfo[] parameters, object target)
+    private static MethodInfo? MakeConcreteMethod(
+        MethodInfo method,
+        ParameterInfo[] parameters,
+        object target
+    )
     {
         var genericArgs = method.GetGenericArguments();
         var resolved = new Type?[genericArgs.Length];
@@ -137,22 +154,38 @@ internal sealed class ExtensionMethodRegistry
         }
     }
 
-    private static void InferGenericArgs(Type paramType, Type argType, Type[] genericParams, Type?[] resolved)
+    private static void InferGenericArgs(
+        Type paramType,
+        Type argType,
+        Type[] genericParams,
+        Type?[] resolved
+    )
     {
         if (paramType.IsGenericParameter)
         {
             var pos = paramType.GenericParameterPosition;
-            if (pos < resolved.Length) resolved[pos] ??= argType;
+            if (pos < resolved.Length)
+                resolved[pos] ??= argType;
             return;
         }
 
-        if (paramType.IsArray && argType.IsArray && paramType.GetArrayRank() == argType.GetArrayRank())
+        if (
+            paramType.IsArray
+            && argType.IsArray
+            && paramType.GetArrayRank() == argType.GetArrayRank()
+        )
         {
-            InferGenericArgs(paramType.GetElementType()!, argType.GetElementType()!, genericParams, resolved);
+            InferGenericArgs(
+                paramType.GetElementType()!,
+                argType.GetElementType()!,
+                genericParams,
+                resolved
+            );
             return;
         }
 
-        if (!paramType.IsGenericType) return;
+        if (!paramType.IsGenericType)
+            return;
 
         var paramDef = paramType.GetGenericTypeDefinition();
         // Walk argType's interfaces to find a match for paramDef
@@ -165,8 +198,10 @@ internal sealed class ExtensionMethodRegistry
 
         foreach (var candidate in argTypes)
         {
-            if (!candidate.IsGenericType) continue;
-            if (candidate.GetGenericTypeDefinition() != paramDef) continue;
+            if (!candidate.IsGenericType)
+                continue;
+            if (candidate.GetGenericTypeDefinition() != paramDef)
+                continue;
             var paramArgs = paramType.GetGenericArguments();
             var candidateArgs = candidate.GetGenericArguments();
             for (var i = 0; i < Math.Min(paramArgs.Length, candidateArgs.Length); i++)
@@ -190,12 +225,18 @@ internal sealed class ExtensionMethodRegistry
             : type;
     }
 
-    private JsValue Invoke(Engine engine, object target, List<MethodInfo> candidates, JsValue[] jsArgs)
+    private JsValue Invoke(
+        Engine engine,
+        object target,
+        List<MethodInfo> candidates,
+        JsValue[] jsArgs
+    )
     {
         foreach (var method in candidates)
         {
             var parameters = method.GetParameters(); // [0] = 'this', [1..] = user args
-            if (parameters.Length - 1 != jsArgs.Length) continue;
+            if (parameters.Length - 1 != jsArgs.Length)
+                continue;
 
             var clrArgs = new object?[parameters.Length];
             clrArgs[0] = target;
@@ -209,7 +250,8 @@ internal sealed class ExtensionMethodRegistry
             if (method.IsGenericMethodDefinition)
             {
                 var made = MakeConcreteMethod(method, parameters, target);
-                if (made is null) continue;
+                if (made is null)
+                    continue;
                 concrete = made;
                 concreteParams = made.GetParameters();
             }
@@ -219,7 +261,8 @@ internal sealed class ExtensionMethodRegistry
                 concreteParams = parameters;
             }
 
-            if (!TryConvertArguments(engine, concreteParams, jsArgs, clrArgs)) continue;
+            if (!TryConvertArguments(engine, concreteParams, jsArgs, clrArgs))
+                continue;
 
             try
             {
@@ -228,9 +271,7 @@ internal sealed class ExtensionMethodRegistry
             }
             catch (TargetInvocationException ex) when (ex.InnerException is not null)
             {
-                ExceptionDispatchInfo
-                    .Capture(ex.InnerException)
-                    .Throw();
+                ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
                 throw; // unreachable
             }
         }
@@ -243,7 +284,8 @@ internal sealed class ExtensionMethodRegistry
     private List<MethodInfo> FindCandidates(Type objectType, string memberName)
     {
         var snapshot = this._methods;
-        if (snapshot.Count == 0) return [];
+        if (snapshot.Count == 0)
+            return [];
 
         var result = new List<MethodInfo>();
 
@@ -251,7 +293,8 @@ internal sealed class ExtensionMethodRegistry
         {
             void AddMatches(Type key)
             {
-                if (!snapshot.TryGetValue(key, out var methods)) return;
+                if (!snapshot.TryGetValue(key, out var methods))
+                    return;
 
                 foreach (var m in methods)
                 {

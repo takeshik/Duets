@@ -36,7 +36,8 @@ public sealed class ZipFileProviderTests
         var zip = BuildZip([("file.txt", "data")]);
         var provider = new ZipFileProvider(zip);
 
-        var tasks = Enumerable.Range(0, 20)
+        var tasks = Enumerable
+            .Range(0, 20)
             .Select(_ => Task.Run(() => provider.GetFileContent("file.txt")))
             .ToArray();
 

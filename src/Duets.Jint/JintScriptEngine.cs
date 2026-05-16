@@ -15,21 +15,19 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
         this.ExtensionMethods = extensionMethods;
 
         this._jintEngine = new Engine(opts =>
-            {
-                configure?.Invoke(opts);
-                opts.AddObjectConverter(new ClrArrayObjectConverter());
+        {
+            configure?.Invoke(opts);
+            opts.AddObjectConverter(new ClrArrayObjectConverter());
 
-                var hostAccessor = opts.Interop.MemberAccessor;
-                opts.Interop.MemberAccessor = (engine, target, member) =>
-                    hostAccessor(engine, target, member)
-                    ?? extensionMethods.CreateMemberValue(engine, target, member);
-            }
-        );
+            var hostAccessor = opts.Interop.MemberAccessor;
+            opts.Interop.MemberAccessor = (engine, target, member) =>
+                hostAccessor(engine, target, member)
+                ?? extensionMethods.CreateMemberValue(engine, target, member);
+        });
 
         this.InitCoreBuiltins();
-        this._predefinedGlobalKeys = this._jintEngine
-            .Global
-            .GetOwnProperties()
+        this._predefinedGlobalKeys = this
+            ._jintEngine.Global.GetOwnProperties()
             .Where(x => x.Key.IsString())
             .Select(x => x.Key.AsString())
             .Concat(["$_", "$exception"])
@@ -41,7 +39,8 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     private readonly object _sync = new();
     private bool _disposed;
 
-    public override bool CanRegisterTypeBuiltins => !this.GetValue("importNamespace").Equals(JsValue.Undefined);
+    public override bool CanRegisterTypeBuiltins =>
+        !this.GetValue("importNamespace").Equals(JsValue.Undefined);
 
     /// <summary>Registry of extension method container types made available via <c>MemberAccessor</c>.</summary>
     internal ExtensionMethodRegistry ExtensionMethods { get; }
@@ -68,9 +67,8 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     {
         lock (this._sync)
         {
-            return this._jintEngine
-                .Global
-                .GetOwnProperties()
+            return this
+                ._jintEngine.Global.GetOwnProperties()
                 .Where(x => !this._predefinedGlobalKeys.Contains(x.Key.ToString()))
                 .ToDictionary(
                     x => this.Converter.Wrap(x.Key),
@@ -94,20 +92,25 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
             }
         };
 
-        var typings = new ScriptTypings(declarations, importNsFn, this.SetTypeReferenceValue, registerExtensionMethods);
+        var typings = new ScriptTypings(
+            declarations,
+            importNsFn,
+            this.SetTypeReferenceValue,
+            registerExtensionMethods
+        );
         this.SetValue("typings", typings);
 
         this.SetValue(
             "clrTypeOf",
             new Func<JsValue, object>(jsValue =>
-                {
-                    if (jsValue is TypeReference tr) return tr.ReferenceType;
-                    throw new ArgumentException(
-                        "Expected a CLR type reference (e.g., clrTypeOf(System.IO.File)). " +
-                        "Make sure AllowClr is configured on the engine."
-                    );
-                }
-            )
+            {
+                if (jsValue is TypeReference tr)
+                    return tr.ReferenceType;
+                throw new ArgumentException(
+                    "Expected a CLR type reference (e.g., clrTypeOf(System.IO.File)). "
+                        + "Make sure AllowClr is configured on the engine."
+                );
+            })
         );
 
         declarations.RegisterDeclaration(ScriptEngineResources.LoadScriptEngineInitDts());
@@ -143,7 +146,9 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     }
 
     protected override async Task<JsValue> EvaluateJsAsync(
-        string code, CancellationToken cancellationToken)
+        string code,
+        CancellationToken cancellationToken
+    )
     {
         var prepared = Engine.PrepareScript(code);
         Task<JsValue> ret;
@@ -160,7 +165,8 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     {
         lock (this._sync)
         {
-            if (this._disposed) return;
+            if (this._disposed)
+                return;
             this._jintEngine.Dispose();
             this._disposed = true;
         }
@@ -198,7 +204,8 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     {
         this._jintEngine.SetValue(
             "__consoleImpl__",
-            new Action<string, string>((levelStr, text) =>
+            new Action<string, string>(
+                (levelStr, text) =>
                 {
                     var level = levelStr switch
                     {
@@ -223,7 +230,8 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     private void ThrowIfDisposed()
     {
 #if NETSTANDARD2_1
-        if (this._disposed) throw new ObjectDisposedException(this.GetType().FullName);
+        if (this._disposed)
+            throw new ObjectDisposedException(this.GetType().FullName);
 #else
         ObjectDisposedException.ThrowIf(this._disposed, this);
 #endif

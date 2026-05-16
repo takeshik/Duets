@@ -14,7 +14,11 @@ public sealed class ZipFileProvider : IFileProvider
         zipStream.CopyTo(ms);
         this._zipBytes = ms.ToArray();
 
-        using var archive = new ZipArchive(new MemoryStream(this._zipBytes), ZipArchiveMode.Read, false);
+        using var archive = new ZipArchive(
+            new MemoryStream(this._zipBytes),
+            ZipArchiveMode.Read,
+            false
+        );
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in archive.Entries)
         {
@@ -41,7 +45,11 @@ public sealed class ZipFileProvider : IFileProvider
         }
 
         // Each call opens its own MemoryStream over the immutable _zipBytes, so concurrent reads are safe.
-        using var archive = new ZipArchive(new MemoryStream(this._zipBytes), ZipArchiveMode.Read, false);
+        using var archive = new ZipArchive(
+            new MemoryStream(this._zipBytes),
+            ZipArchiveMode.Read,
+            false
+        );
         var entry = archive.GetEntry(entryName);
         if (entry is null)
         {

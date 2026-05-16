@@ -14,7 +14,8 @@ public static class DuetsSessionConfigurationExtensions
     /// </summary>
     public static DuetsSessionConfiguration UseJint(
         this DuetsSessionConfiguration configuration,
-        Action<Options>? configure = null)
+        Action<Options>? configure = null
+    )
     {
         if (configuration == null)
         {
@@ -33,7 +34,8 @@ public static class DuetsSessionConfigurationExtensions
     /// </summary>
     public static DuetsSessionConfiguration UseBabel(
         this DuetsSessionConfiguration configuration,
-        BabelTranspilerOptions? options = null)
+        BabelTranspilerOptions? options = null
+    )
     {
         if (configuration == null)
         {

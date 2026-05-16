@@ -31,7 +31,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         string? tfm = null,
         string? cacheDirectory = null,
         HttpClient? httpClient = null,
-        string? assemblyName = null)
+        string? assemblyName = null
+    )
     {
         var id = packageId.ToLowerInvariant();
         var ver = version.ToLowerInvariant();
@@ -40,7 +41,10 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         var asmSuffix = assemblyName != null ? $".{assemblyName.ToLowerInvariant()}" : "";
         var cacheFile = Path.Combine(cacheDir, $"{id}.{ver}{tfmSuffix}{asmSuffix}.xml");
 
-        if (File.Exists(cacheFile) && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < TimeSpan.FromDays(7))
+        if (
+            File.Exists(cacheFile)
+            && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < TimeSpan.FromDays(7)
+        )
         {
             return new XmlDocumentationProvider(await File.ReadAllTextAsync(cacheFile));
         }
@@ -53,7 +57,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
 
             using var zip = new ZipArchive(new MemoryStream(nupkgBytes), ZipArchiveMode.Read);
             var xmlContent = FindXmlInNupkg(zip, tfm, assemblyName);
-            if (xmlContent == null) return null;
+            if (xmlContent == null)
+                return null;
 
             Directory.CreateDirectory(cacheDir);
             await File.WriteAllTextAsync(cacheFile, xmlContent);
@@ -88,16 +93,22 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             ?? FindXmlUnderPrefix(zip, "ref/", tfm, assemblyName);
     }
 
-    private static string? FindXmlUnderPrefix(ZipArchive zip, string prefix, string? tfm, string? assemblyName)
+    private static string? FindXmlUnderPrefix(
+        ZipArchive zip,
+        string prefix,
+        string? tfm,
+        string? assemblyName
+    )
     {
-        var xmlEntries = zip.Entries
-            .Where(e =>
-                e.FullName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
-                e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+        var xmlEntries = zip
+            .Entries.Where(e =>
+                e.FullName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
             )
             .ToList();
 
-        if (xmlEntries.Count == 0) return null;
+        if (xmlEntries.Count == 0)
+            return null;
 
         // When assemblyName is known, prefer the XML file whose stem matches it to avoid
         // picking up another assembly's docs in multi-assembly packages.
@@ -110,7 +121,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
                     Path.GetFileNameWithoutExtension(e.Name)
                         .Equals(assemblyName, StringComparison.OrdinalIgnoreCase)
                 );
-                if (match != null) return match;
+                if (match != null)
+                    return match;
             }
 
             return list.FirstOrDefault();
@@ -123,7 +135,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
                     e.FullName.StartsWith($"{prefix}{tfm}/", StringComparison.OrdinalIgnoreCase)
                 )
             );
-            if (entry != null) return ReadEntry(entry);
+            if (entry != null)
+                return ReadEntry(entry);
         }
 
         string[] preferredTfms =
@@ -137,10 +150,14 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             var entry = PickEntry(
                 xmlEntries.Where(e =>
-                    e.FullName.StartsWith($"{prefix}{preferred}/", StringComparison.OrdinalIgnoreCase)
+                    e.FullName.StartsWith(
+                        $"{prefix}{preferred}/",
+                        StringComparison.OrdinalIgnoreCase
+                    )
                 )
             );
-            if (entry != null) return ReadEntry(entry);
+            if (entry != null)
+                return ReadEntry(entry);
         }
 
         var fallback = PickEntry(xmlEntries);
@@ -163,12 +180,11 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             foreach (var member in doc.Descendants("member"))
             {
                 var name = member.Attribute("name")?.Value;
-                if (name != null) dict[name] = member;
+                if (name != null)
+                    dict[name] = member;
             }
         }
-        catch
-        {
-        }
+        catch { }
 
         return dict;
     }
@@ -182,10 +198,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             PropertyInfo property => $"P:{GetTypeDocId(property.DeclaringType!)}.{property.Name}",
             ConstructorInfo ctor =>
                 $"M:{GetTypeDocId(ctor.DeclaringType!)}.#ctor{BuildParamListId(ctor.GetParameters(), null)}",
-            MethodInfo method =>
-                $"M:{GetTypeDocId(method.DeclaringType!)}.{method.Name}" +
-                $"{(method.IsGenericMethodDefinition ? $"``{method.GetGenericArguments().Length}" : "")}" +
-                $"{BuildParamListId(method.GetParameters(), method)}",
+            MethodInfo method => $"M:{GetTypeDocId(method.DeclaringType!)}.{method.Name}"
+                + $"{(method.IsGenericMethodDefinition ? $"``{method.GetGenericArguments().Length}" : "")}"
+                + $"{BuildParamListId(method.GetParameters(), method)}",
             _ => null,
         };
     }
@@ -200,7 +215,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
 
     private static string BuildParamListId(ParameterInfo[] parameters, MethodInfo? method)
     {
-        if (parameters.Length == 0) return "";
+        if (parameters.Length == 0)
+            return "";
         return $"({string.Join(",", parameters.Select(p => GetParamTypeId(p.ParameterType, method)))})";
     }
 
@@ -237,7 +253,10 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             var def = type.GetGenericTypeDefinition();
             var defId = GetTypeDocId(def);
-            var args = string.Join(",", type.GetGenericArguments().Select(a => GetParamTypeId(a, method)));
+            var args = string.Join(
+                ",",
+                type.GetGenericArguments().Select(a => GetParamTypeId(a, method))
+            );
             return $"{defId}{{{args}}}";
         }
 
@@ -252,14 +271,16 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         if (summary != null)
         {
             var text = NormalizeWhitespace(ExtractText(summary));
-            if (!string.IsNullOrEmpty(text)) parts.Add(text);
+            if (!string.IsNullOrEmpty(text))
+                parts.Add(text);
         }
 
         var remarks = memberElement.Element("remarks");
         if (remarks != null)
         {
             var text = NormalizeWhitespace(ExtractText(remarks));
-            if (!string.IsNullOrEmpty(text)) parts.Add(text);
+            if (!string.IsNullOrEmpty(text))
+                parts.Add(text);
         }
 
         foreach (var param in memberElement.Elements("param"))
@@ -276,7 +297,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         if (returns != null)
         {
             var text = NormalizeWhitespace(ExtractText(returns));
-            if (!string.IsNullOrEmpty(text)) parts.Add($"@returns {text}");
+            if (!string.IsNullOrEmpty(text))
+                parts.Add($"@returns {text}");
         }
 
         return parts.Count > 0 ? string.Join("\n", parts) : null;
@@ -336,11 +358,14 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         // M:System.String.IndexOf(System.Char) and T:System.Collections.Generic.List{T}
         // don't split inside the parameter or argument types.
         var parenIdx = name.IndexOf('(');
-        if (parenIdx >= 0) name = name[..parenIdx];
+        if (parenIdx >= 0)
+            name = name[..parenIdx];
         var braceIdx = name.IndexOf('{');
-        if (braceIdx >= 0) name = name[..braceIdx];
+        if (braceIdx >= 0)
+            name = name[..braceIdx];
         var backtickIdx = name.LastIndexOf('`');
-        if (backtickIdx >= 0) name = name[..backtickIdx];
+        if (backtickIdx >= 0)
+            name = name[..backtickIdx];
         name = name.Replace('+', '.');
         var dotIdx = name.LastIndexOf('.');
         return dotIdx >= 0 ? name[(dotIdx + 1)..] : name;
@@ -354,7 +379,8 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             if (char.IsWhiteSpace(c))
             {
-                if (!prevWasSpace) sb.Append(' ');
+                if (!prevWasSpace)
+                    sb.Append(' ');
                 prevWasSpace = true;
             }
             else

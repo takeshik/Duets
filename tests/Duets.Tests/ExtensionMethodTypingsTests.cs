@@ -16,18 +16,14 @@ public sealed class ExtensionMethodTypingsTests
 
         public List<string> RawDeclarations { get; } = [];
 
-        public void RegisterType(Type type)
-        {
-        }
+        public void RegisterType(Type type) { }
 
         public void RegisterDeclaration(string content)
         {
             this.RawDeclarations.Add(content);
         }
 
-        public void RegisterNamespace(string namespaceName)
-        {
-        }
+        public void RegisterNamespace(string namespaceName) { }
 
         public void RegisterExtensionMethodContainer(Type containerType)
         {
@@ -42,7 +38,8 @@ public sealed class ExtensionMethodTypingsTests
     private static (TypeDeclarations declarations, IScriptEngine engine) CreateEngine()
     {
         var declarations = new TypeDeclarations();
-        var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
+        var engine = JintTestRuntime.CreateEngine(opts =>
+            opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
                 typeof(IScriptEngine).Assembly,
                 typeof(JintScriptEngine).Assembly
@@ -61,7 +58,8 @@ public sealed class ExtensionMethodTypingsTests
     public void AddExtensionMethods_does_not_re_register_declarations_for_duplicate_container_registration()
     {
         var declarations = new CountingRegistrar();
-        using var engine = JintTestRuntime.CreateEngine(opts => opts.AllowClr(
+        using var engine = JintTestRuntime.CreateEngine(opts =>
+            opts.AllowClr(
                 Assembly.GetExecutingAssembly(),
                 typeof(IScriptEngine).Assembly,
                 typeof(JintScriptEngine).Assembly
@@ -76,10 +74,7 @@ public sealed class ExtensionMethodTypingsTests
             """
         );
 
-        Assert.Equal(
-            2,
-            declarations.RawDeclarations.Count
-        );
+        Assert.Equal(2, declarations.RawDeclarations.Count);
         Assert.Single(
             declarations.RawDeclarations,
             content => content.Contains("interface Item") && content.Contains("Describe")
@@ -96,7 +91,8 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
 
-        var count = declarations.GetDeclarations()
+        var count = declarations
+            .GetDeclarations()
             .Count(d => d.Content.Contains("interface Item") && d.Content.Contains("Describe"));
         Assert.Equal(1, count);
     }
@@ -110,7 +106,7 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.ByteArrayExtensions)");
 
         engine.SetValue("items", new byte[] { 10, 20 });
-        var result = (int) (double) engine.Evaluate("items.FirstPlus(5)").ToObject()!;
+        var result = (int)(double)engine.Evaluate("items.FirstPlus(5)").ToObject()!;
 
         Assert.Equal(15, result);
     }
@@ -124,7 +120,7 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.ArrayExtensions)");
 
         engine.SetValue("factory", new ArrayFactory());
-        var result = (int) (double) engine.Evaluate("factory.MakeNumbers().HeadOr(99)").ToObject()!;
+        var result = (int)(double)engine.Evaluate("factory.MakeNumbers().HeadOr(99)").ToObject()!;
 
         Assert.Equal(4, result);
     }
@@ -138,7 +134,7 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.ArrayExtensions)");
 
         engine.SetValue("items", new[] { 10, 20 });
-        var result = (int) (double) engine.Evaluate("items.HeadOr(99)").ToObject()!;
+        var result = (int)(double)engine.Evaluate("items.HeadOr(99)").ToObject()!;
 
         Assert.Equal(10, result);
     }
@@ -153,7 +149,7 @@ public sealed class ExtensionMethodTypingsTests
 
         var item = new Item { Label = "test", Value = 7 };
         engine.SetValue("item", item);
-        var result = (int) (double) engine.Evaluate("item.Map(i => i.Value * 2)").ToObject()!;
+        var result = (int)(double)engine.Evaluate("item.Map(i => i.Value * 2)").ToObject()!;
 
         Assert.Equal(14, result);
     }
@@ -167,7 +163,7 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.DeclarationExtensions)");
 
         engine.SetValue("target", new DeclarationExtensionTarget { Value = 21 });
-        var result = (int) (double) engine.Evaluate("target.DoubleValue()").ToObject()!;
+        var result = (int)(double)engine.Evaluate("target.DoubleValue()").ToObject()!;
 
         Assert.Equal(42, result);
     }
@@ -183,8 +179,20 @@ public sealed class ExtensionMethodTypingsTests
         engine.SetValue("items", new[] { 1, 2, 3 });
         var result = engine.Evaluate("util.toJsArray(items.Select(x => x * 2).ToArray())");
 
-        Assert.True((bool) engine.Evaluate("Array.isArray(util.toJsArray(items.Select(x => x * 2).ToArray()))").ToObject()!);
-        Assert.Equal("[2,4,6]", engine.Evaluate("util.inspect(util.toJsArray(items.Select(x => x * 2).ToArray()), { compact: true })").ToString());
+        Assert.True(
+            (bool)
+                engine
+                    .Evaluate("Array.isArray(util.toJsArray(items.Select(x => x * 2).ToArray()))")
+                    .ToObject()!
+        );
+        Assert.Equal(
+            "[2,4,6]",
+            engine
+                .Evaluate(
+                    "util.inspect(util.toJsArray(items.Select(x => x * 2).ToArray()), { compact: true })"
+                )
+                .ToString()
+        );
     }
 
     [Fact]
@@ -229,26 +237,32 @@ public sealed class ExtensionMethodTypingsTests
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
 
         var decls = declarations.GetDeclarations();
-        Assert.Contains(decls, d => d.Content.Contains("interface Item") && d.Content.Contains("Describe"));
+        Assert.Contains(
+            decls,
+            d => d.Content.Contains("interface Item") && d.Content.Contains("Describe")
+        );
     }
 
     [Fact]
     public void ExtensionMethodRegistry_makes_generic_array_extension_callable()
     {
-        var registryType = typeof(JintScriptEngine).Assembly.GetType("Duets.Jint.ExtensionMethodRegistry", true)!;
+        var registryType = typeof(JintScriptEngine).Assembly.GetType(
+            "Duets.Jint.ExtensionMethodRegistry",
+            true
+        )!;
         var registry = Activator.CreateInstance(registryType)!;
         registryType.GetMethod("Register")!.Invoke(registry, [typeof(ArrayExtensions)]);
 
         using var engine = new Engine();
-        var memberValue = (JsValue?) registryType.GetMethod("CreateMemberValue")!.Invoke(
-            registry,
-            [engine, new[] { 10, 20 }, "HeadOr"]
-        );
+        var memberValue = (JsValue?)
+            registryType
+                .GetMethod("CreateMemberValue")!
+                .Invoke(registry, [engine, new[] { 10, 20 }, "HeadOr"]);
 
         Assert.NotNull(memberValue);
 
         engine.SetValue("headOr", memberValue);
-        var result = (int) (double) engine.Evaluate("headOr(99)").ToObject()!;
+        var result = (int)(double)engine.Evaluate("headOr(99)").ToObject()!;
         Assert.Equal(10, result);
     }
 
@@ -307,6 +321,7 @@ public sealed class ExtensionMethodTypingsTests
         Assert.Contains("Map<TResult>(", decl);
         Assert.Contains("): TResult;", decl);
     }
+
     // -------------------------------------------------------------------------
     // TypeScript declaration generation
     // -------------------------------------------------------------------------
@@ -396,7 +411,10 @@ public sealed class ExtensionMethodTypingsTests
 
         engine.SetValue("factory", new ArrayFactory());
 
-        Assert.True((bool) engine.Evaluate("Array.isArray(util.toJsArray(factory.MakeNumbers()))").ToObject()!);
+        Assert.True(
+            (bool)
+                engine.Evaluate("Array.isArray(util.toJsArray(factory.MakeNumbers()))").ToObject()!
+        );
         Assert.Equal("6", engine.Evaluate("util.toJsArray(factory.MakeNumbers())[2]").ToString());
     }
 
@@ -408,7 +426,7 @@ public sealed class ExtensionMethodTypingsTests
 
         engine.SetValue("items", new[] { 1, 2, 3 });
 
-        Assert.True((bool) engine.Evaluate("Array.isArray(util.toJsArray(items))").ToObject()!);
+        Assert.True((bool)engine.Evaluate("Array.isArray(util.toJsArray(items))").ToObject()!);
         Assert.Equal("2", engine.Evaluate("util.toJsArray(items)[1]").ToString());
     }
 
@@ -418,10 +436,17 @@ public sealed class ExtensionMethodTypingsTests
         var (_, engine) = CreateEngine();
         using var _ = engine;
 
-        engine.SetValue("matrix", new[,] { { 1, 2 }, { 3, 4 } });
+        engine.SetValue(
+            "matrix",
+            new[,]
+            {
+                { 1, 2 },
+                { 3, 4 },
+            }
+        );
 
-        Assert.True((bool) engine.Evaluate("Array.isArray(util.toJsArray(matrix))").ToObject()!);
-        Assert.True((bool) engine.Evaluate("Array.isArray(util.toJsArray(matrix)[0])").ToObject()!);
+        Assert.True((bool)engine.Evaluate("Array.isArray(util.toJsArray(matrix))").ToObject()!);
+        Assert.True((bool)engine.Evaluate("Array.isArray(util.toJsArray(matrix)[0])").ToObject()!);
         Assert.Equal(
             "[[1,2],[3,4]]",
             engine.Evaluate("util.inspect(util.toJsArray(matrix), { compact: true })").ToString()

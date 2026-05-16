@@ -14,12 +14,13 @@ public sealed class ScriptTypingsTests
         var declarations = new TypeDeclarations();
         var engine = JintTestRuntime.CreateEngine(
             allowClr
-                ? options => options.AllowClr(
-                    Assembly.GetExecutingAssembly(),
-                    typeof(IScriptEngine).Assembly,
-                    typeof(JintScriptEngine).Assembly,
-                    typeof(Assembly).Assembly
-                )
+                ? options =>
+                    options.AllowClr(
+                        Assembly.GetExecutingAssembly(),
+                        typeof(IScriptEngine).Assembly,
+                        typeof(JintScriptEngine).Assembly,
+                        typeof(Assembly).Assembly
+                    )
                 : null
         );
         engine.RegisterTypeBuiltins(declarations);
@@ -44,8 +45,8 @@ public sealed class ScriptTypingsTests
 
         public IReadOnlyList<TypeDeclaration> GetNonBuiltinDeclarations()
         {
-            return this.Declarations
-                .GetDeclarations()
+            return this
+                .Declarations.GetDeclarations()
                 .Where(declaration => !declaration.Content.Contains("declare const typings:"))
                 .ToList();
         }
@@ -57,7 +58,9 @@ public sealed class ScriptTypingsTests
     }
 
     [Theory]
-    [InlineData("typings.importType('Duets.Tests.TestTypes.NamespaceTargets.NamespaceAlpha, Duets.Tests')")]
+    [InlineData(
+        "typings.importType('Duets.Tests.TestTypes.NamespaceTargets.NamespaceAlpha, Duets.Tests')"
+    )]
     [InlineData("typings.importType(NamespaceTargetsNs.NamespaceAlpha)")]
     public void ImportType_registers_the_requested_type_declaration(string code)
     {
@@ -65,7 +68,10 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute(code);
 
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
     }
 
     [Theory]
@@ -76,25 +82,37 @@ public sealed class ScriptTypingsTests
     // System.Collections.Generic is dense with IsGenericTypeDefinition types: List<T>, Dictionary<TKey,TValue>, etc.
     [InlineData("System.Collections.Generic", "List")]
     [InlineData("System.Text", "StringBuilder")]
-    public void ImportNamespace_registers_types_in_bcl_namespaces(string ns, string expectedTypeName)
+    public void ImportNamespace_registers_types_in_bcl_namespaces(
+        string ns,
+        string expectedTypeName
+    )
     {
         using var harness = CreateHarness();
 
         harness.Engine.Execute($"typings.importNamespace('{ns}')");
 
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains(expectedTypeName));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains(expectedTypeName)
+        );
     }
 
     [Theory]
     // List<T> (System.Collections.Generic.List`1) is in System.Collections.dll in .NET 5+
     [InlineData("System.Collections", "List")]
-    public void ImportAssembly_registers_types_from_bcl_assembly(string assemblyName, string expectedTypeName)
+    public void ImportAssembly_registers_types_from_bcl_assembly(
+        string assemblyName,
+        string expectedTypeName
+    )
     {
         using var harness = CreateHarness();
 
         harness.Engine.Execute($"typings.importAssembly('{assemblyName}')");
 
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains(expectedTypeName));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains(expectedTypeName)
+        );
     }
 
     [Theory]
@@ -118,7 +136,10 @@ public sealed class ScriptTypingsTests
         );
 
         // declare var is registered so completions work without namespace prefix
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains($"declare var {typeName}:"));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains($"declare var {typeName}:")
+        );
     }
 
     [Fact]
@@ -126,7 +147,9 @@ public sealed class ScriptTypingsTests
     {
         using var harness = CreateHarness();
 
-        var exception = Assert.ThrowsAny<Exception>(() => harness.Engine.Evaluate("clrTypeOf(123)"));
+        var exception = Assert.ThrowsAny<Exception>(() =>
+            harness.Engine.Evaluate("clrTypeOf(123)")
+        );
 
         Assert.Contains("Expected a CLR type reference", exception.ToString());
     }
@@ -138,8 +161,14 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("importNamespace('Duets.Tests.TestTypes.NamespaceTargets')");
 
-        Assert.DoesNotContain(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
-        Assert.DoesNotContain(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceBeta"));
+        Assert.DoesNotContain(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
+        Assert.DoesNotContain(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceBeta")
+        );
     }
 
     [Fact]
@@ -149,7 +178,10 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.importAssemblyOf(JintNs.TypeScriptService)");
 
-        var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
+        var declarations = harness
+            .GetNonBuiltinDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
         Assert.Contains(declarations, content => content.Contains("class TypeScriptService"));
         Assert.Contains(declarations, content => content.Contains("class BabelTranspiler"));
     }
@@ -161,7 +193,10 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.importAssemblyOf(DuetsNs.DuetsSession)");
 
-        var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
+        var declarations = harness
+            .GetNonBuiltinDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
         Assert.Contains(declarations, content => content.Contains("class DuetsSession"));
         Assert.Contains(declarations, content => content.Contains("interface ITranspiler"));
     }
@@ -172,10 +207,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ImportAssemblyOf(new JsString("Duets.IScriptEngine"));
-            }
-        );
+        {
+            typings.ImportAssemblyOf(new JsString("Duets.IScriptEngine"));
+        });
 
         Assert.Contains("Expected a CLR type reference", exception.Message);
     }
@@ -186,12 +220,14 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ImportAssembly(JsBoolean.False);
-            }
-        );
+        {
+            typings.ImportAssembly(JsBoolean.False);
+        });
 
-        Assert.Contains("Expected an assembly name string or an Assembly object", exception.Message);
+        Assert.Contains(
+            "Expected an assembly name string or an Assembly object",
+            exception.Message
+        );
     }
 
     [Fact]
@@ -200,11 +236,18 @@ public sealed class ScriptTypingsTests
         var declarations = new TypeDeclarations();
         var typings = new ScriptTypings(declarations);
         var engine = new Engine(options => options.AllowClr());
-        var assemblyRef = ObjectWrapper.Create(engine, typeof(TypeScriptService).Assembly, typeof(Assembly));
+        var assemblyRef = ObjectWrapper.Create(
+            engine,
+            typeof(TypeScriptService).Assembly,
+            typeof(Assembly)
+        );
 
         typings.ImportAssembly(assemblyRef);
 
-        var contents = declarations.GetDeclarations().Select(declaration => declaration.Content).ToList();
+        var contents = declarations
+            .GetDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
         Assert.Contains(contents, content => content.Contains("class TypeScriptService"));
         Assert.Contains(contents, content => content.Contains("class BabelTranspiler"));
     }
@@ -214,9 +257,14 @@ public sealed class ScriptTypingsTests
     {
         using var harness = CreateHarness();
 
-        harness.Engine.Execute($"typings.importAssembly('{typeof(TypeScriptService).Assembly.FullName}')");
+        harness.Engine.Execute(
+            $"typings.importAssembly('{typeof(TypeScriptService).Assembly.FullName}')"
+        );
 
-        var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
+        var declarations = harness
+            .GetNonBuiltinDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
         Assert.Contains(declarations, content => content.Contains("class TypeScriptService"));
         Assert.Contains(declarations, content => content.Contains("class BabelTranspiler"));
     }
@@ -227,10 +275,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ImportNamespace(JsNumber.Create(123));
-            }
-        );
+        {
+            typings.ImportNamespace(JsNumber.Create(123));
+        });
 
         Assert.Contains("Expected a namespace name string", exception.Message);
     }
@@ -242,8 +289,14 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.importNamespace(NamespaceTargetsNs)");
 
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceBeta"));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceBeta")
+        );
     }
 
     [Fact]
@@ -251,7 +304,9 @@ public sealed class ScriptTypingsTests
     {
         var typings = new ScriptTypings(new TypeDeclarations());
 
-        var exception = Assert.Throws<InvalidOperationException>(() => typings.ImportNamespace(new JsString("System.IO")));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            typings.ImportNamespace(new JsString("System.IO"))
+        );
 
         Assert.Contains("AllowClr", exception.Message);
     }
@@ -261,12 +316,20 @@ public sealed class ScriptTypingsTests
     {
         using var harness = CreateHarness();
 
-        harness.Engine.Execute("var ns = typings.importNamespace('Duets.Tests.TestTypes.NamespaceTargets')");
+        harness.Engine.Execute(
+            "var ns = typings.importNamespace('Duets.Tests.TestTypes.NamespaceTargets')"
+        );
         var result = harness.Engine.Evaluate("new ns.NamespaceAlpha()");
 
         Assert.NotNull(result.ToObject());
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
-        Assert.Contains(harness.GetNonBuiltinDeclarations(), declaration => declaration.Content.Contains("class NamespaceBeta"));
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceBeta")
+        );
     }
 
     [Fact]
@@ -275,10 +338,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            {
-                typings.ImportType(new JsString("Missing.Type, Missing.Assembly"));
-            }
-        );
+        {
+            typings.ImportType(new JsString("Missing.Type, Missing.Assembly"));
+        });
 
         Assert.Contains("Type not found", exception.Message);
     }
@@ -289,10 +351,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ImportType(JsNumber.Create(123));
-            }
-        );
+        {
+            typings.ImportType(JsNumber.Create(123));
+        });
 
         Assert.Contains("Expected a CLR type reference", exception.Message);
     }
@@ -305,7 +366,10 @@ public sealed class ScriptTypingsTests
         var result = harness.Engine.Evaluate("clrTypeOf(System.String).FullName");
 
         Assert.Equal("System.String", result.ToString());
-        Assert.Contains(harness.Declarations.GetDeclarations(), declaration => declaration.Content.Contains("declare const typings:"));
+        Assert.Contains(
+            harness.Declarations.GetDeclarations(),
+            declaration => declaration.Content.Contains("declare const typings:")
+        );
     }
 
     [Fact]
@@ -325,10 +389,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ScanAssemblyOf(new JsString("Duets.IScriptEngine"));
-            }
-        );
+        {
+            typings.ScanAssemblyOf(new JsString("Duets.IScriptEngine"));
+        });
 
         Assert.Contains("Expected a CLR type reference", exception.Message);
     }
@@ -339,12 +402,14 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.ScanAssembly(JsBoolean.True);
-            }
-        );
+        {
+            typings.ScanAssembly(JsBoolean.True);
+        });
 
-        Assert.Contains("Expected an assembly name string or an Assembly object", exception.Message);
+        Assert.Contains(
+            "Expected an assembly name string or an Assembly object",
+            exception.Message
+        );
     }
 
     [Fact]
@@ -353,7 +418,11 @@ public sealed class ScriptTypingsTests
         var declarations = new TypeDeclarations();
         var typings = new ScriptTypings(declarations);
         var engine = new Engine(options => options.AllowClr());
-        var assemblyRef = ObjectWrapper.Create(engine, typeof(IScriptEngine).Assembly, typeof(Assembly));
+        var assemblyRef = ObjectWrapper.Create(
+            engine,
+            typeof(IScriptEngine).Assembly,
+            typeof(Assembly)
+        );
 
         typings.ScanAssembly(assemblyRef);
 
@@ -366,7 +435,9 @@ public sealed class ScriptTypingsTests
     {
         using var harness = CreateHarness();
 
-        harness.Engine.Execute($"typings.scanAssembly('{typeof(IScriptEngine).Assembly.FullName}')");
+        harness.Engine.Execute(
+            $"typings.scanAssembly('{typeof(IScriptEngine).Assembly.FullName}')"
+        );
 
         var declaration = Assert.Single(harness.GetNonBuiltinDeclarations());
         Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);
@@ -378,11 +449,17 @@ public sealed class ScriptTypingsTests
         using var harness = CreateHarness();
 
         harness.Engine.Execute("typings.usingNamespace('System')");
-        var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
+        var declarations = harness
+            .GetNonBuiltinDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
 
         Assert.Equal("undefined", harness.Engine.Evaluate("typeof SpecialFolder").ToString());
         Assert.NotEqual("undefined", harness.Engine.Evaluate("typeof Exception").ToString());
-        Assert.DoesNotContain(declarations, content => content.Contains("declare var SpecialFolder:"));
+        Assert.DoesNotContain(
+            declarations,
+            content => content.Contains("declare var SpecialFolder:")
+        );
         Assert.Contains(declarations, content => content.Contains("declare var Exception:"));
     }
 
@@ -393,7 +470,10 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.usingNamespace('Duets.Tests.TestTypes.NamespaceTargets')");
         var result = harness.Engine.Evaluate("new NamespaceAlpha()");
-        var declarations = harness.GetNonBuiltinDeclarations().Select(declaration => declaration.Content).ToList();
+        var declarations = harness
+            .GetNonBuiltinDeclarations()
+            .Select(declaration => declaration.Content)
+            .ToList();
 
         Assert.NotNull(result.ToObject());
         Assert.Contains(declarations, content => content.Contains("declare var NamespaceAlpha:"));
@@ -408,10 +488,9 @@ public sealed class ScriptTypingsTests
         var typings = new ScriptTypings(new TypeDeclarations());
 
         var exception = Assert.Throws<ArgumentException>(() =>
-            {
-                typings.UsingNamespace(JsNumber.Create(123));
-            }
-        );
+        {
+            typings.UsingNamespace(JsNumber.Create(123));
+        });
 
         Assert.Contains("Expected a namespace name string", exception.Message);
     }
@@ -421,7 +500,9 @@ public sealed class ScriptTypingsTests
     {
         var typings = new ScriptTypings(new TypeDeclarations());
 
-        var exception = Assert.Throws<InvalidOperationException>(() => typings.UsingNamespace(new JsString("System.IO")));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            typings.UsingNamespace(new JsString("System.IO"))
+        );
 
         Assert.Contains("AllowClr", exception.Message);
     }

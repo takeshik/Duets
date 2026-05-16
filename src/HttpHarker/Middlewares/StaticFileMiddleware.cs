@@ -10,16 +10,17 @@ namespace HttpHarker.Middlewares;
 public sealed class StaticFileMiddleware(
     IFileProvider fileProvider,
     string root = "/",
-    StaticFileOptions? options = null) : IMiddleware
+    StaticFileOptions? options = null
+) : IMiddleware
 {
     public StaticFileMiddleware(IFileProvider fileProvider, StaticFileOptions options)
-        : this(fileProvider, "/", options)
-    {
-    }
+        : this(fileProvider, "/", options) { }
 
     private readonly string _prefix = root.TrimEnd('/');
     private readonly StaticFileOptions _options = options ?? new StaticFileOptions();
-    private readonly ConcurrentDictionary<string, CachedResource> _cache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CachedResource> _cache = new(
+        StringComparer.Ordinal
+    );
 
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
@@ -44,9 +45,11 @@ public sealed class StaticFileMiddleware(
         var requestedSuffix = ToResourceSuffix(relativePath, this._options.DefaultDocument);
         var resource = this.GetOrCache(requestedSuffix);
 
-        if (resource is null
+        if (
+            resource is null
             && this._options.EnableSpaFallback
-            && this._options.SpaFallbackPredicate(context.Request))
+            && this._options.SpaFallbackPredicate(context.Request)
+        )
         {
             var fallbackSuffix = NormalizeResourceSuffix(this._options.SpaFallbackDocument);
             resource = this.GetOrCache(fallbackSuffix);
@@ -79,14 +82,20 @@ public sealed class StaticFileMiddleware(
             var requestEtag = context.Request.Headers["If-None-Match"];
             if (requestEtag is { Length: > 0 } && IsEtagMatch(requestEtag, resource.ETag))
             {
-                response.StatusCode = (int) HttpStatusCode.NotModified;
+                response.StatusCode = (int)HttpStatusCode.NotModified;
                 response.Close();
                 return;
             }
         }
 
         response.ContentLength64 = resource.Bytes.Length;
-        if (string.Equals(context.Request.HttpMethod, HttpMethod.Head.Method, StringComparison.OrdinalIgnoreCase))
+        if (
+            string.Equals(
+                context.Request.HttpMethod,
+                HttpMethod.Head.Method,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             response.Close();
             return;
@@ -123,7 +132,11 @@ public sealed class StaticFileMiddleware(
 
     private static bool IsEtagMatch(string ifNoneMatch, string etag)
     {
-        foreach (var token in ifNoneMatch.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()))
+        foreach (
+            var token in ifNoneMatch
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim())
+        )
         {
             if (token == "*")
             {
@@ -135,8 +148,10 @@ public sealed class StaticFileMiddleware(
                 return true;
             }
 
-            if (token.StartsWith("W/", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(token[2..], etag, StringComparison.Ordinal))
+            if (
+                token.StartsWith("W/", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(token[2..], etag, StringComparison.Ordinal)
+            )
             {
                 return true;
             }

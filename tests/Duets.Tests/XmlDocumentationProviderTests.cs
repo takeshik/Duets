@@ -10,13 +10,12 @@ public sealed class XmlDocumentationProviderTests
     private sealed class FakeHttpHandler(byte[] body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
         {
             return Task.FromResult(
-                new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new ByteArrayContent(body),
-                }
+                new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(body) }
             );
         }
     }
@@ -80,10 +79,14 @@ public sealed class XmlDocumentationProviderTests
     {
         var runtimeTfm = $"net{Environment.Version.Major}.{Environment.Version.Minor}";
         var nupkg = BuildNupkg(
-            ("lib/netstandard2.1/TestLib.xml",
-                WrapMembers(MemberXml("T:System.String", "netstandard docs"))),
-            ($"lib/{runtimeTfm}/TestLib.xml",
-                WrapMembers(MemberXml("T:System.String", "runtime docs")))
+            (
+                "lib/netstandard2.1/TestLib.xml",
+                WrapMembers(MemberXml("T:System.String", "netstandard docs"))
+            ),
+            (
+                $"lib/{runtimeTfm}/TestLib.xml",
+                WrapMembers(MemberXml("T:System.String", "runtime docs"))
+            )
         );
 
         var cacheDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -101,7 +104,8 @@ public sealed class XmlDocumentationProviderTests
         }
         finally
         {
-            if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
+            if (Directory.Exists(cacheDir))
+                Directory.Delete(cacheDir, true);
         }
     }
 
@@ -109,10 +113,14 @@ public sealed class XmlDocumentationProviderTests
     public async Task FetchFromNuGetAsync_selects_xml_matching_assemblyName_in_multiassembly_package()
     {
         var nupkg = BuildNupkg(
-            ("lib/net8.0/AssemblyA.xml",
-                WrapMembers(MemberXml("T:System.String", "from AssemblyA"))),
-            ("lib/net8.0/AssemblyB.xml",
-                WrapMembers(MemberXml("T:System.String", "from AssemblyB")))
+            (
+                "lib/net8.0/AssemblyA.xml",
+                WrapMembers(MemberXml("T:System.String", "from AssemblyA"))
+            ),
+            (
+                "lib/net8.0/AssemblyB.xml",
+                WrapMembers(MemberXml("T:System.String", "from AssemblyB"))
+            )
         );
 
         var cacheDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
@@ -132,7 +140,8 @@ public sealed class XmlDocumentationProviderTests
         }
         finally
         {
-            if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
+            if (Directory.Exists(cacheDir))
+                Directory.Delete(cacheDir, true);
         }
     }
 
@@ -243,9 +252,7 @@ public sealed class XmlDocumentationProviderTests
     [Fact]
     public void Get_returns_null_for_member_with_no_recognized_elements()
     {
-        var provider = Build(
-            """    <member name="T:System.String"></member>"""
-        );
+        var provider = Build("""    <member name="T:System.String"></member>""");
 
         Assert.Null(provider.Get(typeof(string)));
     }
@@ -278,7 +285,10 @@ public sealed class XmlDocumentationProviderTests
             """    <member name="F:Duets.Tests.TestTypes.Declarations.DeclarationSample.GlobalCount"><summary>Global counter.</summary></member>"""
         );
 
-        var field = typeof(DeclarationSample).GetField("GlobalCount", BindingFlags.Public | BindingFlags.Static)!;
+        var field = typeof(DeclarationSample).GetField(
+            "GlobalCount",
+            BindingFlags.Public | BindingFlags.Static
+        )!;
         Assert.Equal("Global counter.", provider.Get(field));
     }
 

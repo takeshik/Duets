@@ -13,9 +13,11 @@ using Jint;
 // TypeScriptService requires the session-owned TypeDeclarations, so pass a factory.
 // injectStdLib: true fetches lib.es5.d.ts from CDN so JS built-in completions
 // (Array, Math, string, etc.) are available alongside registered .NET types.
-using var session = await DuetsSession.CreateAsync(config => config
-    .UseTranspiler(decls => TypeScriptService.CreateAsync(decls, injectStdLib: true))
-    .UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config =>
+    config
+        .UseTranspiler(decls => TypeScriptService.CreateAsync(decls, injectStdLib: true))
+        .UseJint(opts => opts.AllowClr())
+);
 
 // Cast to TypeScriptService to access GetCompletions.
 var ts = (TypeScriptService)session.Transpiler;

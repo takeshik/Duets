@@ -13,7 +13,8 @@ public record TypeScriptServiceOptions
     /// Defaults to fetching from unpkg with a 7-day disk cache in the system temp directory.
     /// </summary>
     public IAssetSource TypeScriptJs { get; init; } =
-        AssetSources.Unpkg("typescript", "6.0.2", "lib/typescript.js")
+        AssetSources
+            .Unpkg("typescript", "6.0.2", "lib/typescript.js")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), "typescript.js"));
 
     /// <summary>
@@ -23,14 +24,20 @@ public record TypeScriptServiceOptions
     /// Defaults to fetching from unpkg with a version-keyed disk cache.
     /// </summary>
     public Func<string, IAssetSource> LibEs5Source { get; init; } =
-        tsVersion => AssetSources.Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
-            .WithDiskCache(Path.Combine(Path.GetTempPath(), $"typescript-lib.es5-{tsVersion}.d.ts"));
+        tsVersion =>
+            AssetSources
+                .Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
+                .WithDiskCache(
+                    Path.Combine(Path.GetTempPath(), $"typescript-lib.es5-{tsVersion}.d.ts")
+                );
 }
 
-public class TypeScriptService : ITranspiler,
-    IDisposable
+public class TypeScriptService : ITranspiler, IDisposable
 {
-    private TypeScriptService(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null)
+    private TypeScriptService(
+        ITypeDeclarationProvider typeDeclarations,
+        TypeScriptServiceOptions? options = null
+    )
     {
         this._typeDeclarations = typeDeclarations;
         this._options = options ?? new TypeScriptServiceOptions();
@@ -49,7 +56,11 @@ public class TypeScriptService : ITranspiler,
     /// <inheritdoc/>
     public string Description => $"TypeScript {this.Version ?? "unknown"}";
 
-    public static async Task<TypeScriptService> CreateAsync(ITypeDeclarationProvider typeDeclarations, TypeScriptServiceOptions? options = null, bool injectStdLib = false)
+    public static async Task<TypeScriptService> CreateAsync(
+        ITypeDeclarationProvider typeDeclarations,
+        TypeScriptServiceOptions? options = null,
+        bool injectStdLib = false
+    )
     {
         var service = new TypeScriptService(typeDeclarations, options);
         try
@@ -116,15 +127,19 @@ public class TypeScriptService : ITranspiler,
         string version;
         lock (this._sync)
         {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
-            version = this.Version ?? throw new InvalidOperationException("TypeScript version is not initialized.");
+            if (this._engine == null)
+                throw new InvalidOperationException("Call ResetAsync() first.");
+            version =
+                this.Version
+                ?? throw new InvalidOperationException("TypeScript version is not initialized.");
         }
 
         var content = await this._options.LibEs5Source(version).GetAsync(forceDownload);
 
         lock (this._sync)
         {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            if (this._engine == null)
+                throw new InvalidOperationException("Call ResetAsync() first.");
             var host = this._engine.GetValue("$$host");
             host.Get("addFile").Call(host, ["lib.es5.d.ts", content]);
         }
@@ -137,18 +152,21 @@ public class TypeScriptService : ITranspiler,
     public IReadOnlyList<CompletionEntry> GetCompletions(
         string source,
         int position,
-        string fileName = "script.ts")
+        string fileName = "script.ts"
+    )
     {
         lock (this._sync)
         {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            if (this._engine == null)
+                throw new InvalidOperationException("Call ResetAsync() first.");
 
             var host = this._engine.GetValue("$$host");
             // Add user code as a virtual file
             host.Get("addFile").Call(host, [fileName, source]);
 
             var service = this._engine.GetValue("$$service");
-            var completions = service.Get("getCompletionsAtPosition")
+            var completions = service
+                .Get("getCompletionsAtPosition")
                 .Call(service, [fileName, position, new JsObject(this._engine)]);
 
             if (completions.Equals(JsValue.Null) || completions.Equals(JsValue.Undefined))
@@ -162,13 +180,14 @@ public class TypeScriptService : ITranspiler,
                 return [];
             }
 
-            return ((JsArray) entries)
+            return ((JsArray)entries)
                 .Select(v => new CompletionEntry(
-                        v.Get("name").AsString(),
-                        v.Get("kind").AsString(),
-                        v.Get("sortText").Equals(JsValue.Undefined) ? null : v.Get("sortText").AsString()
-                    )
-                )
+                    v.Get("name").AsString(),
+                    v.Get("kind").AsString(),
+                    v.Get("sortText").Equals(JsValue.Undefined)
+                        ? null
+                        : v.Get("sortText").AsString()
+                ))
                 .ToList();
         }
     }
@@ -191,37 +210,40 @@ public class TypeScriptService : ITranspiler,
         string input,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
-        string? moduleName = null)
+        string? moduleName = null
+    )
     {
         lock (this._sync)
         {
-            if (this._engine == null) throw new InvalidOperationException("Call ResetAsync() first.");
+            if (this._engine == null)
+                throw new InvalidOperationException("Call ResetAsync() first.");
             var diagsArray = new JsArray(this._engine);
-            var ret = ((JsString) this._engine.Call(
+            var ret = (
+                (JsString)
+                    this._engine.Call(
                         this._tsTranspile!,
                         this._ts!,
                         [
                             input,
                             JsValue.Null,
                             fileName,
-                            diagnostics == null
-                                ? JsValue.Null
-                                : diagsArray,
+                            diagnostics == null ? JsValue.Null : diagsArray,
                             moduleName,
                         ]
                     )
-                ).ToString();
+            ).ToString();
 
             if (diagnostics != null)
             {
-                foreach (var x in diagsArray.Select(v => new Diagnostic(
-                            (int) v.Get("start").AsNumber(),
-                            (int) v.Get("length").AsNumber(),
-                            v.Get("messageText").AsString(),
-                            (int) v.Get("category").AsNumber(),
-                            (int) v.Get("code").AsNumber()
-                        )
+                foreach (
+                    var x in diagsArray.Select(v => new Diagnostic(
+                        (int)v.Get("start").AsNumber(),
+                        (int)v.Get("length").AsNumber(),
+                        v.Get("messageText").AsString(),
+                        (int)v.Get("category").AsNumber(),
+                        (int)v.Get("code").AsNumber()
                     ))
+                )
                 {
                     diagnostics.Add(x);
                 }
@@ -249,7 +271,8 @@ public class TypeScriptService : ITranspiler,
 
     private void AddDeclarationToLanguageService(TypeDeclaration declaration)
     {
-        if (this._engine == null) return;
+        if (this._engine == null)
+            return;
 
         // TODO: Cache $$host/addFile after ResetAsync so declaration replay does not repeat global/property lookup.
         var host = this._engine.GetValue("$$host");

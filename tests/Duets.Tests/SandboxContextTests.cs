@@ -11,7 +11,9 @@ public sealed class SandboxContextTests
     {
         this._assets = assets;
         this._output = output;
-        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+        this._output.WriteLine(
+            $"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}"
+        );
     }
 
     private readonly TranspilerAssetsFixture _assets;
@@ -43,7 +45,9 @@ public sealed class SandboxContextTests
         await using var ctx = await this.CreateContextAsync();
         await ctx.SetTranspilerAsync(TranspilerKind.Babel);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => ctx.GetCompletions("Math.", 5));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ctx.GetCompletions("Math.", 5)
+        );
 
         Assert.Contains("require the TypeScript transpiler", exception.Message);
     }
@@ -56,7 +60,10 @@ public sealed class SandboxContextTests
         var fullName = ctx.RegisterType(typeof(NamespaceAlpha).AssemblyQualifiedName!);
 
         Assert.Equal(typeof(NamespaceAlpha).FullName, fullName);
-        Assert.Contains(ctx.GetTypeDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
+        Assert.Contains(
+            ctx.GetTypeDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
     }
 
     [Fact]
@@ -67,7 +74,10 @@ public sealed class SandboxContextTests
 
         await ctx.ResetAsync();
 
-        Assert.DoesNotContain(ctx.GetTypeDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
+        Assert.DoesNotContain(
+            ctx.GetTypeDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
     }
 
     [Fact]
@@ -82,6 +92,9 @@ public sealed class SandboxContextTests
         Assert.Equal("42", result);
         Assert.Equal(typeof(NamespaceAlpha).FullName, fullName);
         Assert.StartsWith("Babel", ctx.TranspilerDescription);
-        Assert.Contains(ctx.GetTypeDeclarations(), declaration => declaration.Content.Contains("class NamespaceAlpha"));
+        Assert.Contains(
+            ctx.GetTypeDeclarations(),
+            declaration => declaration.Content.Contains("class NamespaceAlpha")
+        );
     }
 }

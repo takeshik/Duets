@@ -13,7 +13,8 @@ public static class HttpServerExtensions
         public HttpServer UseStaticFiles(
             IFileProvider fileProvider,
             string root = "/",
-            Action<StaticFileOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null
+        )
         {
             var options = new StaticFileOptions();
             configure?.Invoke(options);
@@ -23,7 +24,8 @@ public static class HttpServerExtensions
         public HttpServer UseZipArchive(
             Stream zipStream,
             string root = "/",
-            Action<StaticFileOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null
+        )
         {
             var options = new StaticFileOptions();
             configure?.Invoke(options);
@@ -34,9 +36,11 @@ public static class HttpServerExtensions
             Assembly assembly,
             string resourceName,
             string root = "/",
-            Action<StaticFileOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null
+        )
         {
-            var stream = assembly.GetManifestResourceStream(resourceName)
+            var stream =
+                assembly.GetManifestResourceStream(resourceName)
                 ?? throw new ArgumentException(
                     $"Embedded resource '{resourceName}' not found in assembly '{assembly.FullName}'.",
                     nameof(resourceName)
@@ -52,7 +56,8 @@ public static class HttpServerExtensions
         /// </remarks>
         public HttpServer UseSimpleRouting(
             string root = "/",
-            Action<SimpleRoutingMiddleware.Builder>? configure = null)
+            Action<SimpleRoutingMiddleware.Builder>? configure = null
+        )
         {
             return server.Use(new SimpleRoutingMiddleware(root, configure));
         }
@@ -71,7 +76,8 @@ public static class HttpServerExtensions
         public HttpServer UseContentTypeDetection(ContentTypeProvider? contentTypeProvider = null)
         {
             var provider = contentTypeProvider ?? ContentTypeProvider.CreateDefault();
-            server.Use(async (ctx, next) =>
+            server.Use(
+                async (ctx, next) =>
                 {
                     ctx.Response.ContentType = provider.Resolve(ctx.Request);
                     await next();
@@ -84,7 +90,8 @@ public static class HttpServerExtensions
             Assembly assembly,
             string resourcePrefix,
             string root = "/",
-            Action<StaticFileOptions>? configure = null)
+            Action<StaticFileOptions>? configure = null
+        )
         {
             var options = new StaticFileOptions();
             configure?.Invoke(options);

@@ -13,7 +13,8 @@ public record BabelTranspilerOptions
     /// Defaults to fetching version 7.29.2 from unpkg with a 7-day disk cache in the system temp directory.
     /// </summary>
     public IAssetSource BabelJs { get; init; } =
-        AssetSources.Unpkg("@babel/standalone", "7.29.2", "babel.js")
+        AssetSources
+            .Unpkg("@babel/standalone", "7.29.2", "babel.js")
             .WithDiskCache(Path.Combine(Path.GetTempPath(), "babel-standalone.js"));
 }
 
@@ -31,8 +32,7 @@ public record BabelTranspilerOptions
 /// Unlike <see cref="TypeScriptService"/>, this implementation does not provide
 /// language service features (completions, type declarations).
 /// </remarks>
-public class BabelTranspiler : ITranspiler,
-    IDisposable
+public class BabelTranspiler : ITranspiler, IDisposable
 {
     private BabelTranspiler(BabelTranspilerOptions? options = null)
     {
@@ -114,9 +114,11 @@ public class BabelTranspiler : ITranspiler,
         string input,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,
-        string? moduleName = null)
+        string? moduleName = null
+    )
     {
-        if (this._engine == null) throw new InvalidOperationException("Call InitializeAsync() first.");
+        if (this._engine == null)
+            throw new InvalidOperationException("Call InitializeAsync() first.");
 
         try
         {

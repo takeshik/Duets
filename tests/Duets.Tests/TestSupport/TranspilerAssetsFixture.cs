@@ -5,16 +5,17 @@ using Duets.Jint;
 namespace Duets.Tests.TestSupport;
 
 [CollectionDefinition("TranspilerAssets")]
-public sealed class TranspilerAssetsCollectionDefinition : ICollectionFixture<TranspilerAssetsFixture>
-{
-}
+public sealed class TranspilerAssetsCollectionDefinition
+    : ICollectionFixture<TranspilerAssetsFixture> { }
 
 public sealed class TranspilerAssetsFixture : IAsyncLifetime
 {
     private static readonly HttpClient _http = new();
 
-    private static readonly string _cacheDir =
-        Path.Combine(Path.GetTempPath(), "duets-test-assets");
+    private static readonly string _cacheDir = Path.Combine(
+        Path.GetTempPath(),
+        "duets-test-assets"
+    );
 
     public string BabelJs { get; private set; } = null!;
     public string BabelVersion { get; private set; } = null!;
@@ -34,7 +35,8 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
 
     public Task<TypeScriptService> CreateTypeScriptServiceAsync(
         TypeDeclarations declarations,
-        bool includeStdLib = false)
+        bool includeStdLib = false
+    )
     {
         var tsJs = this.TypeScriptJs;
         var tsVersion = this.TypeScriptVersion;
@@ -43,12 +45,13 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
             new TypeScriptServiceOptions
             {
                 TypeScriptJs = AssetSources.From(_ => Task.FromResult(tsJs)),
-                LibEs5Source = _ => AssetSources
-                    .Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
-                    .WithDiskCache(
-                        Path.Combine(_cacheDir, $"typescript-lib.es5-{tsVersion}.d.ts"),
-                        TimeSpan.FromDays(30)
-                    ),
+                LibEs5Source = _ =>
+                    AssetSources
+                        .Unpkg("typescript", tsVersion, "lib/lib.es5.d.ts")
+                        .WithDiskCache(
+                            Path.Combine(_cacheDir, $"typescript-lib.es5-{tsVersion}.d.ts"),
+                            TimeSpan.FromDays(30)
+                        ),
             },
             includeStdLib
         );
@@ -72,7 +75,9 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
     }
 
     private static async Task<(string Content, string Version)> FetchLatestAsync(
-        string package, string filePath)
+        string package,
+        string filePath
+    )
     {
         var version = await ResolveLatestVersionAsync(package);
         var sanitized = package.TrimStart('@').Replace('/', '-');

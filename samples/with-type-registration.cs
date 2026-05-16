@@ -16,7 +16,10 @@ using Duets;
 using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config =>
+    config.UseJint(opts => opts.AllowClr())
+);
+
 // typings is registered automatically when AllowClr is enabled
 
 // From a script, use `typings` to register types for runtime access AND completions:
@@ -36,8 +39,10 @@ using var session = await DuetsSession.CreateAsync(config => config.UseJint(opts
 // Use typings.importNamespace() or typings.usingNamespace() when you also want IntelliSense completions.
 
 // Use usingNamespace to bring types into scope like C#'s `using System.IO;`
-var result = session.Evaluate("""
+var result = session.Evaluate(
+    """
     typings.usingNamespace("System.IO");
     Directory.GetCurrentDirectory()
-    """);
+    """
+);
 Console.WriteLine(result); // e.g. /home/user/myproject

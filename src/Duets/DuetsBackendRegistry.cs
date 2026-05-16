@@ -8,7 +8,11 @@ public static class DuetsBackendRegistry
 {
     internal static Func<ITranspiler, IScriptEngine>? DefaultEngineFactory { get; private set; }
 
-    internal static Func<TypeDeclarations, Task<ITranspiler>>? DefaultTranspilerFactory { get; private set; }
+    internal static Func<TypeDeclarations, Task<ITranspiler>>? DefaultTranspilerFactory
+    {
+        get;
+        private set;
+    }
 
     /// <summary>
     /// Registers the default engine factory. Intended to be called once from a backend
@@ -24,8 +28,8 @@ public static class DuetsBackendRegistry
         if (DefaultEngineFactory != null)
         {
             throw new InvalidOperationException(
-                "A default engine has already been registered. " +
-                "Call UseEngine() or UseJint() on DuetsSessionConfiguration to select an engine explicitly."
+                "A default engine has already been registered. "
+                    + "Call UseEngine() or UseJint() on DuetsSessionConfiguration to select an engine explicitly."
             );
         }
 
@@ -46,8 +50,8 @@ public static class DuetsBackendRegistry
         if (DefaultTranspilerFactory != null)
         {
             throw new InvalidOperationException(
-                "A default transpiler has already been registered. " +
-                "Call UseTranspiler() or UseBabel() on DuetsSessionConfiguration to select a transpiler explicitly."
+                "A default transpiler has already been registered. "
+                    + "Call UseTranspiler() or UseBabel() on DuetsSessionConfiguration to select a transpiler explicitly."
             );
         }
 

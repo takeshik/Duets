@@ -9,7 +9,12 @@ internal static class JintBackendInitializer
     [SuppressMessage("Usage", "CA2255")]
     internal static void Initialize()
     {
-        DuetsBackendRegistry.RegisterDefaultEngine(transpiler => new JintScriptEngine(null, transpiler));
-        DuetsBackendRegistry.RegisterDefaultTranspiler(async _ => await BabelTranspiler.CreateAsync());
+        DuetsBackendRegistry.RegisterDefaultEngine(transpiler => new JintScriptEngine(
+            null,
+            transpiler
+        ));
+        DuetsBackendRegistry.RegisterDefaultTranspiler(async _ =>
+            await BabelTranspiler.CreateAsync()
+        );
     }
 }

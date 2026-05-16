@@ -17,11 +17,17 @@ public class ClrDeclarationGenerator
 
     private static readonly HashSet<Type> _numericTypes =
     [
-        typeof(byte), typeof(sbyte),
-        typeof(short), typeof(ushort),
-        typeof(int), typeof(uint),
-        typeof(long), typeof(ulong),
-        typeof(float), typeof(double), typeof(decimal),
+        typeof(byte),
+        typeof(sbyte),
+        typeof(short),
+        typeof(ushort),
+        typeof(int),
+        typeof(uint),
+        typeof(long),
+        typeof(ulong),
+        typeof(float),
+        typeof(double),
+        typeof(decimal),
     ];
 
     private static readonly Type[] _arrayProjectionNamedTypes =
@@ -77,13 +83,12 @@ public class ClrDeclarationGenerator
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(m => m.IsDefined(typeof(ExtensionAttribute), false))
             .GroupBy(m =>
-                {
-                    var p = m.GetParameters()[0].ParameterType;
-                    return p.IsGenericType && !p.IsGenericTypeDefinition
-                        ? p.GetGenericTypeDefinition()
-                        : p;
-                }
-            );
+            {
+                var p = m.GetParameters()[0].ParameterType;
+                return p.IsGenericType && !p.IsGenericTypeDefinition
+                    ? p.GetGenericTypeDefinition()
+                    : p;
+            });
 
         foreach (var group in groups)
         {
@@ -132,10 +137,12 @@ public class ClrDeclarationGenerator
     private static string MapType(Type type, HashSet<Type> visited)
     {
         // Generic type parameters (T, TKey, etc.) are used as-is by name
-        if (type.IsGenericTypeParameter || type.IsGenericMethodParameter) return type.Name;
+        if (type.IsGenericTypeParameter || type.IsGenericMethodParameter)
+            return type.Name;
 
         // void
-        if (type == typeof(void)) return "void";
+        if (type == typeof(void))
+            return "void";
 
         // Nullable<T>
         var nullableUnderlying = Nullable.GetUnderlyingType(type);
@@ -146,9 +153,12 @@ public class ClrDeclarationGenerator
         }
 
         // Primitives
-        if (type == typeof(string)) return "string";
-        if (type == typeof(bool)) return "boolean";
-        if (_numericTypes.Contains(type)) return "number";
+        if (type == typeof(string))
+            return "string";
+        if (type == typeof(bool))
+            return "boolean";
+        if (_numericTypes.Contains(type))
+            return "number";
 
         if (TryGetTaskResultSlot(type, out var taskResult))
         {
@@ -162,7 +172,8 @@ public class ClrDeclarationGenerator
             return $"{MapType(arrayElement, visited)}[]";
         }
 
-        if (type == typeof(Action)) return "() => void";
+        if (type == typeof(Action))
+            return "() => void";
 
         if (TryGetDictionaryProjectionSlots(type, out var keyType, out var valueType))
         {
@@ -184,9 +195,7 @@ public class ClrDeclarationGenerator
         if (type.IsGenericType)
         {
             var def = type.GetGenericTypeDefinition();
-            var args = type.GetGenericArguments()
-                .Select(a => MapType(a, visited))
-                .ToArray();
+            var args = type.GetGenericArguments().Select(a => MapType(a, visited)).ToArray();
 
             if (type.Namespace != null)
             {
@@ -200,7 +209,8 @@ public class ClrDeclarationGenerator
     /// <summary>Builds the type header including generic type parameters.</summary>
     private static string BuildTypeHeader(Type type)
     {
-        if (!type.IsGenericTypeDefinition) return type.Name;
+        if (!type.IsGenericTypeDefinition)
+            return type.Name;
         var name = GetScriptName(type);
         var typeParams = string.Join(", ", type.GetGenericArguments().Select(a => a.Name));
         return $"{name}<{typeParams}>";
@@ -209,7 +219,8 @@ public class ClrDeclarationGenerator
     /// <summary>Builds the type name with actual type arguments, used in extends clauses and similar contexts.</summary>
     private static string BuildSimpleTypeName(Type type)
     {
-        if (!type.IsGenericType) return type.Name;
+        if (!type.IsGenericType)
+            return type.Name;
         var def = type.IsGenericTypeDefinition ? type : type.GetGenericTypeDefinition();
         var name = GetScriptName(def);
         var args = string.Join(", ", type.GetGenericArguments().Select(a => MapType(a, [])));
@@ -220,7 +231,8 @@ public class ClrDeclarationGenerator
     {
         var lines = body.Split('\n');
         var trimmed = lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
-        if (trimmed.Length == 0) return;
+        if (trimmed.Length == 0)
+            return;
 
         if (trimmed.Length == 1)
         {
@@ -280,7 +292,9 @@ public class ClrDeclarationGenerator
             return [];
         }
 
-        return family.Where(candidate => candidate != GetOpenType(targetType) && IsAssignableToReceiver(targetType, candidate));
+        return family.Where(candidate =>
+            candidate != GetOpenType(targetType) && IsAssignableToReceiver(targetType, candidate)
+        );
     }
 
     private static bool TryGetProjectionAliasFamily(Type type, out Type[] family)
@@ -306,12 +320,14 @@ public class ClrDeclarationGenerator
         var receiver = GetOpenType(receiverType);
         var candidate = GetOpenType(candidateType);
 
-        if (receiver == candidate) return true;
+        if (receiver == candidate)
+            return true;
 
         if (receiver.IsGenericTypeDefinition && candidate.IsGenericTypeDefinition)
         {
             var arity = receiver.GetGenericArguments().Length;
-            if (candidate.GetGenericArguments().Length != arity) return false;
+            if (candidate.GetGenericArguments().Length != arity)
+                return false;
 
             try
             {
@@ -329,9 +345,18 @@ public class ClrDeclarationGenerator
         return receiver.IsAssignableFrom(candidate);
     }
 
-    private static bool TryCreateProjectedAugmentationTarget(Type targetType, out ExtensionAugmentationTarget target)
+    private static bool TryCreateProjectedAugmentationTarget(
+        Type targetType,
+        out ExtensionAugmentationTarget target
+    )
     {
-        if (TryGetAugmentableProjectedType(targetType, out var projectedKind, out var typeParamNames))
+        if (
+            TryGetAugmentableProjectedType(
+                targetType,
+                out var projectedKind,
+                out var typeParamNames
+            )
+        )
         {
             target = new ExtensionAugmentationTarget(
                 null,
@@ -339,7 +364,9 @@ public class ClrDeclarationGenerator
                 {
                     ProjectedTypeKind.Array => "Array",
                     ProjectedTypeKind.Promise => "Promise",
-                    _ => throw new InvalidOperationException("Unexpected projected augmentation target."),
+                    _ => throw new InvalidOperationException(
+                        "Unexpected projected augmentation target."
+                    ),
                 },
                 BuildTypeParamString(typeParamNames),
                 typeParamNames,
@@ -352,7 +379,10 @@ public class ClrDeclarationGenerator
         return false;
     }
 
-    private static bool TryCreateClrAugmentationTarget(Type targetType, out ExtensionAugmentationTarget target)
+    private static bool TryCreateClrAugmentationTarget(
+        Type targetType,
+        out ExtensionAugmentationTarget target
+    )
     {
         if (targetType.IsArray)
         {
@@ -376,13 +406,14 @@ public class ClrDeclarationGenerator
 
     private static string BuildTypeParamString(string[] typeParamNames)
     {
-        return typeParamNames.Length > 0
-            ? $"<{string.Join(", ", typeParamNames)}>"
-            : "";
+        return typeParamNames.Length > 0 ? $"<{string.Join(", ", typeParamNames)}>" : "";
     }
 
     private static string? TryBuildExtensionMethodSignature(
-        MethodInfo method, Dictionary<Type, string> substitution, HashSet<Type> visited)
+        MethodInfo method,
+        Dictionary<Type, string> substitution,
+        HashSet<Type> visited
+    )
     {
         // Skip 'this' (first) parameter
         var parameters = method.GetParameters().Skip(1).ToArray();
@@ -396,8 +427,8 @@ public class ClrDeclarationGenerator
             }
 
             paramParts.Add(
-                $"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: " +
-                $"{MapTypeWithSubstitution(param.ParameterType, substitution, visited)}"
+                $"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: "
+                    + $"{MapTypeWithSubstitution(param.ParameterType, substitution, visited)}"
             );
         }
 
@@ -408,9 +439,10 @@ public class ClrDeclarationGenerator
             ? method.GetGenericArguments().Where(t => !substitution.ContainsKey(t)).ToList()
             : [];
 
-        var typeParamStr = methodTypeParams.Count > 0
-            ? $"<{string.Join(", ", methodTypeParams.Select(t => t.Name))}>"
-            : "";
+        var typeParamStr =
+            methodTypeParams.Count > 0
+                ? $"<{string.Join(", ", methodTypeParams.Select(t => t.Name))}>"
+                : "";
 
         return $"{method.Name}{typeParamStr}({string.Join(", ", paramParts)}): {returnTs}";
     }
@@ -420,18 +452,26 @@ public class ClrDeclarationGenerator
     /// parameters before mapping, so that e.g. <c>TSource</c> becomes the interface's own <c>T</c>.
     /// </summary>
     private static string MapTypeWithSubstitution(
-        Type type, Dictionary<Type, string> substitution, HashSet<Type> visited)
+        Type type,
+        Dictionary<Type, string> substitution,
+        HashSet<Type> visited
+    )
     {
         if (type.IsGenericParameter)
         {
             return substitution.TryGetValue(type, out var s) ? s : type.Name;
         }
 
-        if (type == typeof(void)) return "void";
-        if (type == typeof(string)) return "string";
-        if (type == typeof(bool)) return "boolean";
-        if (_numericTypes.Contains(type)) return "number";
-        if (type == typeof(Action)) return "() => void";
+        if (type == typeof(void))
+            return "void";
+        if (type == typeof(string))
+            return "string";
+        if (type == typeof(bool))
+            return "boolean";
+        if (_numericTypes.Contains(type))
+            return "number";
+        if (type == typeof(Action))
+            return "() => void";
 
         var nullableUnderlying = Nullable.GetUnderlyingType(type);
         if (nullableUnderlying != null)
@@ -461,12 +501,15 @@ public class ClrDeclarationGenerator
                 : "any";
         }
 
-        if (TryFormatDelegateType(
+        if (
+            TryFormatDelegateType(
                 type,
                 visited,
-                (innerType, innerVisited) => MapTypeWithSubstitution(innerType, substitution, innerVisited),
+                (innerType, innerVisited) =>
+                    MapTypeWithSubstitution(innerType, substitution, innerVisited),
                 out var delegateTs
-            ))
+            )
+        )
         {
             return delegateTs;
         }
@@ -517,7 +560,11 @@ public class ClrDeclarationGenerator
         return false;
     }
 
-    private static bool TryGetDictionaryProjectionSlots(Type type, out Type keyType, out Type valueType)
+    private static bool TryGetDictionaryProjectionSlots(
+        Type type,
+        out Type keyType,
+        out Type valueType
+    )
     {
         if (type.IsGenericType)
         {
@@ -572,7 +619,8 @@ public class ClrDeclarationGenerator
         Type type,
         HashSet<Type> visited,
         Func<Type, HashSet<Type>, string> mapType,
-        out string tsType)
+        out string tsType
+    )
     {
         if (type.IsGenericType)
         {
@@ -582,7 +630,8 @@ public class ClrDeclarationGenerator
                 var typeArgs = type.GetGenericArguments();
                 if (def.Name.StartsWith("Func`", StringComparison.Ordinal))
                 {
-                    var paramParts = typeArgs[..^1].Select((t, i) => $"arg{i}: {mapType(t, visited)}");
+                    var paramParts = typeArgs[..^1]
+                        .Select((t, i) => $"arg{i}: {mapType(t, visited)}");
                     var retType = mapType(typeArgs[^1], visited);
                     tsType = $"({string.Join(", ", paramParts)}) => {retType}";
                     return true;
@@ -619,16 +668,25 @@ public class ClrDeclarationGenerator
     }
 
     private static bool TryGetAugmentableProjectedType(
-        Type type, out ProjectedTypeKind projectedKind, out string[] typeParamNames)
+        Type type,
+        out ProjectedTypeKind projectedKind,
+        out string[] typeParamNames
+    )
     {
-        if (TryGetArrayProjectionSlot(type, out var arraySlot) && IsRepresentableAsGlobalArrayAugmentation(type, arraySlot))
+        if (
+            TryGetArrayProjectionSlot(type, out var arraySlot)
+            && IsRepresentableAsGlobalArrayAugmentation(type, arraySlot)
+        )
         {
             projectedKind = ProjectedTypeKind.Array;
             typeParamNames = GetCanonicalProjectedTypeParamNames(projectedKind);
             return true;
         }
 
-        if (TryGetTaskResultSlot(type, out var taskResult) && taskResult?.IsGenericParameter == true)
+        if (
+            TryGetTaskResultSlot(type, out var taskResult)
+            && taskResult?.IsGenericParameter == true
+        )
         {
             projectedKind = ProjectedTypeKind.Promise;
             typeParamNames = GetCanonicalProjectedTypeParamNames(projectedKind);
@@ -642,7 +700,8 @@ public class ClrDeclarationGenerator
 
     private static bool IsRepresentableAsGlobalArrayAugmentation(Type type, Type arraySlot)
     {
-        if (!arraySlot.IsGenericParameter) return false;
+        if (!arraySlot.IsGenericParameter)
+            return false;
 
         return (type.IsArray && type.GetArrayRank() == 1)
             || _arrayProjectionNamedTypes.Contains(GetOpenType(type));
@@ -690,34 +749,57 @@ public class ClrDeclarationGenerator
     {
         var paramStr = string.Join(
             ", ",
-            method.GetParameters()
+            method
+                .GetParameters()
                 .Select(p =>
-                    {
-                        var prefix = p.IsOut ? "out " : p.ParameterType.IsByRef ? "ref " : "";
-                        var paramType = p.ParameterType.IsByRef ? p.ParameterType.GetElementType()! : p.ParameterType;
-                        return $"{prefix}{paramType.Name} {p.Name}";
-                    }
-                )
+                {
+                    var prefix =
+                        p.IsOut ? "out "
+                        : p.ParameterType.IsByRef ? "ref "
+                        : "";
+                    var paramType = p.ParameterType.IsByRef
+                        ? p.ParameterType.GetElementType()!
+                        : p.ParameterType;
+                    return $"{prefix}{paramType.Name} {p.Name}";
+                })
         );
         return $"{method.ReturnType.Name} {method.Name}({paramStr})";
     }
 
     private static string SanitizeParamName(string name)
     {
-        string[] reserved = ["arguments", "default", "delete", "export", "import", "in", "instanceof", "new", "return", "this", "typeof", "void"];
+        string[] reserved =
+        [
+            "arguments",
+            "default",
+            "delete",
+            "export",
+            "import",
+            "in",
+            "instanceof",
+            "new",
+            "return",
+            "this",
+            "typeof",
+            "void",
+        ];
         return Array.IndexOf(reserved, name) >= 0 ? $"_{name}" : name;
     }
 
     private void WriteEnumDeclaration(StringBuilder sb, Type type, string typeIndent)
     {
         var jsDoc = this._jsDocProvider?.Get(type);
-        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        if (jsDoc != null)
+            WriteJsDocBlock(sb, typeIndent, jsDoc);
         var keyword = typeIndent.Length == 0 ? "declare enum" : "enum";
         sb.AppendLine($"{typeIndent}{keyword} {type.Name} {{");
         var names = Enum.GetNames(type);
 #if NETSTANDARD2_1
         var underlyingType = Enum.GetUnderlyingType(type);
-        var values = Enum.GetValues(type).Cast<object>().Select(v => Convert.ChangeType(v, underlyingType)).ToArray();
+        var values = Enum.GetValues(type)
+            .Cast<object>()
+            .Select(v => Convert.ChangeType(v, underlyingType))
+            .ToArray();
 #else
         var values = Enum.GetValuesAsUnderlyingType(type).Cast<object>().ToArray();
 #endif
@@ -738,7 +820,8 @@ public class ClrDeclarationGenerator
             type = type.GetGenericTypeDefinition();
         }
 
-        if (!visited.Add(type)) return;
+        if (!visited.Add(type))
+            return;
 
         var ns = type.Namespace;
         var typeIndent = ns != null ? "  " : "";
@@ -767,10 +850,16 @@ public class ClrDeclarationGenerator
         }
     }
 
-    private void WriteClassDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
+    private void WriteClassDeclaration(
+        StringBuilder sb,
+        Type type,
+        HashSet<Type> visited,
+        string typeIndent
+    )
     {
         var jsDoc = this._jsDocProvider?.Get(type);
-        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        if (jsDoc != null)
+            WriteJsDocBlock(sb, typeIndent, jsDoc);
         var header = BuildTypeHeader(type);
         var keyword = typeIndent.Length == 0 ? "declare class" : "class";
 
@@ -782,22 +871,65 @@ public class ClrDeclarationGenerator
         }
 
         var implementedInterfaces = GetDirectlyImplementedInterfaces(type);
-        var implementsClause = implementedInterfaces.Count > 0
-            ? $" implements {string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))}"
-            : "";
+        var implementsClause =
+            implementedInterfaces.Count > 0
+                ? $" implements {string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))}"
+                : "";
 
         sb.AppendLine($"{typeIndent}{keyword} {header}{extendsClause}{implementsClause} {{");
 
         var memberIndent = typeIndent + "  ";
 
         this.WriteConstructors(sb, type, visited, memberIndent);
-        this.WriteFields(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
-        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
-        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, visited, "static ", memberIndent);
+        this.WriteFields(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            visited,
+            "static ",
+            memberIndent
+        );
+        this.WriteProperties(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            visited,
+            "static ",
+            memberIndent
+        );
+        this.WriteMethods(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            visited,
+            "static ",
+            memberIndent
+        );
 
-        this.WriteFields(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        this.WriteFields(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            visited,
+            "",
+            memberIndent
+        );
+        this.WriteProperties(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            visited,
+            "",
+            memberIndent
+        );
+        this.WriteMethods(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            visited,
+            "",
+            memberIndent
+        );
 
         sb.AppendLine($"{typeIndent}}}");
 
@@ -805,26 +937,51 @@ public class ClrDeclarationGenerator
         {
             var interfaceKeyword = typeIndent.Length == 0 ? "declare interface" : "interface";
             sb.AppendLine(
-                $"{typeIndent}{interfaceKeyword} {header} extends " +
-                $"{string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))} {{}}"
+                $"{typeIndent}{interfaceKeyword} {header} extends "
+                    + $"{string.Join(", ", implementedInterfaces.Select(i => MapType(i, visited)))} {{}}"
             );
         }
     }
 
-    private void WriteInterfaceDeclaration(StringBuilder sb, Type type, HashSet<Type> visited, string typeIndent)
+    private void WriteInterfaceDeclaration(
+        StringBuilder sb,
+        Type type,
+        HashSet<Type> visited,
+        string typeIndent
+    )
     {
         var jsDoc = this._jsDocProvider?.Get(type);
-        if (jsDoc != null) WriteJsDocBlock(sb, typeIndent, jsDoc);
+        if (jsDoc != null)
+            WriteJsDocBlock(sb, typeIndent, jsDoc);
         var header = BuildTypeHeader(type);
         var keyword = typeIndent.Length == 0 ? "declare interface" : "interface";
         sb.AppendLine($"{typeIndent}{keyword} {header} {{");
         var memberIndent = typeIndent + "  ";
-        this.WriteProperties(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
-        this.WriteMethods(sb, type, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, visited, "", memberIndent);
+        this.WriteProperties(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            visited,
+            "",
+            memberIndent
+        );
+        this.WriteMethods(
+            sb,
+            type,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            visited,
+            "",
+            memberIndent
+        );
         sb.AppendLine($"{typeIndent}}}");
     }
 
-    private void WriteConstructors(StringBuilder sb, Type type, HashSet<Type> visited, string indent)
+    private void WriteConstructors(
+        StringBuilder sb,
+        Type type,
+        HashSet<Type> visited,
+        string indent
+    )
     {
         foreach (var ctor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
         {
@@ -838,19 +995,29 @@ public class ClrDeclarationGenerator
                     break;
                 }
 
-                paramParts.Add($"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: {MapType(param.ParameterType, visited)}");
+                paramParts.Add(
+                    $"{SanitizeParamName(param.Name ?? $"arg{param.Position}")}: {MapType(param.ParameterType, visited)}"
+                );
             }
 
             if (ok)
             {
                 var jsDoc = this._jsDocProvider?.Get(ctor);
-                if (jsDoc != null) WriteJsDocBlock(sb, indent, jsDoc);
+                if (jsDoc != null)
+                    WriteJsDocBlock(sb, indent, jsDoc);
                 sb.AppendLine($"{indent}constructor({string.Join(", ", paramParts)});");
             }
         }
     }
 
-    private void WriteFields(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    private void WriteFields(
+        StringBuilder sb,
+        Type type,
+        BindingFlags flags,
+        HashSet<Type> visited,
+        string prefix,
+        string indent
+    )
     {
         foreach (var field in type.GetFields(flags))
         {
@@ -869,11 +1036,19 @@ public class ClrDeclarationGenerator
         }
     }
 
-    private void WriteProperties(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    private void WriteProperties(
+        StringBuilder sb,
+        Type type,
+        BindingFlags flags,
+        HashSet<Type> visited,
+        string prefix,
+        string indent
+    )
     {
         foreach (var prop in type.GetProperties(flags))
         {
-            if (prop.GetIndexParameters().Length > 0) continue;
+            if (prop.GetIndexParameters().Length > 0)
+                continue;
             var tsType = MapType(prop.PropertyType, visited);
             var readonlyModifier = prop.SetMethod?.IsPublic == true ? "" : "readonly ";
             var jsDoc = this._jsDocProvider?.Get(prop);
@@ -890,7 +1065,14 @@ public class ClrDeclarationGenerator
         }
     }
 
-    private void WriteMethods(StringBuilder sb, Type type, BindingFlags flags, HashSet<Type> visited, string prefix, string indent)
+    private void WriteMethods(
+        StringBuilder sb,
+        Type type,
+        BindingFlags flags,
+        HashSet<Type> visited,
+        string prefix,
+        string indent
+    )
     {
         // Collect .NET definitions keyed by TS signature (preserving insertion order)
         var entries = new List<(string? tsSig, List<string> netSigs, MethodInfo? singleMethod)>();
@@ -961,13 +1143,15 @@ public class ClrDeclarationGenerator
         Type receiverType,
         ExtensionAugmentationTarget augmentationTarget,
         MethodInfo[] methods,
-        HashSet<Type> visited)
+        HashSet<Type> visited
+    )
     {
         var ns = augmentationTarget.Namespace;
         var typeIndent = ns != null ? "  " : "";
         var memberIndent = typeIndent + "  ";
 
-        if (ns != null) sb.AppendLine($"declare namespace {ns} {{");
+        if (ns != null)
+            sb.AppendLine($"declare namespace {ns} {{");
 
         var keyword = augmentationTarget.UseDeclareKeyword ? "declare interface" : "interface";
         sb.AppendLine(
@@ -987,7 +1171,11 @@ public class ClrDeclarationGenerator
             var firstParamArgs = GetTypeParameterSlots(firstParamType);
 
             var substitution = new Dictionary<Type, string>();
-            for (var i = 0; i < Math.Min(firstParamArgs.Length, augmentationTarget.TypeParamNames.Length); i++)
+            for (
+                var i = 0;
+                i < Math.Min(firstParamArgs.Length, augmentationTarget.TypeParamNames.Length);
+                i++
+            )
             {
                 substitution[firstParamArgs[i]] = augmentationTarget.TypeParamNames[i];
             }
@@ -1048,7 +1236,8 @@ public class ClrDeclarationGenerator
         }
 
         sb.AppendLine($"{typeIndent}}}");
-        if (ns != null) sb.AppendLine("}");
+        if (ns != null)
+            sb.AppendLine("}");
     }
 
     private enum ProjectedTypeKind

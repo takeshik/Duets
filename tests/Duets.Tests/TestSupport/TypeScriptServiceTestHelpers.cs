@@ -7,10 +7,12 @@ namespace Duets.Tests.TestSupport;
 
 internal static class TypeScriptServiceTestHelpers
 {
-    public static IReadOnlyDictionary<string, string> GetLanguageServiceFiles(TypeScriptService service)
+    public static IReadOnlyDictionary<string, string> GetLanguageServiceFiles(
+        TypeScriptService service
+    )
     {
         var host = GetEngine(service).GetValue("$$host");
-        var fileNames = ((JsArray) host.Get("getScriptFileNames").Call(host))
+        var fileNames = ((JsArray)host.Get("getScriptFileNames").Call(host))
             .Select(value => value.AsString())
             .ToList();
 
@@ -22,8 +24,9 @@ internal static class TypeScriptServiceTestHelpers
 
     public static Engine GetEngine(TypeScriptService service)
     {
-        return (Engine) typeof(TypeScriptService)
-            .GetField("_engine", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(service)!;
+        return (Engine)
+            typeof(TypeScriptService)
+                .GetField("_engine", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(service)!;
     }
 }

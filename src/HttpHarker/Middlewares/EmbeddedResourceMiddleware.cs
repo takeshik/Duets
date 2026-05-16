@@ -12,7 +12,8 @@ public sealed class EmbeddedResourceMiddleware : IMiddleware
         Assembly assembly,
         string resourcePrefix,
         string root = "/",
-        StaticFileOptions? options = null)
+        StaticFileOptions? options = null
+    )
     {
         this._inner = new StaticFileMiddleware(
             new EmbeddedResourceFileProvider(assembly, resourcePrefix),

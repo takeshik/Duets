@@ -32,8 +32,11 @@ public static class AssetSources
     /// Creates an asset source that fetches content from unpkg CDN.
     /// </summary>
     public static IAssetSource Unpkg(
-        string package, string version, string path,
-        HttpClient? httpClient = null)
+        string package,
+        string version,
+        string path,
+        HttpClient? httpClient = null
+    )
     {
         return Http($"https://unpkg.com/{package}@{version}/{path}", httpClient);
     }
@@ -66,8 +69,10 @@ public static class AssetSources
     /// Wraps an asset source with a disk-based cache at the given file path using the specified TTL.
     /// </summary>
     public static IAssetSource WithDiskCache(
-        this IAssetSource inner, string cacheFilePath,
-        TimeSpan ttl)
+        this IAssetSource inner,
+        string cacheFilePath,
+        TimeSpan ttl
+    )
     {
         return new CachedAssetSource(inner, cacheFilePath, ttl);
     }
@@ -80,24 +85,31 @@ public static class AssetSources
         }
     }
 
-    private sealed class EmbeddedResourceAssetSource(Assembly assembly, string resourceName) : IAssetSource
+    private sealed class EmbeddedResourceAssetSource(Assembly assembly, string resourceName)
+        : IAssetSource
     {
         public async Task<string> GetAsync(bool force = false)
         {
-            await using var stream = assembly.GetManifestResourceStream(resourceName)
-                ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' not found.");
+            await using var stream =
+                assembly.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException(
+                    $"Embedded resource '{resourceName}' not found."
+                );
             using var reader = new StreamReader(stream, Encoding.UTF8);
             return await reader.ReadToEndAsync();
         }
     }
 
-    private sealed class CachedAssetSource(IAssetSource inner, string cacheFile, TimeSpan ttl) : IAssetSource
+    private sealed class CachedAssetSource(IAssetSource inner, string cacheFile, TimeSpan ttl)
+        : IAssetSource
     {
         public async Task<string> GetAsync(bool force = false)
         {
-            if (!force
+            if (
+                !force
                 && File.Exists(cacheFile)
-                && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < ttl)
+                && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < ttl
+            )
             {
                 return await File.ReadAllTextAsync(cacheFile);
             }

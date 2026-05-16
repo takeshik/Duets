@@ -53,8 +53,7 @@ public interface ITypeDeclarationRegistrar
 /// This component is independent from <see cref="TypeScriptService"/> so it can also be used with
 /// <see cref="BabelTranspiler"/> or any other <see cref="ITranspiler"/>.
 /// </summary>
-public sealed class TypeDeclarations : ITypeDeclarationProvider,
-    ITypeDeclarationRegistrar
+public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclarationRegistrar
 {
     /// <summary>Initializes a new instance with the default declaration generator.</summary>
     public TypeDeclarations()
@@ -92,11 +91,10 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
             this._registeredTypes.Clear();
             this._registeredExtensionMethodContainers.Clear();
 
-            var clrKeys = this._declarations
-                .Keys
-                .Where(k =>
-                    k.StartsWith("clr-", StringComparison.Ordinal) &&
-                    !k.StartsWith("clr-ns-", StringComparison.Ordinal)
+            var clrKeys = this
+                ._declarations.Keys.Where(k =>
+                    k.StartsWith("clr-", StringComparison.Ordinal)
+                    && !k.StartsWith("clr-ns-", StringComparison.Ordinal)
                 )
                 .ToList();
             foreach (var key in clrKeys)
@@ -113,7 +111,8 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
             foreach (var containerType in extContainers)
             {
                 var decl = this.RegisterExtensionMethodContainerCore(containerType);
-                if (decl != null) changed.Add(decl);
+                if (decl != null)
+                    changed.Add(decl);
             }
         }
 
@@ -213,7 +212,8 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
     private List<TypeDeclaration> RegisterTypeCore(Type type)
     {
         var changed = new List<TypeDeclaration>();
-        if (!this._registeredTypes.Add(type)) return changed;
+        if (!this._registeredTypes.Add(type))
+            return changed;
 
         var baseType = type.BaseType;
         if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
@@ -228,7 +228,10 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
         this._declarations[declaration.FileName] = declaration;
         changed.Add(declaration);
 
-        if (type.Namespace != null && this._placeholderNamespaces.TryGetValue(type.Namespace, out var placeholderFile))
+        if (
+            type.Namespace != null
+            && this._placeholderNamespaces.TryGetValue(type.Namespace, out var placeholderFile)
+        )
         {
             var emptyNamespace = new TypeDeclaration(
                 placeholderFile,
@@ -249,11 +252,9 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
 
     private TypeDeclaration? RegisterDeclarationCore(string content)
     {
-        var declaration = new TypeDeclaration(
-            $"decl-{ComputeSha1Hex(content)}.d.ts",
-            content
-        );
-        if (this._declarations.ContainsKey(declaration.FileName)) return null;
+        var declaration = new TypeDeclaration($"decl-{ComputeSha1Hex(content)}.d.ts", content);
+        if (this._declarations.ContainsKey(declaration.FileName))
+            return null;
 
         this._declarations[declaration.FileName] = declaration;
         return declaration;
@@ -261,8 +262,10 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
 
     private TypeDeclaration? RegisterNamespaceCore(string namespaceName)
     {
-        if (this._coveredNamespaces.Contains(namespaceName)) return null;
-        if (this._placeholderNamespaces.ContainsKey(namespaceName)) return null;
+        if (this._coveredNamespaces.Contains(namespaceName))
+            return null;
+        if (this._placeholderNamespaces.ContainsKey(namespaceName))
+            return null;
 
         var declaration = new TypeDeclaration(
             $"clr-ns-{ComputeSha1Hex($"ns:{namespaceName}")}.d.ts",
@@ -275,7 +278,8 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider,
 
     private TypeDeclaration? RegisterExtensionMethodContainerCore(Type containerType)
     {
-        if (!this._registeredExtensionMethodContainers.Add(containerType)) return null;
+        if (!this._registeredExtensionMethodContainers.Add(containerType))
+            return null;
         var content = this._generator.GenerateExtensionMethodsTs(containerType);
         var declaration = new TypeDeclaration(
             $"clr-ext-{ComputeSha1Hex(containerType.AssemblyQualifiedName ?? containerType.ToString())}.d.ts",

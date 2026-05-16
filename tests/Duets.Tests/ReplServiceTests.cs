@@ -14,7 +14,9 @@ public sealed class ReplServiceTests
             var line = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
             if (line is null)
             {
-                throw new EndOfStreamException("The SSE stream ended before the next data event was received.");
+                throw new EndOfStreamException(
+                    "The SSE stream ended before the next data event was received."
+                );
             }
 
             if (!line.StartsWith("data: ", StringComparison.Ordinal))
@@ -36,7 +38,12 @@ public sealed class ReplServiceTests
         await DuetsServerFixture.RunAsync(
             server =>
             {
-                _ = new ReplService(declarations, engine, server, monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader")));
+                _ = new ReplService(
+                    declarations,
+                    engine,
+                    server,
+                    monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader"))
+                );
             },
             async (client, prefix) =>
             {
@@ -63,7 +70,12 @@ public sealed class ReplServiceTests
         await DuetsServerFixture.RunAsync(
             server =>
             {
-                _ = new ReplService(declarations, engine, server, monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader")));
+                _ = new ReplService(
+                    declarations,
+                    engine,
+                    server,
+                    monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader"))
+                );
             },
             async (client, prefix) =>
             {
@@ -118,19 +130,32 @@ public sealed class ReplServiceTests
         await DuetsServerFixture.RunAsync(
             server =>
             {
-                _ = new ReplService(declarations, engine, server, monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader")));
+                _ = new ReplService(
+                    declarations,
+                    engine,
+                    server,
+                    monacoLoader: AssetSources.From(_ => Task.FromResult("// fake loader"))
+                );
             },
             async (client, prefix) =>
             {
-                await using var stream = await client.GetStreamAsync(prefix + "type-declaration-events");
+                await using var stream = await client.GetStreamAsync(
+                    prefix + "type-declaration-events"
+                );
                 using var reader = new StreamReader(stream);
 
                 var existing = await ReadNextDataEventAsync(reader);
                 declarations.RegisterDeclaration("declare const later: string;");
                 var later = await ReadNextDataEventAsync(reader);
 
-                Assert.Equal("declare const existing: number;", existing.GetProperty("content").GetString());
-                Assert.Equal("declare const later: string;", later.GetProperty("content").GetString());
+                Assert.Equal(
+                    "declare const existing: number;",
+                    existing.GetProperty("content").GetString()
+                );
+                Assert.Equal(
+                    "declare const later: string;",
+                    later.GetProperty("content").GetString()
+                );
             }
         );
     }

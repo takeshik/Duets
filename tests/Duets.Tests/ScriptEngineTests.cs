@@ -12,7 +12,8 @@ public sealed class ScriptEngineTests
             string input,
             string? fileName = null,
             IList<Diagnostic>? diagnostics = null,
-            string? moduleName = null)
+            string? moduleName = null
+        )
         {
             this.Inputs.Add(input);
             return mappings[input];
@@ -44,10 +45,10 @@ public sealed class ScriptEngineTests
         Assert.NotNull(entry);
         Assert.Equal(
             """
-                {
-                  "x": 1
-                }
-                """.Trim(),
+            {
+              "x": 1
+            }
+            """.Trim(),
             entry.Text
         );
     }
@@ -192,10 +193,7 @@ public sealed class ScriptEngineTests
         engine.Execute("const answer: number = 40 + 2;");
         var result = engine.Evaluate("answer");
 
-        Assert.Equal(
-            ["const answer: number = 40 + 2;", "answer"],
-            transpiler.Inputs
-        );
+        Assert.Equal(["const answer: number = 40 + 2;", "answer"], transpiler.Inputs);
         Assert.Equal("42", result.ToString());
     }
 
@@ -206,8 +204,7 @@ public sealed class ScriptEngineTests
         engine.Execute("var counter = 0;");
 
         await Task.WhenAll(
-            Enumerable.Range(0, 200)
-                .Select(_ => Task.Run(() => engine.Execute("counter += 1;")))
+            Enumerable.Range(0, 200).Select(_ => Task.Run(() => engine.Execute("counter += 1;")))
         );
 
         var result = engine.Evaluate("counter");

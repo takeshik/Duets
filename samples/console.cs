@@ -14,16 +14,17 @@ session.ConsoleLogged += entry =>
 {
     var prefix = entry.Level switch
     {
-        ConsoleLogLevel.Warn  => "[warn]  ",
+        ConsoleLogLevel.Warn => "[warn]  ",
         ConsoleLogLevel.Error => "[error] ",
-        ConsoleLogLevel.Info  => "[info]  ",
+        ConsoleLogLevel.Info => "[info]  ",
         ConsoleLogLevel.Debug => "[debug] ",
-        _                     => "[log]   ",
+        _ => "[log]   ",
     };
     Console.WriteLine(prefix + entry.Text);
 };
 
-session.Execute("""
+session.Execute(
+    """
     console.log('hello from script');
     console.warn('something looks off');
     console.error('something went wrong');
@@ -35,4 +36,5 @@ session.Execute("""
 
     // Non-string values are formatted via util.inspect (JSON-like output).
     console.log({ name: 'Alice', scores: [10, 20, 30] });
-    """);
+    """
+);

@@ -10,11 +10,14 @@ using Duets;
 using Duets.Jint;
 using Jint;
 
-using var session = await DuetsSession.CreateAsync(config => config.UseJint(opts => opts.AllowClr()));
+using var session = await DuetsSession.CreateAsync(config =>
+    config.UseJint(opts => opts.AllowClr())
+);
 session.ConsoleLogged += entry => Console.WriteLine(entry.Text);
 session.SetValue("numbers", new[] { 1, 2, 3 });
 
-session.Execute("""
+session.Execute(
+    """
     typings.addExtensionMethods("System.Linq.Enumerable, System.Linq");
 
     // CLR array -> LINQ extension methods via instance syntax
@@ -25,4 +28,5 @@ session.Execute("""
     var doubledJsArray = util.toJsArray(doubledClrArray);
     console.log("Is JS array:", Array.isArray(doubledJsArray));
     console.log("Doubled:", util.inspect(doubledJsArray, { compact: true }));
-    """);
+    """
+);

@@ -26,7 +26,8 @@ public sealed class JsDocProviders : IJsDocProvider
         string version,
         string? tfm = null,
         string? cacheDirectory = null,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null
+    )
     {
         var provider = await XmlDocumentationProvider.FetchFromNuGetAsync(
             packageId,
@@ -54,7 +55,8 @@ public sealed class JsDocProviders : IJsDocProvider
         Assembly assembly,
         string? tfm = null,
         string? cacheDirectory = null,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null
+    )
     {
         var location = assembly.Location;
         if (!string.IsNullOrEmpty(location))
@@ -67,16 +69,15 @@ public sealed class JsDocProviders : IJsDocProvider
                     this.Add(await File.ReadAllTextAsync(xmlPath));
                     return;
                 }
-                catch
-                {
-                }
+                catch { }
             }
         }
 
         var name = assembly.GetName();
         var packageId = name.Name;
         var version = name.Version?.ToString(3);
-        if (packageId == null || version == null) return;
+        if (packageId == null || version == null)
+            return;
         var provider = await XmlDocumentationProvider.FetchFromNuGetAsync(
             packageId,
             version,
@@ -122,11 +123,10 @@ public sealed class JsDocProviders : IJsDocProvider
             try
             {
                 var result = provider.Get(member);
-                if (result != null) return result;
+                if (result != null)
+                    return result;
             }
-            catch
-            {
-            }
+            catch { }
         }
 
         return null;

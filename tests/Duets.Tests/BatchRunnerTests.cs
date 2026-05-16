@@ -5,9 +5,7 @@ using Duets.Tests.TestSupport;
 namespace Duets.Tests;
 
 [CollectionDefinition("Console", DisableParallelization = true)]
-public sealed class ConsoleCollectionDefinition : ICollectionFixture<TranspilerAssetsFixture>
-{
-}
+public sealed class ConsoleCollectionDefinition : ICollectionFixture<TranspilerAssetsFixture> { }
 
 [Collection("Console")]
 public sealed class BatchRunnerTests
@@ -16,7 +14,9 @@ public sealed class BatchRunnerTests
     {
         this._assets = assets;
         this._output = output;
-        this._output.WriteLine($"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}");
+        this._output.WriteLine(
+            $"TypeScript {assets.TypeScriptVersion}, Babel {assets.BabelVersion}"
+        );
     }
 
     private readonly TranspilerAssetsFixture _assets;
@@ -53,8 +53,7 @@ public sealed class BatchRunnerTests
         }
 
         var line = Assert.Single(
-            output.ToString()
-                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            output.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
         );
         using var json = JsonDocument.Parse(line);
         var root = json.RootElement;

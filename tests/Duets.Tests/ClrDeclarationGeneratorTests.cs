@@ -81,12 +81,18 @@ public sealed class ClrDeclarationGeneratorTests
         var actual = generator.GenerateTypeDefTs(typeof(DeclarationSample));
 
         Assert.Contains("declare namespace Duets.Tests.TestTypes.Declarations {", actual);
-        Assert.Contains("class DeclarationSample extends Duets.Tests.TestTypes.Declarations.DeclarationBase {", actual);
+        Assert.Contains(
+            "class DeclarationSample extends Duets.Tests.TestTypes.Declarations.DeclarationBase {",
+            actual
+        );
         Assert.Contains("static GlobalCount: number;", actual);
         Assert.Contains("readonly OptionalCount: number | null;", actual);
         Assert.Contains("Names: string[];", actual);
         Assert.Contains("Scores: { [key: string]: number };", actual);
-        Assert.Contains("LoadAsync(value: string, optional: number | null): Promise<string>;", actual);
+        Assert.Contains(
+            "LoadAsync(value: string, optional: number | null): Promise<string>;",
+            actual
+        );
         Assert.Contains("Convert(_default: string, values: number[]): string;", actual);
         Assert.Contains("// [skipped] Void Mutate(ref Int32 value)", actual);
         Assert.DoesNotContain("Item:", actual);
@@ -116,13 +122,13 @@ public sealed class ClrDeclarationGeneratorTests
         Assert.Contains("Reverse<T>(", actual);
         // The TypeScript declarations themselves must not contain backtick arity suffixes.
         // JSDoc comment lines (/** ... */ or * ...) may contain raw CLR names, so exclude them.
-        var declarationLines = actual.Split('\n')
+        var declarationLines = actual
+            .Split('\n')
             .Where(l =>
-                {
-                    var t = l.TrimStart();
-                    return !t.StartsWith("//") && !t.StartsWith("/*") && !t.StartsWith("*");
-                }
-            );
+            {
+                var t = l.TrimStart();
+                return !t.StartsWith("//") && !t.StartsWith("/*") && !t.StartsWith("*");
+            });
         Assert.DoesNotContain(declarationLines, l => l.Contains('`'));
     }
 

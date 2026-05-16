@@ -8,7 +8,8 @@ internal static class DuetsServerFixture
 {
     public static async Task RunAsync(
         Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test)
+        Func<HttpClient, string, Task> test
+    )
     {
         var port = PickPort();
         var prefix = $"http://127.0.0.1:{port}/";
@@ -21,10 +22,7 @@ internal static class DuetsServerFixture
 
         await Task.Delay(50);
 
-        using var client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(10),
-        };
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         try
         {
@@ -48,7 +46,7 @@ internal static class DuetsServerFixture
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
-        var port = ((IPEndPoint) listener.LocalEndpoint).Port;
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
     }

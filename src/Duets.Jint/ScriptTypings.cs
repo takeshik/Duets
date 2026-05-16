@@ -16,7 +16,8 @@ internal sealed class ScriptTypings
         ITypeDeclarationRegistrar declarations,
         Func<JsValue, JsValue>? importNamespace = null,
         Action<string, Type>? exposeGlobal = null,
-        Action<Type>? registerExtensionMethods = null)
+        Action<Type>? registerExtensionMethods = null
+    )
     {
         this._declarations = declarations;
         this._importNamespace = importNamespace;
@@ -63,8 +64,8 @@ internal sealed class ScriptTypings
         }
 
         throw new ArgumentException(
-            "Expected a namespace name string (e.g. typings.importNamespace('System.IO')) " +
-            "or a namespace reference (e.g. typings.importNamespace(System.IO))."
+            "Expected a namespace name string (e.g. typings.importNamespace('System.IO')) "
+                + "or a namespace reference (e.g. typings.importNamespace(System.IO))."
         );
     }
 
@@ -101,13 +102,13 @@ internal sealed class ScriptTypings
         else
         {
             throw new ArgumentException(
-                "Expected a namespace name string (e.g. typings.usingNamespace('System.IO')) " +
-                "or a namespace reference (e.g. typings.usingNamespace(System.IO))."
+                "Expected a namespace name string (e.g. typings.usingNamespace('System.IO')) "
+                    + "or a namespace reference (e.g. typings.usingNamespace(System.IO))."
             );
         }
 
-        var types = AppDomain.CurrentDomain
-            .GetAssemblies()
+        var types = AppDomain
+            .CurrentDomain.GetAssemblies()
             .SelectMany(asm => TryGetExportedTypes(asm).Where(t => t.Namespace == ns))
             .ToList();
 
@@ -157,10 +158,12 @@ internal sealed class ScriptTypings
     public void ScanAssembly(JsValue assemblyRef)
     {
         var asm = ResolveAssembly(assemblyRef);
-        foreach (var ns in asm.GetExportedTypes()
-            .Select(t => t.Namespace)
-            .Where(ns => ns != null)
-            .Distinct())
+        foreach (
+            var ns in asm.GetExportedTypes()
+                .Select(t => t.Namespace)
+                .Where(ns => ns != null)
+                .Distinct()
+        )
         {
             this._declarations.RegisterNamespace(ns!);
         }
@@ -206,8 +209,8 @@ internal sealed class ScriptTypings
         if (this._registerExtensionMethods is null)
         {
             throw new InvalidOperationException(
-                "typings.addExtensionMethods requires the engine to be configured with AllowClr " +
-                "and the built-in type registrar (RegisterTypeBuiltins)."
+                "typings.addExtensionMethods requires the engine to be configured with AllowClr "
+                    + "and the built-in type registrar (RegisterTypeBuiltins)."
             );
         }
 
@@ -217,8 +220,8 @@ internal sealed class ScriptTypings
             _ when typeRef.IsString() => Type.GetType(typeRef.AsString())
                 ?? throw new InvalidOperationException($"Type not found: {typeRef.AsString()}"),
             _ => throw new ArgumentException(
-                "Expected a CLR type reference (e.g. typings.addExtensionMethods(System.Linq.Enumerable)) " +
-                "or an assembly-qualified name string."
+                "Expected a CLR type reference (e.g. typings.addExtensionMethods(System.Linq.Enumerable)) "
+                    + "or an assembly-qualified name string."
             ),
         };
 
@@ -238,7 +241,8 @@ internal sealed class ScriptTypings
 
     private static Type ResolveTypeRef(JsValue typeRef)
     {
-        if (typeRef is TypeReference tr) return tr.ReferenceType;
+        if (typeRef is TypeReference tr)
+            return tr.ReferenceType;
         throw new ArgumentException(
             "Expected a CLR type reference (e.g., typings.scanAssemblyOf(System.IO.File))."
         );
@@ -249,7 +253,9 @@ internal sealed class ScriptTypings
         return assemblyRef switch
         {
             ObjectWrapper { Target: Assembly asm } => asm,
-            _ when assemblyRef.IsString() => Assembly.Load(new AssemblyName(assemblyRef.AsString())),
+            _ when assemblyRef.IsString() => Assembly.Load(
+                new AssemblyName(assemblyRef.AsString())
+            ),
             _ => throw new ArgumentException(
                 "Expected an assembly name string or an Assembly object (e.g., typings.scanAssembly(\"System.Net.Http\"))."
             ),
@@ -265,8 +271,8 @@ internal sealed class ScriptTypings
         catch (MissingFieldException ex)
         {
             throw new InvalidOperationException(
-                "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. " +
-                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
+                "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. "
+                    + "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
                 ex
             );
         }
@@ -279,14 +285,17 @@ internal sealed class ScriptTypings
     {
         try
         {
-            var field = typeof(NamespaceReference).GetField("_path", BindingFlags.NonPublic | BindingFlags.Instance);
-            return (string) field!.GetValue(nr)!;
+            var field = typeof(NamespaceReference).GetField(
+                "_path",
+                BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            return (string)field!.GetValue(nr)!;
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. " +
-                "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
+                "Cannot extract namespace name from Jint NamespaceReference: the internal '_path' field was not found. "
+                    + "This may indicate an incompatible version of Jint. Use the string overload instead: typings.usingNamespace(\"System.Net.Http\").",
                 ex
             );
         }

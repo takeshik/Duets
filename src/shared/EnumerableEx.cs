@@ -8,14 +8,27 @@ internal static class EnumerableEx
 
     extension<TSource>(IEnumerable<TSource> source)
     {
-        public Dictionary<string, TElement> ToCaseInsensitiveDictionary<TElement>(Func<TSource, string> keySelector, Func<TSource, TElement> valueSelector)
+        public Dictionary<string, TElement> ToCaseInsensitiveDictionary<TElement>(
+            Func<TSource, string> keySelector,
+            Func<TSource, TElement> valueSelector
+        )
         {
-            return source.ToDictionary(keySelector, valueSelector, StringComparer.InvariantCultureIgnoreCase);
+            return source.ToDictionary(
+                keySelector,
+                valueSelector,
+                StringComparer.InvariantCultureIgnoreCase
+            );
         }
 
-        public Dictionary<string, TSource> ToCaseInsensitiveDictionary(Func<TSource, string> keySelector)
+        public Dictionary<string, TSource> ToCaseInsensitiveDictionary(
+            Func<TSource, string> keySelector
+        )
         {
-            return source.ToDictionary(keySelector, x => x, StringComparer.InvariantCultureIgnoreCase);
+            return source.ToDictionary(
+                keySelector,
+                x => x,
+                StringComparer.InvariantCultureIgnoreCase
+            );
         }
     }
 

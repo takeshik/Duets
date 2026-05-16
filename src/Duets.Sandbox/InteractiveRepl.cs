@@ -15,10 +15,12 @@ internal sealed class InteractiveRepl(SandboxContext session)
         {
             Console.Write("> ");
             var line = Console.ReadLine();
-            if (line is null) break; // EOF / Ctrl+D
+            if (line is null)
+                break; // EOF / Ctrl+D
 
             line = line.Trim();
-            if (line.Length == 0) continue;
+            if (line.Length == 0)
+                continue;
 
             if (line.StartsWith(':'))
             {
@@ -31,7 +33,9 @@ internal sealed class InteractiveRepl(SandboxContext session)
         }
     }
 
-    private static void PrintCompletions(IReadOnlyList<TypeScriptService.CompletionEntry> completions)
+    private static void PrintCompletions(
+        IReadOnlyList<TypeScriptService.CompletionEntry> completions
+    )
     {
         if (completions.Count == 0)
         {
@@ -42,7 +46,7 @@ internal sealed class InteractiveRepl(SandboxContext session)
         const int maxShown = 30;
         foreach (var c in completions.Take(maxShown))
         {
-            Console.WriteLine($"  {c.Name,-32} {c.Kind}");
+            Console.WriteLine($"  {c.Name, -32} {c.Kind}");
         }
 
         if (completions.Count > maxShown)
@@ -117,7 +121,8 @@ internal sealed class InteractiveRepl(SandboxContext session)
     private async Task HandleCommandAsync(string input)
     {
         var tokens = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 0) return;
+        if (tokens.Length == 0)
+            return;
         var cmd = tokens[0].ToLowerInvariant();
         var rest = tokens.Length > 1 ? string.Join(' ', tokens[1..]) : "";
 
@@ -246,7 +251,9 @@ internal sealed class InteractiveRepl(SandboxContext session)
 
                         break;
                     case "status":
-                        Console.WriteLine(session.IsServerRunning ? "  Server: running" : "  Server: stopped");
+                        Console.WriteLine(
+                            session.IsServerRunning ? "  Server: running" : "  Server: stopped"
+                        );
                         break;
                     default:
                         PrintError($"Unknown server subcommand: {sub}  (start | stop | status)");
@@ -258,7 +265,10 @@ internal sealed class InteractiveRepl(SandboxContext session)
 
             case "set":
             {
-                if (tokens.Length < 3 || !tokens[1].Equals("transpiler", StringComparison.OrdinalIgnoreCase))
+                if (
+                    tokens.Length < 3
+                    || !tokens[1].Equals("transpiler", StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     PrintError("Usage: :set transpiler <typescript|babel>");
                     break;

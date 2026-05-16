@@ -40,7 +40,8 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
 
         foreach (var route in this._routes)
         {
-            if (!route.TryMatch(method, path, out var handler)) continue;
+            if (!route.TryMatch(method, path, out var handler))
+                continue;
             await handler(context);
             return;
         }
@@ -50,18 +51,30 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
 
     private static string? GetRelativePath(string path, string prefix)
     {
-        if (prefix.Length == 0) return path;
-        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
-        if (path.Length == prefix.Length) return "/";
-        if (path[prefix.Length] != '/') return null;
+        if (prefix.Length == 0)
+            return path;
+        if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+        if (path.Length == prefix.Length)
+            return "/";
+        if (path[prefix.Length] != '/')
+            return null;
         return path[prefix.Length..];
     }
 
     public sealed class Builder
     {
-        internal List<(HttpMethod Method, string Template, Func<HttpActionContext, Task> Handler)> Routes { get; } = [];
+        internal List<(
+            HttpMethod Method,
+            string Template,
+            Func<HttpActionContext, Task> Handler
+        )> Routes { get; } = [];
 
-        public Builder Map(HttpMethod method, string template, Func<HttpActionContext, Task> handler)
+        public Builder Map(
+            HttpMethod method,
+            string template,
+            Func<HttpActionContext, Task> handler
+        )
         {
             this.Routes.Add((method, template, handler));
             return this;
@@ -97,9 +110,12 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
             this.Handler = handler;
             this.SortKey = Array.ConvertAll(
                 template.Split('/', StringSplitOptions.RemoveEmptyEntries),
-                static part => part is ['{', .., '}']
-                    ? part.Length > 2 && part[1] == '*' ? 0 : 1
-                    : 2
+                static part =>
+                    part is ['{', .., '}']
+                        ? part.Length > 2 && part[1] == '*'
+                            ? 0
+                            : 1
+                        : 2
             );
             _ = this.Segments; // Validate template eagerly; throws ArgumentException for invalid templates.
         }
@@ -109,15 +125,18 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         private Func<HttpActionContext, Task> Handler { get; }
         private int[] SortKey { get; }
 
-        private RouteSegment[] Segments
-            => field ??= ParseTemplate(this.Template);
+        private RouteSegment[] Segments => field ??= ParseTemplate(this.Template);
 
         public override string ToString()
         {
             return $"{this.Method} {this.Template}";
         }
 
-        internal bool TryMatch(HttpMethod method, string path, out Func<HttpListenerContext, Task> handler)
+        internal bool TryMatch(
+            HttpMethod method,
+            string path,
+            out Func<HttpListenerContext, Task> handler
+        )
         {
             if (this.Method != method)
             {
@@ -134,7 +153,14 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                 switch (kind)
                 {
                     case SegmentKind.Literal:
-                        if (i >= pathSegments.Length || !string.Equals(pathSegments[i], value, StringComparison.OrdinalIgnoreCase))
+                        if (
+                            i >= pathSegments.Length
+                            || !string.Equals(
+                                pathSegments[i],
+                                value,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
                         {
                             handler = null!;
                             return false;
@@ -160,7 +186,8 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                         }
 
                         args[value] = string.Join('/', pathSegments[i..]);
-                        handler = ctx => this.Handler(new HttpActionContext(ctx.Request, ctx.Response, args));
+                        handler = ctx =>
+                            this.Handler(new HttpActionContext(ctx.Request, ctx.Response, args));
                         return true;
                 }
             }
@@ -180,18 +207,25 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         // to ensure a total order and to treat (method, template) as the unique key.
         public int CompareTo(Route? other)
         {
-            if (other is null) return 1;
+            if (other is null)
+                return 1;
             var len = Math.Max(this.SortKey.Length, other.SortKey.Length);
             for (var i = 0; i < len; i++)
             {
                 var aVal = i < this.SortKey.Length ? this.SortKey[i] : -1;
                 var bVal = i < other.SortKey.Length ? other.SortKey[i] : -1;
                 var cmp = bVal.CompareTo(aVal); // descending: higher priority → smaller element → iterated first
-                if (cmp != 0) return cmp;
+                if (cmp != 0)
+                    return cmp;
             }
 
-            var methodCmp = string.Compare(this.Method.Method, other.Method.Method, StringComparison.Ordinal);
-            if (methodCmp != 0) return methodCmp;
+            var methodCmp = string.Compare(
+                this.Method.Method,
+                other.Method.Method,
+                StringComparison.Ordinal
+            );
+            if (methodCmp != 0)
+                return methodCmp;
             return string.Compare(this.Template, other.Template, StringComparison.Ordinal);
         }
 
@@ -210,12 +244,16 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                         var paramName = name[1..];
                         if (paramName.Length == 0)
                         {
-                            throw new ArgumentException($"Empty catch-all parameter name in template: {template}");
+                            throw new ArgumentException(
+                                $"Empty catch-all parameter name in template: {template}"
+                            );
                         }
 
                         if (i != parts.Length - 1)
                         {
-                            throw new ArgumentException($"Catch-all segment must be the last segment in template: {template}");
+                            throw new ArgumentException(
+                                $"Catch-all segment must be the last segment in template: {template}"
+                            );
                         }
 
                         segments[i] = new RouteSegment(SegmentKind.CatchAll, paramName);
@@ -224,7 +262,9 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                     {
                         if (name.Length == 0)
                         {
-                            throw new ArgumentException($"Empty parameter name in template: {template}");
+                            throw new ArgumentException(
+                                $"Empty parameter name in template: {template}"
+                            );
                         }
 
                         segments[i] = new RouteSegment(SegmentKind.Parameter, name);

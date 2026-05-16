@@ -20,9 +20,7 @@ public class Commands
         {
             await Task.Delay(Timeout.Infinite, cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
 
         await ctx.StopWebServerAsync();
     }

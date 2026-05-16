@@ -10,10 +10,7 @@ public class HttpServer(string prefix) : IDisposable
 {
     private readonly HttpListener _listener = new()
     {
-        Prefixes =
-        {
-            prefix,
-        },
+        Prefixes = { prefix },
         IgnoreWriteExceptions = true,
     };
 
@@ -25,7 +22,10 @@ public class HttpServer(string prefix) : IDisposable
 
     public HttpServer Use(Func<HttpListenerContext, Func<Task>, Task> middleware)
     {
-        if (this.IsRunning) throw new InvalidOperationException("Cannot add middleware while the server is running.");
+        if (this.IsRunning)
+            throw new InvalidOperationException(
+                "Cannot add middleware while the server is running."
+            );
         this._middleware.Add(middleware);
         return this;
     }
@@ -37,7 +37,8 @@ public class HttpServer(string prefix) : IDisposable
 
     public void Start(int workersCount = 8)
     {
-        if (this.IsRunning) throw new InvalidOperationException("Server is already running.");
+        if (this.IsRunning)
+            throw new InvalidOperationException("Server is already running.");
         this._cts = new CancellationTokenSource();
         this.RunAsync(workersCount, this._cts.Token).Forget();
     }
@@ -59,21 +60,18 @@ public class HttpServer(string prefix) : IDisposable
             // BeginGetContext/EndGetContext does not natively support cancellation,
             // so Stop() is called on cancellation to forcibly terminate GetContextAsync.
             await using var _ = cancellationToken.Register(() =>
+            {
+                try
                 {
-                    try
-                    {
-                        this._listener.Stop();
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        // Listener was already closed externally — nothing to do.
-                    }
+                    this._listener.Stop();
                 }
-            );
+                catch (ObjectDisposedException)
+                {
+                    // Listener was already closed externally — nothing to do.
+                }
+            });
 
-            var tasks = Enumerable.Range(0, workersCount)
-                .Select(_ => WorkerLoopAsync())
-                .ToArray();
+            var tasks = Enumerable.Range(0, workersCount).Select(_ => WorkerLoopAsync()).ToArray();
 
             await Task.WhenAll(tasks);
         }
@@ -143,7 +141,9 @@ public class HttpServer(string prefix) : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[HttpServer] {ctx.Request.HttpMethod} {ctx.Request.Url?.AbsolutePath}: {ex}");
+            Console.WriteLine(
+                $"[HttpServer] {ctx.Request.HttpMethod} {ctx.Request.Url?.AbsolutePath}: {ex}"
+            );
             try
             {
                 ctx.Response.StatusCode = 500;
