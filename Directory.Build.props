@@ -4,8 +4,11 @@
     <Nullable>enable</Nullable>
     <Features>nullablePublicOnly;strict</Features>
     <LangVersion>latest</LangVersion>
+    <AnalysisLevel>latest</AnalysisLevel>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseArtifactsOutput>true</UseArtifactsOutput>
+    <!-- Required for dotnet format to resolve inter-project metadata on netstandard2.x targets (off by default there) -->
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

@@ -13,21 +13,11 @@ Before staging anything, review all pending changes:
 
 1. Run `git status` and `git diff` to understand the full scope of changes.
 2. Group changes into logical units. Each commit should represent one coherent change (one fix, one feature, one refactoring, etc.).
-3. If changes span multiple independent concerns, **split into separate commits** and process each unit through Steps 2–5 in turn.
+3. If changes span multiple independent concerns, **split into separate commits** and process each unit through Steps 2–4 in turn.
 
 Do not bundle unrelated changes into a single commit.
 
-## Step 2 — Code style
-
-For each commit unit that includes source file changes, run:
-
-```bash
-dotnet jb cleanupcode Duets.slnx --include="<changed files>"
-```
-
-If this fails, **stop and ask the user** before proceeding.
-
-## Step 3 — Pre-commit checklist
+## Step 2 — Pre-commit checklist
 
 Verify each item that applies to the changes in this commit unit:
 
@@ -43,7 +33,7 @@ Verify each item that applies to the changes in this commit unit:
 
 If a required action is missing, **stop and ask the user** before proceeding.
 
-## Step 4 — Commit message
+## Step 3 — Commit message
 
 Rules:
 
@@ -66,7 +56,7 @@ Format:
 Co-Authored-By: <agent identity>
 ```
 
-## Step 5 — Execute
+## Step 4 — Execute
 
 1. Stage files for this commit unit **explicitly by name** — do not use `git add -A` or `git add .`.
 2. Create the commit using a heredoc to pass the message — **never use `\n` escape sequences inside a `-m` string**, as they will appear literally in the commit log:
@@ -81,5 +71,5 @@ Co-Authored-By: <agent identity>
    )"
    ```
 3. If the commit hook fails, **stop and ask the user**. Never bypass hooks (`--no-verify`).
-4. Repeat Steps 2–5 for any remaining commit units identified in Step 1.
+4. Repeat Steps 2–4 for any remaining commit units identified in Step 1.
 5. Report completion.

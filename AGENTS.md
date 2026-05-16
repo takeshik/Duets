@@ -79,14 +79,7 @@ content, and the distinction must be respected even when the subject matter is c
 
 ## Code Style
 
-Code style is enforced mechanically via `jb cleanupcode`. Rules are defined in `.editorconfig` and `.DotSettings` — do
-not duplicate them here.
-
-After modifying code, run:
-
-```bash
-dotnet jb cleanupcode Duets.slnx --include="<changed files>"
-```
+Code style is enforced via [CSharpier](https://github.com/belav/csharpier) and `dotnet format`. Rules are defined in `.editorconfig`.
 
 ## Testing
 

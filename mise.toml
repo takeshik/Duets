@@ -10,11 +10,11 @@ run = "dotnet build"
 [tasks.test]
 run = "dotnet test"
 
+[tasks.format]
+run = "dotnet scripts/format.cs"
+
+[tasks.format-check]
+run = "dotnet scripts/format-check.cs"
+
 [tasks.sandbox]
 run = "dotnet run --project src/Duets.Sandbox"
-
-[tasks.cleanupcode]
-run = "dotnet jb cleanupcode Duets.slnx"
-
-[tasks.inspectcode]
-run = "dotnet jb inspectcode Duets.slnx"
