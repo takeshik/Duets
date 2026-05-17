@@ -1,0 +1,15 @@
+<Project>
+  <ItemGroup>
+    <Using Include="Zx" />
+    <Using Include="static Zx.Env" />
+    <Using Include="static Util" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ProcessX" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="_common.cs" />
+  </ItemGroup>
+</Project>

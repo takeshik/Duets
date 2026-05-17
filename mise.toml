@@ -1,20 +1,4 @@
-[tasks.restore]
-run = "dotnet restore"
-
-[tasks.clean]
-run = "dotnet clean"
-
-[tasks.build]
-run = "dotnet build"
-
-[tasks.test]
-run = "dotnet test"
-
-[tasks.format]
-run = "dotnet scripts/format.cs"
-
-[tasks.format-check]
-run = "dotnet scripts/format-check.cs"
-
-[tasks.sandbox]
-run = "dotnet run --project src/Duets.Sandbox"
+[task_config]
+includes = [
+    "scripts/"
+]

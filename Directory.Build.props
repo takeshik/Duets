@@ -28,4 +28,10 @@
   <ItemGroup Condition="'$(Configuration)' != 'Release'">
     <InternalsVisibleTo Include="LINQPadQuery" />
   </ItemGroup>
+
+  <!-- Properties for scripts/ -->
+  <Import
+    Project="$(MSBuildThisFileDirectory)scripts\_common.props"
+    Condition="$(MSBuildProjectDirectory.StartsWith('$(MSBuildThisFileDirectory)scripts'))"
+  />
 </Project>

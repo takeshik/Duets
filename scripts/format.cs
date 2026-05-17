@@ -1,23 +1,13 @@
 #!/usr/bin/env dotnet
-#:package ProcessX
+/*
+#MISE description="Format code using dotnet format and csharpier"
+#MISE alias="fmt"
+*/
 
-using System.Runtime.CompilerServices;
-using Cysharp.Diagnostics;
-using Zx;
-using static Zx.Env;
-
-workingDirectory = Path.GetDirectoryName(ScriptRoot())!;
-if (!Console.IsOutputRedirected)
-    envVars["DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION"] = "1";
-
-try
+run(async () =>
 {
-    await $"dotnet format style Duets.slnx --no-restore 2>&1";
-    await $"dotnet csharpier format . 2>&1";
-}
-catch (ProcessErrorException ex)
-{
-    Environment.Exit(ex.ExitCode);
-}
-
-static string ScriptRoot([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
+    workingDirectory = solutionRoot;
+    var dir = args.ElementAtOrDefault(0) ?? ".";
+    await start("dotnet", ["format", "style", "Duets.slnx", "--no-restore", "--include", dir]);
+    await start("dotnet", ["csharpier", "format", dir]);
+});
