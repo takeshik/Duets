@@ -6,9 +6,10 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseArtifactsOutput>true</UseArtifactsOutput>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <IsPackable>false</IsPackable>
     <!-- Required for dotnet format to resolve inter-project metadata on netstandard2.x targets (off by default there) -->
     <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
-    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

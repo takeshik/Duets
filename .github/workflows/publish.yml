@@ -14,6 +14,7 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_PACKAGES: /home/runner/.nuget/packages
 
 jobs:
   publish:
@@ -34,8 +35,22 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Cache NuGet packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ${{ env.NUGET_PACKAGES }}
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore tools
+        run: dotnet tool restore
+
       - name: Restore packages
-        run: dotnet restore --verbosity normal
+        run: dotnet restore --locked-mode --verbosity normal
+
+      - name: Check code format
+        run: dotnet run scripts/format-check.cs
 
       - name: Build
         run: dotnet build --no-restore -c Release --verbosity normal

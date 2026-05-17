@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "ConsoleAppFramework": {
+        "type": "Direct",
+        "requested": "[5.7.13, )",
+        "resolved": "5.7.13",
+        "contentHash": "5YE0wrPl4U28g+L6502sNdyUKygSGfeLDOhutD/zMCTFSeM7QnonoYfHjckOeSd1DEl9PUQYAGSqO8DV7lCIuw=="
+      },
+      "Nerdbank.GitVersioning": {
+        "type": "Direct",
+        "requested": "[3.9.50, )",
+        "resolved": "3.9.50",
+        "contentHash": "HtOgGF6jZ+WYbXnCUCYPT8Y2d6mIJo9ozjK/FINTRsXdm4Zgv9GehUMa7EFoGQkqrMcDJNOIDwCmENnvXg4UbA=="
+      },
+      "Acornima": {
+        "type": "Transitive",
+        "resolved": "1.4.0",
+        "contentHash": "3M7NpnhKL//pf7HkSfLJaGQ37uksibdqfa9YuUov1VOX0QXapZeYCUpURZ9an4VMt9wJ70MU/PeAsjhw8DwtJw=="
+      },
+      "duets": {
+        "type": "Project",
+        "dependencies": {
+          "HttpHarker": "[1.0.0, )"
+        }
+      },
+      "duets.jint": {
+        "type": "Project",
+        "dependencies": {
+          "Duets": "[1.0.0, )",
+          "Jint": "[4.8.0, )"
+        }
+      },
+      "httpharker": {
+        "type": "Project"
+      },
+      "Jint": {
+        "type": "CentralTransitive",
+        "requested": "[4.8.0, )",
+        "resolved": "4.8.0",
+        "contentHash": "JlXh13WDivP2izPgS9jeUlzyP//hsHUGhGb33EQHLuRiLhdwJ0ajaYjVETnqnkIQay/qP6NHglxx/40bL0/ihQ==",
+        "dependencies": {
+          "Acornima": "1.4.0"
+        }
+      }
+    }
+  }
+}
