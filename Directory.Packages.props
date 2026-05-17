@@ -6,7 +6,7 @@
   <ItemGroup>
     <PackageVersion Include="ConsoleAppFramework" Version="5.7.13" />
     <PackageVersion Include="Jint" Version="4.8.0" />
-    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.2.1" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.2.3" />
     <PackageVersion Include="Nerdbank.GitVersioning" Version="3.9.50" />
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="ProcessX" Version="1.5.6" />
