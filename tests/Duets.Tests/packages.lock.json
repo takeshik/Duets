@@ -31,8 +31,8 @@
       },
       "Acornima": {
         "type": "Transitive",
-        "resolved": "1.4.0",
-        "contentHash": "3M7NpnhKL//pf7HkSfLJaGQ37uksibdqfa9YuUov1VOX0QXapZeYCUpURZ9an4VMt9wJ70MU/PeAsjhw8DwtJw=="
+        "resolved": "1.6.2",
+        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
@@ -146,7 +146,7 @@
         "type": "Project",
         "dependencies": {
           "Duets": "[1.0.0, )",
-          "Jint": "[4.8.0, )"
+          "Jint": "[4.9.2, )"
         }
       },
       "duets.sandbox": {
@@ -161,11 +161,11 @@
       },
       "Jint": {
         "type": "CentralTransitive",
-        "requested": "[4.8.0, )",
-        "resolved": "4.8.0",
-        "contentHash": "JlXh13WDivP2izPgS9jeUlzyP//hsHUGhGb33EQHLuRiLhdwJ0ajaYjVETnqnkIQay/qP6NHglxx/40bL0/ihQ==",
+        "requested": "[4.9.2, )",
+        "resolved": "4.9.2",
+        "contentHash": "dEBge1IXsWrNefhc9mwYKQPmvzGhO9n/L7aMHobiXVkkvmeyPVYuthZ0i0hXy+JXJSP3K75hu/F51y5fXjtLzg==",
         "dependencies": {
-          "Acornima": "1.4.0"
+          "Acornima": "1.6.2"
         }
       }
     }

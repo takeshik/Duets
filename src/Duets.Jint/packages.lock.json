@@ -4,11 +4,11 @@
     ".NETStandard,Version=v2.1": {
       "Jint": {
         "type": "Direct",
-        "requested": "[4.8.0, )",
-        "resolved": "4.8.0",
-        "contentHash": "JlXh13WDivP2izPgS9jeUlzyP//hsHUGhGb33EQHLuRiLhdwJ0ajaYjVETnqnkIQay/qP6NHglxx/40bL0/ihQ==",
+        "requested": "[4.9.2, )",
+        "resolved": "4.9.2",
+        "contentHash": "dEBge1IXsWrNefhc9mwYKQPmvzGhO9n/L7aMHobiXVkkvmeyPVYuthZ0i0hXy+JXJSP3K75hu/F51y5fXjtLzg==",
         "dependencies": {
-          "Acornima": "1.4.0"
+          "Acornima": "1.6.2"
         }
       },
       "Nerdbank.GitVersioning": {
@@ -25,8 +25,8 @@
       },
       "Acornima": {
         "type": "Transitive",
-        "resolved": "1.4.0",
-        "contentHash": "3M7NpnhKL//pf7HkSfLJaGQ37uksibdqfa9YuUov1VOX0QXapZeYCUpURZ9an4VMt9wJ70MU/PeAsjhw8DwtJw==",
+        "resolved": "1.6.2",
+        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w==",
         "dependencies": {
           "System.Runtime.CompilerServices.Unsafe": "6.0.0"
         }
@@ -112,11 +112,11 @@
     "net8.0": {
       "Jint": {
         "type": "Direct",
-        "requested": "[4.8.0, )",
-        "resolved": "4.8.0",
-        "contentHash": "JlXh13WDivP2izPgS9jeUlzyP//hsHUGhGb33EQHLuRiLhdwJ0ajaYjVETnqnkIQay/qP6NHglxx/40bL0/ihQ==",
+        "requested": "[4.9.2, )",
+        "resolved": "4.9.2",
+        "contentHash": "dEBge1IXsWrNefhc9mwYKQPmvzGhO9n/L7aMHobiXVkkvmeyPVYuthZ0i0hXy+JXJSP3K75hu/F51y5fXjtLzg==",
         "dependencies": {
-          "Acornima": "1.4.0"
+          "Acornima": "1.6.2"
         }
       },
       "Nerdbank.GitVersioning": {
@@ -127,8 +127,8 @@
       },
       "Acornima": {
         "type": "Transitive",
-        "resolved": "1.4.0",
-        "contentHash": "3M7NpnhKL//pf7HkSfLJaGQ37uksibdqfa9YuUov1VOX0QXapZeYCUpURZ9an4VMt9wJ70MU/PeAsjhw8DwtJw=="
+        "resolved": "1.6.2",
+        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
       "duets": {
         "type": "Project",
