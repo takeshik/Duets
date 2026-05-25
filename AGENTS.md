@@ -8,8 +8,10 @@ Guidelines for coding agents when working on the Duets repository.
 > Git tracks the symlink target, not the symlink itself.
 
 > **IMPORTANT — Language policy (read before responding):**
-> - **Chat responses** (reviews, explanations, summaries, plans, status updates):
-    > respond in **the same language the user used**. Never default to English.
+> - **Assistant prose outside repository content** (chat responses, reviews,
+    > explanations, summaries, plans, status updates, scratch notes, handoff notes,
+    > and design discussion notes): write in **the same language the user used**.
+    > Never default to English.
 > - **Repository content** (source code, comments, commits, docs, ADRs):
     > always write in **English only**.
 
@@ -73,8 +75,9 @@ There are two distinct contexts with different language rules:
 **Repository content** — source code, comments, commit messages, documentation, ADRs, and any other checked-in text
 files — **must be in English**.
 
-**Chat responses** — all assistant prose including reviews, explanations, summaries, plans, and status updates — **must
-be in the same language the user used**. Do not default to English. These are conversational outputs, not repository
+**Assistant prose outside repository content** — chat responses, reviews, explanations, summaries, plans, status
+updates, scratch notes, handoff notes, design discussion notes, and other non-committed working prose — **must be in the
+same language the user used**. Do not default to English. These are conversational or working outputs, not repository
 content, and the distinction must be respected even when the subject matter is code.
 
 ## Code Style
