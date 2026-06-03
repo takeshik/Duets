@@ -4,8 +4,12 @@ namespace Duets.Pad.State;
 /// Placeholder for the Canvas wire serializer.
 /// </summary>
 /// <remarks>
-/// This type intentionally has no implementation yet. The serializer must be designed and
-/// reviewed before it is wired into DuetsPad.
+/// This type intentionally has no implementation yet, but the initial protocol shape is fixed.
+/// Implementations serialize terminal render nodes into the following JSON object forms:
+///
+/// - Text: { "kind": "text", "value": "..." }
+/// - Element: { "kind": "element", "tag": "...", "attributes": { ... }, "children": [ ... ] }
+/// - RawHtml: { "kind": "rawHtml", "content": "..." }
 ///
 /// Expected responsibilities:
 ///
@@ -14,7 +18,7 @@ namespace Duets.Pad.State;
 /// - preserve Element attribute null values so the browser projection can decide how to
 ///   represent boolean attributes;
 /// - emit deterministic output based on ElementAttributes and ElementChildren enumeration;
-/// - reject terminal render node kinds that the wire schema does not explicitly support.
+/// - reject terminal render node kinds that the protocol does not explicitly support.
 ///
 /// Non-responsibilities:
 ///
