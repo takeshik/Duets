@@ -11,7 +11,7 @@ public sealed class ZipArchiveMiddleware(
     StaticFileOptions? options = null
 ) : IMiddleware
 {
-    private readonly StaticFileMiddleware _inner = new StaticFileMiddleware(
+    private readonly StaticFileMiddleware _inner = new(
         new ZipFileProvider(zipStream),
         root,
         options

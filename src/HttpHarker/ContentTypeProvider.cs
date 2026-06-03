@@ -11,7 +11,7 @@ public sealed class ContentTypeProvider(
     IEqualityComparer<string>? keyComparer = null
 )
 {
-    private readonly Dictionary<string, string> _mappings = new Dictionary<string, string>(
+    private readonly Dictionary<string, string> _mappings = new(
         keyComparer ?? StringComparer.OrdinalIgnoreCase
     );
 

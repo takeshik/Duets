@@ -13,7 +13,7 @@ public sealed class EmbeddedResourceMiddleware(
     StaticFileOptions? options = null
 ) : IMiddleware
 {
-    private readonly StaticFileMiddleware _inner = new StaticFileMiddleware(
+    private readonly StaticFileMiddleware _inner = new(
         new EmbeddedResourceFileProvider(assembly, resourcePrefix),
         root,
         options
