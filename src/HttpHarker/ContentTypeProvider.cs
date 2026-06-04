@@ -5,26 +5,20 @@ namespace HttpHarker;
 /// <summary>
 /// Maps HTTP requests to <c>Content-Type</c> values via a configurable key selector and extension-based lookup table.
 /// </summary>
-public sealed class ContentTypeProvider
+public sealed class ContentTypeProvider(
+    Func<HttpListenerRequest, string?> keySelector,
+    Func<HttpListenerRequest, string>? fallback = null,
+    IEqualityComparer<string>? keyComparer = null
+)
 {
-    public ContentTypeProvider(
-        Func<HttpListenerRequest, string?> keySelector,
-        Func<HttpListenerRequest, string>? fallback = null,
-        IEqualityComparer<string>? keyComparer = null
-    )
-    {
-        this.KeySelector = keySelector;
-        this.Fallback = fallback ?? (_ => "application/octet-stream");
-        this._mappings = new Dictionary<string, string>(
-            keyComparer ?? StringComparer.OrdinalIgnoreCase
-        );
-    }
+    private readonly Dictionary<string, string> _mappings = new Dictionary<string, string>(
+        keyComparer ?? StringComparer.OrdinalIgnoreCase
+    );
 
-    private readonly Dictionary<string, string> _mappings;
+    public Func<HttpListenerRequest, string?> KeySelector { get; } = keySelector;
 
-    public Func<HttpListenerRequest, string?> KeySelector { get; }
-
-    public Func<HttpListenerRequest, string> Fallback { get; }
+    public Func<HttpListenerRequest, string> Fallback { get; } =
+        fallback ?? (_ => "application/octet-stream");
 
     public static ContentTypeProvider CreateDefault()
     {

@@ -7,5 +7,5 @@ namespace HttpHarker.Middlewares;
 /// </summary>
 public interface IMiddleware
 {
-    Task InvokeAsync(HttpListenerContext context, Func<Task> next);
+    public Task InvokeAsync(HttpListenerContext context, Func<Task> next);
 }

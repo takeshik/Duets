@@ -12,5 +12,5 @@ public interface IJsDocProvider
     /// The returned text must not include <c>/**</c> or <c>*/</c> delimiters — only the inner content.
     /// Multiple lines are separated by <c>\n</c>.
     /// </summary>
-    string? Get(MemberInfo member);
+    public string? Get(MemberInfo member);
 }

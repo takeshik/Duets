@@ -105,7 +105,9 @@ public sealed class XmlDocumentationProviderTests
         finally
         {
             if (Directory.Exists(cacheDir))
+            {
                 Directory.Delete(cacheDir, true);
+            }
         }
     }
 
@@ -141,7 +143,9 @@ public sealed class XmlDocumentationProviderTests
         finally
         {
             if (Directory.Exists(cacheDir))
+            {
                 Directory.Delete(cacheDir, true);
+            }
         }
     }
 

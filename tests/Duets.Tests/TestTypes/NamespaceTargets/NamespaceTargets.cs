@@ -1,12 +1,11 @@
-namespace Duets.Tests.TestTypes.NamespaceTargets
-{
-    public class NamespaceAlpha
-    {
-        public string Name { get; set; } = "";
-    }
+namespace Duets.Tests.TestTypes.NamespaceTargets;
 
-    public class NamespaceBeta
-    {
-        public int Value { get; set; }
-    }
+public class NamespaceAlpha
+{
+    public string Name { get; set; } = "";
+}
+
+public class NamespaceBeta
+{
+    public int Value { get; set; }
 }

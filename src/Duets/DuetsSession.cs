@@ -122,7 +122,10 @@ public sealed class DuetsSession : IDisposable
     {
         using var _ = this.EnterOperation();
         if (this._disposed)
+        {
             return;
+        }
+
         this.Engine.ConsoleLogged -= this.OnConsoleLogged;
         this.Engine.Dispose();
         if (this.Transpiler is IDisposable disposable)
@@ -199,7 +202,9 @@ public sealed class DuetsSession : IDisposable
     {
 #if NETSTANDARD2_1
         if (this._disposed)
+        {
             throw new ObjectDisposedException(this.GetType().FullName);
+        }
 #else
         ObjectDisposedException.ThrowIf(this._disposed, this);
 #endif

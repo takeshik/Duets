@@ -9,7 +9,7 @@ public class NoNamespaceClass
 
 public interface INoNamespaceInterface
 {
-    int Value { get; }
+    public int Value { get; }
 }
 
 public enum NoNamespaceEnum

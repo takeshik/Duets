@@ -4,16 +4,13 @@ namespace Duets;
 /// Converter-aware abstract base for backend implementations.
 /// Backends inherit from this class and implement the engine-specific hooks.
 /// </summary>
-public abstract class ScriptEngine<TValue> : IScriptEngine
+public abstract class ScriptEngine<TValue>(
+    ITranspiler transpiler,
+    IScriptValueConverter<TValue> converter
+) : IScriptEngine
 {
-    protected ScriptEngine(ITranspiler transpiler, IScriptValueConverter<TValue> converter)
-    {
-        this.Transpiler = transpiler;
-        this.Converter = converter;
-    }
-
-    protected ITranspiler Transpiler { get; }
-    protected IScriptValueConverter<TValue> Converter { get; }
+    protected ITranspiler Transpiler { get; } = transpiler;
+    protected IScriptValueConverter<TValue> Converter { get; } = converter;
 
     public abstract bool CanRegisterTypeBuiltins { get; }
 

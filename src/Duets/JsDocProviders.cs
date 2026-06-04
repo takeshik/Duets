@@ -77,7 +77,10 @@ public sealed class JsDocProviders : IJsDocProvider
         var packageId = name.Name;
         var version = name.Version?.ToString(3);
         if (packageId == null || version == null)
+        {
             return;
+        }
+
         var provider = await XmlDocumentationProvider.FetchFromNuGetAsync(
             packageId,
             version,
@@ -124,7 +127,9 @@ public sealed class JsDocProviders : IJsDocProvider
             {
                 var result = provider.Get(member);
                 if (result != null)
+                {
                     return result;
+                }
             }
             catch { }
         }

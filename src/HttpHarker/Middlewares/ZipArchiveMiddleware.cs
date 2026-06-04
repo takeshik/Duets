@@ -5,18 +5,17 @@ namespace HttpHarker.Middlewares;
 /// <summary>
 /// Serves files from a zip archive as static HTTP responses via <see cref="ZipFileProvider"/>.
 /// </summary>
-public sealed class ZipArchiveMiddleware : IMiddleware
+public sealed class ZipArchiveMiddleware(
+    Stream zipStream,
+    string root = "/",
+    StaticFileOptions? options = null
+) : IMiddleware
 {
-    public ZipArchiveMiddleware(
-        Stream zipStream,
-        string root = "/",
-        StaticFileOptions? options = null
-    )
-    {
-        this._inner = new StaticFileMiddleware(new ZipFileProvider(zipStream), root, options);
-    }
-
-    private readonly StaticFileMiddleware _inner;
+    private readonly StaticFileMiddleware _inner = new StaticFileMiddleware(
+        new ZipFileProvider(zipStream),
+        root,
+        options
+    );
 
     public Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {

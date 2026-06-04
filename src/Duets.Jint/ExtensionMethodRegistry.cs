@@ -19,8 +19,8 @@ internal sealed class ExtensionMethodRegistry
 
     // Keyed by open-generic target type (e.g. IEnumerable<>) or concrete type (e.g. string).
     // Replaced atomically on Register; readers take a snapshot.
-    private Dictionary<Type, MethodInfo[]> _methods = new();
-    private HashSet<Type> _registered = new();
+    private Dictionary<Type, MethodInfo[]> _methods = [];
+    private HashSet<Type> _registered = [];
 
     public bool HasMethods => this._methods.Count > 0;
 
@@ -34,7 +34,9 @@ internal sealed class ExtensionMethodRegistry
         {
             snapshot = this._methods;
             if (this._registered.Contains(containerType))
+            {
                 return false;
+            }
 
             var incoming = containerType
                 .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -75,7 +77,9 @@ internal sealed class ExtensionMethodRegistry
     {
         var candidates = this.FindCandidates(target.GetType(), memberName);
         if (candidates.Count == 0)
+        {
             return null;
+        }
 
         return new ClrFunction(
             engine,
@@ -88,9 +92,15 @@ internal sealed class ExtensionMethodRegistry
     private static bool NameMatches(string clrName, string jsName)
     {
         if (clrName.Length != jsName.Length)
+        {
             return false;
+        }
+
         if (clrName.Length == 0)
+        {
             return true;
+        }
+
         return char.ToLowerInvariant(clrName[0]) == char.ToLowerInvariant(jsName[0])
             && string.Equals(clrName[1..], jsName[1..], StringComparison.Ordinal);
     }
@@ -165,7 +175,10 @@ internal sealed class ExtensionMethodRegistry
         {
             var pos = paramType.GenericParameterPosition;
             if (pos < resolved.Length)
+            {
                 resolved[pos] ??= argType;
+            }
+
             return;
         }
 
@@ -185,7 +198,9 @@ internal sealed class ExtensionMethodRegistry
         }
 
         if (!paramType.IsGenericType)
+        {
             return;
+        }
 
         var paramDef = paramType.GetGenericTypeDefinition();
         // Walk argType's interfaces to find a match for paramDef
@@ -199,9 +214,15 @@ internal sealed class ExtensionMethodRegistry
         foreach (var candidate in argTypes)
         {
             if (!candidate.IsGenericType)
+            {
                 continue;
+            }
+
             if (candidate.GetGenericTypeDefinition() != paramDef)
+            {
                 continue;
+            }
+
             var paramArgs = paramType.GetGenericArguments();
             var candidateArgs = candidate.GetGenericArguments();
             for (var i = 0; i < Math.Min(paramArgs.Length, candidateArgs.Length); i++)
@@ -236,7 +257,9 @@ internal sealed class ExtensionMethodRegistry
         {
             var parameters = method.GetParameters(); // [0] = 'this', [1..] = user args
             if (parameters.Length - 1 != jsArgs.Length)
+            {
                 continue;
+            }
 
             var clrArgs = new object?[parameters.Length];
             clrArgs[0] = target;
@@ -251,7 +274,10 @@ internal sealed class ExtensionMethodRegistry
             {
                 var made = MakeConcreteMethod(method, parameters, target);
                 if (made is null)
+                {
                     continue;
+                }
+
                 concrete = made;
                 concreteParams = made.GetParameters();
             }
@@ -262,7 +288,9 @@ internal sealed class ExtensionMethodRegistry
             }
 
             if (!TryConvertArguments(engine, concreteParams, jsArgs, clrArgs))
+            {
                 continue;
+            }
 
             try
             {
@@ -285,7 +313,9 @@ internal sealed class ExtensionMethodRegistry
     {
         var snapshot = this._methods;
         if (snapshot.Count == 0)
+        {
             return [];
+        }
 
         var result = new List<MethodInfo>();
 
@@ -294,7 +324,9 @@ internal sealed class ExtensionMethodRegistry
             void AddMatches(Type key)
             {
                 if (!snapshot.TryGetValue(key, out var methods))
+                {
                     return;
+                }
 
                 foreach (var m in methods)
                 {

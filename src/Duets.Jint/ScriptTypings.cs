@@ -10,25 +10,17 @@ using System.Runtime.CompilerServices;
 namespace Duets.Jint;
 
 /// <summary>Provides script-accessible built-in functions for managing TypeScript type declarations.</summary>
-internal sealed class ScriptTypings
+internal sealed class ScriptTypings(
+    ITypeDeclarationRegistrar declarations,
+    Func<JsValue, JsValue>? importNamespace = null,
+    Action<string, Type>? exposeGlobal = null,
+    Action<Type>? registerExtensionMethods = null
+)
 {
-    public ScriptTypings(
-        ITypeDeclarationRegistrar declarations,
-        Func<JsValue, JsValue>? importNamespace = null,
-        Action<string, Type>? exposeGlobal = null,
-        Action<Type>? registerExtensionMethods = null
-    )
-    {
-        this._declarations = declarations;
-        this._importNamespace = importNamespace;
-        this._exposeGlobal = exposeGlobal;
-        this._registerExtensionMethods = registerExtensionMethods;
-    }
-
-    private readonly ITypeDeclarationRegistrar _declarations;
-    private readonly Func<JsValue, JsValue>? _importNamespace;
-    private readonly Action<string, Type>? _exposeGlobal;
-    private readonly Action<Type>? _registerExtensionMethods;
+    private readonly ITypeDeclarationRegistrar _declarations = declarations;
+    private readonly Func<JsValue, JsValue>? _importNamespace = importNamespace;
+    private readonly Action<string, Type>? _exposeGlobal = exposeGlobal;
+    private readonly Action<Type>? _registerExtensionMethods = registerExtensionMethods;
 
     /// <summary>
     /// Imports a .NET namespace into the script environment and registers its types as TypeScript declaration targets.
@@ -242,7 +234,10 @@ internal sealed class ScriptTypings
     private static Type ResolveTypeRef(JsValue typeRef)
     {
         if (typeRef is TypeReference tr)
+        {
             return tr.ReferenceType;
+        }
+
         throw new ArgumentException(
             "Expected a CLR type reference (e.g., typings.scanAssemblyOf(System.IO.File))."
         );

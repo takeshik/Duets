@@ -169,7 +169,7 @@ public sealed class ScriptEngineTests
     {
         using var engine = JintTestRuntime.CreateEngine();
         var entries = new List<ScriptConsoleEntry>();
-        engine.ConsoleLogged += e => entries.Add(e);
+        engine.ConsoleLogged += entries.Add;
 
         var result = engine.Evaluate("dump({x: 1}).x");
 

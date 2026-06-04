@@ -170,17 +170,16 @@ public class ReplService : IDisposable
             {
                 ["result"] = resultStr,
                 ["ok"] = ok,
-                ["logs"] = new JsonArray(
-                    logs.Select(l =>
-                            (JsonNode)
-                                new JsonObject
-                                {
-                                    ["level"] = l.Level.ToString().ToLowerInvariant(),
-                                    ["text"] = l.Text,
-                                }
-                        )
-                        .ToArray()
-                ),
+                ["logs"] = new JsonArray([
+                    .. logs.Select(l =>
+                        (JsonNode)
+                            new JsonObject
+                            {
+                                ["level"] = l.Level.ToString().ToLowerInvariant(),
+                                ["text"] = l.Text,
+                            }
+                    ),
+                ]),
             }.ToJsonString()
         );
     }

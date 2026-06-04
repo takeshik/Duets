@@ -45,10 +45,12 @@ public sealed class ScriptTypingsTests
 
         public IReadOnlyList<TypeDeclaration> GetNonBuiltinDeclarations()
         {
-            return this
-                .Declarations.GetDeclarations()
-                .Where(declaration => !declaration.Content.Contains("declare const typings:"))
-                .ToList();
+            return
+            [
+                .. this
+                    .Declarations.GetDeclarations()
+                    .Where(declaration => !declaration.Content.Contains("declare const typings:")),
+            ];
         }
 
         public void Dispose()

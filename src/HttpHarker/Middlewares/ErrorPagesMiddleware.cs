@@ -40,7 +40,9 @@ public sealed class ErrorPagesMiddleware : IMiddleware
         try
         {
             if (!context.Response.OutputStream.CanWrite)
+            {
                 return;
+            }
         }
         catch (ObjectDisposedException)
         {

@@ -123,9 +123,15 @@ internal sealed class SandboxContext : IAsyncDisposable
     public async Task SetTranspilerAsync(TranspilerKind kind)
     {
         if (kind == this.ActiveTranspiler)
+        {
             return;
+        }
+
         if (this._webServer != null)
+        {
             await this.StopWebServerAsync();
+        }
+
         var old = this._session;
         this._session = await CreateDuetsSessionAsync(kind, this._tsFactory, this._babelFactory);
         this.ActiveTranspiler = kind;
@@ -135,7 +141,10 @@ internal sealed class SandboxContext : IAsyncDisposable
     public async Task ResetAsync()
     {
         if (this._webServer != null)
+        {
             await this.StopWebServerAsync();
+        }
+
         var old = this._session;
         this._session = await CreateDuetsSessionAsync(
             this.ActiveTranspiler,
@@ -155,7 +164,9 @@ internal sealed class SandboxContext : IAsyncDisposable
         }
 
         if (this.IsServerRunning)
+        {
             return;
+        }
 
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
@@ -178,7 +189,10 @@ internal sealed class SandboxContext : IAsyncDisposable
     public async Task StopWebServerAsync()
     {
         if (this._webServer == null)
+        {
             return;
+        }
+
         await this._webServerCts!.CancelAsync();
         try
         {
@@ -202,7 +216,10 @@ internal sealed class SandboxContext : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (this._webServerCts is { } cts)
+        {
             await cts.CancelAsync();
+        }
+
         if (this._webServerTask != null)
         {
             try

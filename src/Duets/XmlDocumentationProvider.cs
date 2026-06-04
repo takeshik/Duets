@@ -8,17 +8,12 @@ namespace Duets;
 /// <summary>
 /// <see cref="IJsDocProvider"/> implementation backed by a .NET XML documentation file.
 /// </summary>
-public sealed class XmlDocumentationProvider : IJsDocProvider
+/// <remarks>Initializes a new instance from raw XML documentation content.</remarks>
+public sealed class XmlDocumentationProvider(string xmlContent) : IJsDocProvider
 {
-    /// <summary>Initializes a new instance from raw XML documentation content.</summary>
-    public XmlDocumentationProvider(string xmlContent)
-    {
-        this._members = ParseXml(xmlContent);
-    }
-
     private static readonly HttpClient s_httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
 
-    private readonly Dictionary<string, XElement> _members;
+    private readonly Dictionary<string, XElement> _members = ParseXml(xmlContent);
 
     /// <summary>
     /// Downloads the NuGet package for <paramref name="packageId"/>/<paramref name="version"/>,
@@ -58,7 +53,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             using var zip = new ZipArchive(new MemoryStream(nupkgBytes), ZipArchiveMode.Read);
             var xmlContent = FindXmlInNupkg(zip, tfm, assemblyName);
             if (xmlContent == null)
+            {
                 return null;
+            }
 
             Directory.CreateDirectory(cacheDir);
             await File.WriteAllTextAsync(cacheFile, xmlContent);
@@ -108,7 +105,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             .ToList();
 
         if (xmlEntries.Count == 0)
+        {
             return null;
+        }
 
         // When assemblyName is known, prefer the XML file whose stem matches it to avoid
         // picking up another assembly's docs in multi-assembly packages.
@@ -122,7 +121,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
                         .Equals(assemblyName, StringComparison.OrdinalIgnoreCase)
                 );
                 if (match != null)
+                {
                     return match;
+                }
             }
 
             return list.FirstOrDefault();
@@ -136,7 +137,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
                 )
             );
             if (entry != null)
+            {
                 return ReadEntry(entry);
+            }
         }
 
         string[] preferredTfms =
@@ -157,7 +160,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
                 )
             );
             if (entry != null)
+            {
                 return ReadEntry(entry);
+            }
         }
 
         var fallback = PickEntry(xmlEntries);
@@ -181,7 +186,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             {
                 var name = member.Attribute("name")?.Value;
                 if (name != null)
+                {
                     dict[name] = member;
+                }
             }
         }
         catch { }
@@ -216,7 +223,10 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
     private static string BuildParamListId(ParameterInfo[] parameters, MethodInfo? method)
     {
         if (parameters.Length == 0)
+        {
             return "";
+        }
+
         return $"({string.Join(",", parameters.Select(p => GetParamTypeId(p.ParameterType, method)))})";
     }
 
@@ -272,7 +282,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             var text = NormalizeWhitespace(ExtractText(summary));
             if (!string.IsNullOrEmpty(text))
+            {
                 parts.Add(text);
+            }
         }
 
         var remarks = memberElement.Element("remarks");
@@ -280,7 +292,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             var text = NormalizeWhitespace(ExtractText(remarks));
             if (!string.IsNullOrEmpty(text))
+            {
                 parts.Add(text);
+            }
         }
 
         foreach (var param in memberElement.Elements("param"))
@@ -298,7 +312,9 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         {
             var text = NormalizeWhitespace(ExtractText(returns));
             if (!string.IsNullOrEmpty(text))
+            {
                 parts.Add($"@returns {text}");
+            }
         }
 
         return parts.Count > 0 ? string.Join("\n", parts) : null;
@@ -359,13 +375,22 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         // don't split inside the parameter or argument types.
         var parenIdx = name.IndexOf('(');
         if (parenIdx >= 0)
+        {
             name = name[..parenIdx];
+        }
+
         var braceIdx = name.IndexOf('{');
         if (braceIdx >= 0)
+        {
             name = name[..braceIdx];
+        }
+
         var backtickIdx = name.LastIndexOf('`');
         if (backtickIdx >= 0)
+        {
             name = name[..backtickIdx];
+        }
+
         name = name.Replace('+', '.');
         var dotIdx = name.LastIndexOf('.');
         return dotIdx >= 0 ? name[(dotIdx + 1)..] : name;
@@ -380,7 +405,10 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
             if (char.IsWhiteSpace(c))
             {
                 if (!prevWasSpace)
+                {
                     sb.Append(' ');
+                }
+
                 prevWasSpace = true;
             }
             else
@@ -391,7 +419,7 @@ public sealed class XmlDocumentationProvider : IJsDocProvider
         }
 
         // Trim trailing space
-        if (sb.Length > 0 && sb[sb.Length - 1] == ' ')
+        if (sb.Length > 0 && sb[^1] == ' ')
         {
             sb.Length--;
         }

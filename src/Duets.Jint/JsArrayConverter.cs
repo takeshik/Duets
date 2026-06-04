@@ -47,9 +47,15 @@ internal static class JsArrayConverter
     private static JsValue ConvertElement(Engine engine, object? value)
     {
         if (value is null)
+        {
             return JsValue.Null;
+        }
+
         if (value is Array nestedArray)
+        {
             return ToJsArray(engine, nestedArray);
+        }
+
         return JsValue.FromObject(engine, value);
     }
 }

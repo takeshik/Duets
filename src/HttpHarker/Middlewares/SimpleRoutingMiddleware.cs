@@ -19,9 +19,7 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         this._prefix = root.TrimEnd('/');
         var builder = new Builder();
         configure?.Invoke(builder);
-        this._routes = new SortedSet<Route>(
-            builder.Routes.Select(r => new Route(r.Method, r.Template, r.Handler))
-        );
+        this._routes = [.. builder.Routes.Select(r => new Route(r.Method, r.Template, r.Handler))];
     }
 
     private readonly string _prefix;
@@ -41,7 +39,10 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         foreach (var route in this._routes)
         {
             if (!route.TryMatch(method, path, out var handler))
+            {
                 continue;
+            }
+
             await handler(context);
             return;
         }
@@ -52,13 +53,25 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
     private static string? GetRelativePath(string path, string prefix)
     {
         if (prefix.Length == 0)
+        {
             return path;
+        }
+
         if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
             return null;
+        }
+
         if (path.Length == prefix.Length)
+        {
             return "/";
+        }
+
         if (path[prefix.Length] != '/')
+        {
             return null;
+        }
+
         return path[prefix.Length..];
     }
 
@@ -208,7 +221,10 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         public int CompareTo(Route? other)
         {
             if (other is null)
+            {
                 return 1;
+            }
+
             var len = Math.Max(this.SortKey.Length, other.SortKey.Length);
             for (var i = 0; i < len; i++)
             {
@@ -216,7 +232,9 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                 var bVal = i < other.SortKey.Length ? other.SortKey[i] : -1;
                 var cmp = bVal.CompareTo(aVal); // descending: higher priority → smaller element → iterated first
                 if (cmp != 0)
+                {
                     return cmp;
+                }
             }
 
             var methodCmp = string.Compare(
@@ -225,7 +243,10 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
                 StringComparison.Ordinal
             );
             if (methodCmp != 0)
+            {
                 return methodCmp;
+            }
+
             return string.Compare(this.Template, other.Template, StringComparison.Ordinal);
         }
 

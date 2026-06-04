@@ -9,7 +9,7 @@ namespace Duets;
 public interface IAssetSource
 {
     /// <param name="force">When <see langword="true"/>, bypasses any caching layer and fetches fresh content.</param>
-    Task<string> GetAsync(bool force = false);
+    public Task<string> GetAsync(bool force = false);
 }
 
 /// <summary>

@@ -19,17 +19,13 @@ public sealed class DuetsSessionConfiguration
     /// </summary>
     public DuetsSessionConfiguration UseEngine(Func<ITranspiler, IScriptEngine> engineFactory)
     {
-        if (engineFactory == null)
-        {
-            throw new ArgumentNullException(nameof(engineFactory));
-        }
-
         if (this._engineFactory != null)
         {
             throw new InvalidOperationException("The session engine has already been configured.");
         }
 
-        this._engineFactory = engineFactory;
+        this._engineFactory =
+            engineFactory ?? throw new ArgumentNullException(nameof(engineFactory));
         return this;
     }
 
@@ -41,11 +37,6 @@ public sealed class DuetsSessionConfiguration
         Func<TypeDeclarations, Task<ITranspiler>> transpilerFactory
     )
     {
-        if (transpilerFactory == null)
-        {
-            throw new ArgumentNullException(nameof(transpilerFactory));
-        }
-
         if (this._transpilerFactory != null)
         {
             throw new InvalidOperationException(
@@ -53,7 +44,8 @@ public sealed class DuetsSessionConfiguration
             );
         }
 
-        this._transpilerFactory = transpilerFactory;
+        this._transpilerFactory =
+            transpilerFactory ?? throw new ArgumentNullException(nameof(transpilerFactory));
         return this;
     }
 

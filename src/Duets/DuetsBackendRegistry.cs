@@ -20,11 +20,6 @@ public static class DuetsBackendRegistry
     /// </summary>
     public static void RegisterDefaultEngine(Func<ITranspiler, IScriptEngine> factory)
     {
-        if (factory == null)
-        {
-            throw new ArgumentNullException(nameof(factory));
-        }
-
         if (DefaultEngineFactory != null)
         {
             throw new InvalidOperationException(
@@ -33,7 +28,7 @@ public static class DuetsBackendRegistry
             );
         }
 
-        DefaultEngineFactory = factory;
+        DefaultEngineFactory = factory ?? throw new ArgumentNullException(nameof(factory));
     }
 
     /// <summary>
@@ -42,11 +37,6 @@ public static class DuetsBackendRegistry
     /// </summary>
     public static void RegisterDefaultTranspiler(Func<TypeDeclarations, Task<ITranspiler>> factory)
     {
-        if (factory == null)
-        {
-            throw new ArgumentNullException(nameof(factory));
-        }
-
         if (DefaultTranspilerFactory != null)
         {
             throw new InvalidOperationException(
@@ -55,6 +45,6 @@ public static class DuetsBackendRegistry
             );
         }
 
-        DefaultTranspilerFactory = factory;
+        DefaultTranspilerFactory = factory ?? throw new ArgumentNullException(nameof(factory));
     }
 }

@@ -84,13 +84,13 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
             ? ns => this.Call(originalImportNs, ns)
             : null;
 
-        Action<Type> registerExtensionMethods = containerType =>
+        void registerExtensionMethods(Type containerType)
         {
             if (this.ExtensionMethods.Register(containerType))
             {
                 declarations.RegisterExtensionMethodContainer(containerType);
             }
-        };
+        }
 
         var typings = new ScriptTypings(
             declarations,
@@ -105,7 +105,10 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
             new Func<JsValue, object>(jsValue =>
             {
                 if (jsValue is TypeReference tr)
+                {
                     return tr.ReferenceType;
+                }
+
                 throw new ArgumentException(
                     "Expected a CLR type reference (e.g., clrTypeOf(System.IO.File)). "
                         + "Make sure AllowClr is configured on the engine."
@@ -166,7 +169,10 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
         lock (this._sync)
         {
             if (this._disposed)
+            {
                 return;
+            }
+
             this._jintEngine.Dispose();
             this._disposed = true;
         }
@@ -231,7 +237,9 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
     {
 #if NETSTANDARD2_1
         if (this._disposed)
+        {
             throw new ObjectDisposedException(this.GetType().FullName);
+        }
 #else
         ObjectDisposedException.ThrowIf(this._disposed, this);
 #endif

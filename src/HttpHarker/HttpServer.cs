@@ -23,9 +23,12 @@ public class HttpServer(string prefix) : IDisposable
     public HttpServer Use(Func<HttpListenerContext, Func<Task>, Task> middleware)
     {
         if (this.IsRunning)
+        {
             throw new InvalidOperationException(
                 "Cannot add middleware while the server is running."
             );
+        }
+
         this._middleware.Add(middleware);
         return this;
     }
@@ -38,7 +41,10 @@ public class HttpServer(string prefix) : IDisposable
     public void Start(int workersCount = 8)
     {
         if (this.IsRunning)
+        {
             throw new InvalidOperationException("Server is already running.");
+        }
+
         this._cts = new CancellationTokenSource();
         this.RunAsync(workersCount, this._cts.Token).Forget();
     }

@@ -84,7 +84,10 @@ internal sealed class BatchRunner(SandboxContext session)
         while (Console.ReadLine() is { } line)
         {
             if (string.IsNullOrWhiteSpace(line))
+            {
                 continue;
+            }
+
             var op = "?";
             try
             {
@@ -195,7 +198,10 @@ internal sealed class BatchRunner(SandboxContext session)
     private async Task<object> ServerStartAsync(JsonElement cmd)
     {
         if (session.IsServerRunning)
+        {
             return new { ok = false, error = "Server is already running" };
+        }
+
         var port = cmd.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 17375;
         session.StartWebServer(port);
         await Task.CompletedTask;
@@ -205,7 +211,10 @@ internal sealed class BatchRunner(SandboxContext session)
     private async Task<object> ServerStopAsync()
     {
         if (!session.IsServerRunning)
+        {
             return new { ok = false, error = "Server is not running" };
+        }
+
         await session.StopWebServerAsync();
         return new { ok = true };
     }

@@ -10,9 +10,9 @@ public interface ITranspiler
     /// Human-readable description of this transpiler, including name and version where available.
     /// Defaults to the implementation type name.
     /// </summary>
-    string Description => this.GetType().Name;
+    public string Description => this.GetType().Name;
 
-    string Transpile(
+    public string Transpile(
         string input,
         string? fileName = null,
         IList<Diagnostic>? diagnostics = null,

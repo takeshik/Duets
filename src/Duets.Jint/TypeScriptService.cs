@@ -128,7 +128,10 @@ public class TypeScriptService : ITranspiler, IDisposable
         lock (this._sync)
         {
             if (this._engine == null)
+            {
                 throw new InvalidOperationException("Call ResetAsync() first.");
+            }
+
             version =
                 this.Version
                 ?? throw new InvalidOperationException("TypeScript version is not initialized.");
@@ -139,7 +142,10 @@ public class TypeScriptService : ITranspiler, IDisposable
         lock (this._sync)
         {
             if (this._engine == null)
+            {
                 throw new InvalidOperationException("Call ResetAsync() first.");
+            }
+
             var host = this._engine.GetValue("$$host");
             host.Get("addFile").Call(host, ["lib.es5.d.ts", content]);
         }
@@ -158,7 +164,9 @@ public class TypeScriptService : ITranspiler, IDisposable
         lock (this._sync)
         {
             if (this._engine == null)
+            {
                 throw new InvalidOperationException("Call ResetAsync() first.");
+            }
 
             var host = this._engine.GetValue("$$host");
             // Add user code as a virtual file
@@ -180,15 +188,16 @@ public class TypeScriptService : ITranspiler, IDisposable
                 return [];
             }
 
-            return ((JsArray)entries)
-                .Select(v => new CompletionEntry(
+            return
+            [
+                .. ((JsArray)entries).Select(v => new CompletionEntry(
                     v.Get("name").AsString(),
                     v.Get("kind").AsString(),
                     v.Get("sortText").Equals(JsValue.Undefined)
                         ? null
                         : v.Get("sortText").AsString()
-                ))
-                .ToList();
+                )),
+            ];
         }
     }
 
@@ -216,7 +225,10 @@ public class TypeScriptService : ITranspiler, IDisposable
         lock (this._sync)
         {
             if (this._engine == null)
+            {
                 throw new InvalidOperationException("Call ResetAsync() first.");
+            }
+
             var diagsArray = new JsArray(this._engine);
             var ret = (
                 (JsString)
@@ -272,7 +284,9 @@ public class TypeScriptService : ITranspiler, IDisposable
     private void AddDeclarationToLanguageService(TypeDeclaration declaration)
     {
         if (this._engine == null)
+        {
             return;
+        }
 
         // TODO: Cache $$host/addFile after ResetAsync so declaration replay does not repeat global/property lookup.
         var host = this._engine.GetValue("$$host");

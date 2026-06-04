@@ -3,7 +3,7 @@ namespace Duets;
 /// <summary>Bidirectional converter between <see cref="ScriptValue"/> and a backend-specific value type.</summary>
 public interface IScriptValueConverter<T>
 {
-    ScriptValue Wrap(T value);
+    public ScriptValue Wrap(T value);
 
-    T Unwrap(ScriptValue value);
+    public T Unwrap(ScriptValue value);
 }

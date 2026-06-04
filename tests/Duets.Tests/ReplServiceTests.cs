@@ -11,14 +11,11 @@ public sealed class ReplServiceTests
     {
         while (true)
         {
-            var line = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            if (line is null)
-            {
-                throw new EndOfStreamException(
+            var line =
+                await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5))
+                ?? throw new EndOfStreamException(
                     "The SSE stream ended before the next data event was received."
                 );
-            }
-
             if (!line.StartsWith("data: ", StringComparison.Ordinal))
             {
                 continue;

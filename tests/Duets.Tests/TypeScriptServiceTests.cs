@@ -4,16 +4,10 @@ using Duets.Tests.TestTypes.NamespaceTargets;
 namespace Duets.Tests;
 
 [Collection("TranspilerAssets")]
-public sealed class TypeScriptServiceTests
+public sealed class TypeScriptServiceTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
 {
-    public TypeScriptServiceTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
-    {
-        this._assets = assets;
-        this._output = output;
-    }
-
-    private readonly TranspilerAssetsFixture _assets;
-    private readonly ITestOutputHelper _output;
+    private readonly TranspilerAssetsFixture _assets = assets;
+    private readonly ITestOutputHelper _output = output;
 
     [Fact]
     public async Task CreateAsync_can_inject_the_standard_library_during_initialization()

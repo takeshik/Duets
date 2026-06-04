@@ -13,10 +13,10 @@ public interface ITypeDeclarationProvider
     /// Fires when a declaration file is added or updated.
     /// Namespace placeholders are re-fired when replaced by an empty namespace declaration.
     /// </summary>
-    event Action<TypeDeclaration>? DeclarationChanged;
+    public event Action<TypeDeclaration>? DeclarationChanged;
 
     /// <summary>Returns a snapshot of all registered declaration files.</summary>
-    IReadOnlyCollection<TypeDeclaration> GetDeclarations();
+    public IReadOnlyCollection<TypeDeclaration> GetDeclarations();
 }
 
 /// <summary>Write-only API for registering runtime type declarations.</summary>
@@ -26,26 +26,26 @@ public interface ITypeDeclarationRegistrar
     /// Registers a .NET type as a declaration target.
     /// Base types are registered first. Duplicate registrations are ignored.
     /// </summary>
-    void RegisterType(Type type);
+    public void RegisterType(Type type);
 
     /// <summary>
     /// Registers an arbitrary TypeScript declaration.
     /// Duplicate content is ignored.
     /// </summary>
-    void RegisterDeclaration(string content);
+    public void RegisterDeclaration(string content);
 
     /// <summary>
     /// Registers a namespace placeholder so the namespace appears in completions
     /// without registering any type members yet.
     /// </summary>
-    void RegisterNamespace(string namespaceName);
+    public void RegisterNamespace(string namespaceName);
 
     /// <summary>
     /// Registers a static class containing extension methods as a declaration target.
     /// Duplicate registrations are ignored. Declarations are regenerated on provider refresh,
     /// so JSDoc providers added after this call will be reflected on the next refresh.
     /// </summary>
-    void RegisterExtensionMethodContainer(Type containerType);
+    public void RegisterExtensionMethodContainer(Type containerType);
 }
 
 /// <summary>
@@ -70,9 +70,9 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     private readonly object _sync = new();
     private readonly HashSet<Type> _registeredTypes = [];
     private readonly HashSet<Type> _registeredExtensionMethodContainers = [];
-    private readonly Dictionary<string, string> _placeholderNamespaces = new();
+    private readonly Dictionary<string, string> _placeholderNamespaces = [];
     private readonly HashSet<string> _coveredNamespaces = [];
-    private readonly Dictionary<string, TypeDeclaration> _declarations = new();
+    private readonly Dictionary<string, TypeDeclaration> _declarations = [];
     private readonly ClrDeclarationGenerator _generator;
 
     /// <summary>
@@ -112,7 +112,9 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
             {
                 var decl = this.RegisterExtensionMethodContainerCore(containerType);
                 if (decl != null)
+                {
                     changed.Add(decl);
+                }
             }
         }
 
@@ -124,7 +126,7 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     {
         lock (this._sync)
         {
-            return this._declarations.Values.ToArray();
+            return [.. this._declarations.Values];
         }
     }
 
@@ -213,7 +215,9 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     {
         var changed = new List<TypeDeclaration>();
         if (!this._registeredTypes.Add(type))
+        {
             return changed;
+        }
 
         var baseType = type.BaseType;
         if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
@@ -254,7 +258,9 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     {
         var declaration = new TypeDeclaration($"decl-{ComputeSha1Hex(content)}.d.ts", content);
         if (this._declarations.ContainsKey(declaration.FileName))
+        {
             return null;
+        }
 
         this._declarations[declaration.FileName] = declaration;
         return declaration;
@@ -263,9 +269,14 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     private TypeDeclaration? RegisterNamespaceCore(string namespaceName)
     {
         if (this._coveredNamespaces.Contains(namespaceName))
+        {
             return null;
+        }
+
         if (this._placeholderNamespaces.ContainsKey(namespaceName))
+        {
             return null;
+        }
 
         var declaration = new TypeDeclaration(
             $"clr-ns-{ComputeSha1Hex($"ns:{namespaceName}")}.d.ts",
@@ -279,7 +290,10 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
     private TypeDeclaration? RegisterExtensionMethodContainerCore(Type containerType)
     {
         if (!this._registeredExtensionMethodContainers.Add(containerType))
+        {
             return null;
+        }
+
         var content = this._generator.GenerateExtensionMethodsTs(containerType);
         var declaration = new TypeDeclaration(
             $"clr-ext-{ComputeSha1Hex(containerType.AssemblyQualifiedName ?? containerType.ToString())}.d.ts",

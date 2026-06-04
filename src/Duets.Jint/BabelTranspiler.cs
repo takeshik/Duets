@@ -118,7 +118,9 @@ public class BabelTranspiler : ITranspiler, IDisposable
     )
     {
         if (this._engine == null)
+        {
             throw new InvalidOperationException("Call InitializeAsync() first.");
+        }
 
         try
         {

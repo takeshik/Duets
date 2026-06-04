@@ -46,13 +46,25 @@ public abstract class ScriptValue : IEquatable<ScriptValue>
     public bool Equals(ScriptValue? other)
     {
         if (other is null)
+        {
             return false;
+        }
+
         if (ReferenceEquals(this, other))
+        {
             return true;
+        }
+
         if (this is UndefinedValue)
+        {
             return other.EqualsCore(this);
+        }
+
         if (this is NullValue)
+        {
             return other.EqualsCore(this);
+        }
+
         return this.EqualsCore(other);
     }
 

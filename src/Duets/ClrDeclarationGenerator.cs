@@ -7,14 +7,9 @@ namespace Duets;
 /// <summary>
 /// Generates TypeScript declaration (<c>.d.ts</c>) source from .NET types via reflection.
 /// </summary>
-public class ClrDeclarationGenerator
+/// <remarks>Initializes a new instance with an optional JSDoc provider.</remarks>
+public class ClrDeclarationGenerator(IJsDocProvider? jsDocProvider = null)
 {
-    /// <summary>Initializes a new instance with an optional JSDoc provider.</summary>
-    public ClrDeclarationGenerator(IJsDocProvider? jsDocProvider = null)
-    {
-        this._jsDocProvider = jsDocProvider;
-    }
-
     private static readonly HashSet<Type> _numericTypes =
     [
         typeof(byte),
@@ -44,7 +39,7 @@ public class ClrDeclarationGenerator
         typeof(Dictionary<,>),
     ];
 
-    private readonly IJsDocProvider? _jsDocProvider;
+    private readonly IJsDocProvider? _jsDocProvider = jsDocProvider;
 
     /// <summary>
     /// Returns the bare TypeScript identifier name for a CLR type — the simple name with any
@@ -138,11 +133,15 @@ public class ClrDeclarationGenerator
     {
         // Generic type parameters (T, TKey, etc.) are used as-is by name
         if (type.IsGenericTypeParameter || type.IsGenericMethodParameter)
+        {
             return type.Name;
+        }
 
         // void
         if (type == typeof(void))
+        {
             return "void";
+        }
 
         // Nullable<T>
         var nullableUnderlying = Nullable.GetUnderlyingType(type);
@@ -154,11 +153,19 @@ public class ClrDeclarationGenerator
 
         // Primitives
         if (type == typeof(string))
+        {
             return "string";
+        }
+
         if (type == typeof(bool))
+        {
             return "boolean";
+        }
+
         if (_numericTypes.Contains(type))
+        {
             return "number";
+        }
 
         if (TryGetTaskResultSlot(type, out var taskResult))
         {
@@ -173,13 +180,15 @@ public class ClrDeclarationGenerator
         }
 
         if (type == typeof(Action))
+        {
             return "() => void";
+        }
 
         if (TryGetDictionaryProjectionSlots(type, out var keyType, out var valueType))
         {
             var keyTs = MapType(keyType, visited);
             var valTs = MapType(valueType, visited);
-            if (keyTs != "any" && keyTs != "number" && keyTs != "string")
+            if (keyTs is not "any" and not "number" and not "string")
             {
                 return "any";
             }
@@ -210,7 +219,10 @@ public class ClrDeclarationGenerator
     private static string BuildTypeHeader(Type type)
     {
         if (!type.IsGenericTypeDefinition)
+        {
             return type.Name;
+        }
+
         var name = GetScriptName(type);
         var typeParams = string.Join(", ", type.GetGenericArguments().Select(a => a.Name));
         return $"{name}<{typeParams}>";
@@ -220,7 +232,10 @@ public class ClrDeclarationGenerator
     private static string BuildSimpleTypeName(Type type)
     {
         if (!type.IsGenericType)
+        {
             return type.Name;
+        }
+
         var def = type.IsGenericTypeDefinition ? type : type.GetGenericTypeDefinition();
         var name = GetScriptName(def);
         var args = string.Join(", ", type.GetGenericArguments().Select(a => MapType(a, [])));
@@ -232,7 +247,9 @@ public class ClrDeclarationGenerator
         var lines = body.Split('\n');
         var trimmed = lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
         if (trimmed.Length == 0)
+        {
             return;
+        }
 
         if (trimmed.Length == 1)
         {
@@ -321,13 +338,17 @@ public class ClrDeclarationGenerator
         var candidate = GetOpenType(candidateType);
 
         if (receiver == candidate)
+        {
             return true;
+        }
 
         if (receiver.IsGenericTypeDefinition && candidate.IsGenericTypeDefinition)
         {
             var arity = receiver.GetGenericArguments().Length;
             if (candidate.GetGenericArguments().Length != arity)
+            {
                 return false;
+            }
 
             try
             {
@@ -463,15 +484,29 @@ public class ClrDeclarationGenerator
         }
 
         if (type == typeof(void))
+        {
             return "void";
+        }
+
         if (type == typeof(string))
+        {
             return "string";
+        }
+
         if (type == typeof(bool))
+        {
             return "boolean";
+        }
+
         if (_numericTypes.Contains(type))
+        {
             return "number";
+        }
+
         if (type == typeof(Action))
+        {
             return "() => void";
+        }
 
         var nullableUnderlying = Nullable.GetUnderlyingType(type);
         if (nullableUnderlying != null)
@@ -661,10 +696,14 @@ public class ClrDeclarationGenerator
     {
         var baseInterfaces = type.BaseType?.GetInterfaces().ToHashSet() ?? [];
 
-        return type.GetInterfaces()
-            .Where(i => !baseInterfaces.Contains(i))
-            .Where(i => !type.GetInterfaces().Any(other => other != i && i.IsAssignableFrom(other)))
-            .ToArray();
+        return
+        [
+            .. type.GetInterfaces()
+                .Where(i => !baseInterfaces.Contains(i))
+                .Where(i =>
+                    !type.GetInterfaces().Any(other => other != i && i.IsAssignableFrom(other))
+                ),
+        ];
     }
 
     private static bool TryGetAugmentableProjectedType(
@@ -701,7 +740,9 @@ public class ClrDeclarationGenerator
     private static bool IsRepresentableAsGlobalArrayAugmentation(Type type, Type arraySlot)
     {
         if (!arraySlot.IsGenericParameter)
+        {
             return false;
+        }
 
         return (type.IsArray && type.GetArrayRank() == 1)
             || _arrayProjectionNamedTypes.Contains(GetOpenType(type));
@@ -790,7 +831,10 @@ public class ClrDeclarationGenerator
     {
         var jsDoc = this._jsDocProvider?.Get(type);
         if (jsDoc != null)
+        {
             WriteJsDocBlock(sb, typeIndent, jsDoc);
+        }
+
         var keyword = typeIndent.Length == 0 ? "declare enum" : "enum";
         sb.AppendLine($"{typeIndent}{keyword} {type.Name} {{");
         var names = Enum.GetNames(type);
@@ -821,7 +865,9 @@ public class ClrDeclarationGenerator
         }
 
         if (!visited.Add(type))
+        {
             return;
+        }
 
         var ns = type.Namespace;
         var typeIndent = ns != null ? "  " : "";
@@ -859,7 +905,10 @@ public class ClrDeclarationGenerator
     {
         var jsDoc = this._jsDocProvider?.Get(type);
         if (jsDoc != null)
+        {
             WriteJsDocBlock(sb, typeIndent, jsDoc);
+        }
+
         var header = BuildTypeHeader(type);
         var keyword = typeIndent.Length == 0 ? "declare class" : "class";
 
@@ -952,7 +1001,10 @@ public class ClrDeclarationGenerator
     {
         var jsDoc = this._jsDocProvider?.Get(type);
         if (jsDoc != null)
+        {
             WriteJsDocBlock(sb, typeIndent, jsDoc);
+        }
+
         var header = BuildTypeHeader(type);
         var keyword = typeIndent.Length == 0 ? "declare interface" : "interface";
         sb.AppendLine($"{typeIndent}{keyword} {header} {{");
@@ -1004,7 +1056,10 @@ public class ClrDeclarationGenerator
             {
                 var jsDoc = this._jsDocProvider?.Get(ctor);
                 if (jsDoc != null)
+                {
                     WriteJsDocBlock(sb, indent, jsDoc);
+                }
+
                 sb.AppendLine($"{indent}constructor({string.Join(", ", paramParts)});");
             }
         }
@@ -1048,7 +1103,10 @@ public class ClrDeclarationGenerator
         foreach (var prop in type.GetProperties(flags))
         {
             if (prop.GetIndexParameters().Length > 0)
+            {
                 continue;
+            }
+
             var tsType = MapType(prop.PropertyType, visited);
             var readonlyModifier = prop.SetMethod?.IsPublic == true ? "" : "readonly ";
             var jsDoc = this._jsDocProvider?.Get(prop);
@@ -1151,7 +1209,9 @@ public class ClrDeclarationGenerator
         var memberIndent = typeIndent + "  ";
 
         if (ns != null)
+        {
             sb.AppendLine($"declare namespace {ns} {{");
+        }
 
         var keyword = augmentationTarget.UseDeclareKeyword ? "declare interface" : "interface";
         sb.AppendLine(
@@ -1237,7 +1297,9 @@ public class ClrDeclarationGenerator
 
         sb.AppendLine($"{typeIndent}}}");
         if (ns != null)
+        {
             sb.AppendLine("}");
+        }
     }
 
     private enum ProjectedTypeKind

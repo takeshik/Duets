@@ -9,16 +9,13 @@ namespace Duets.Tests;
 /// Shared contract tests live in <see cref="BabelTranspilerCompatibilityTests"/>.
 /// </summary>
 [Collection("TranspilerAssets")]
-public sealed class BabelTranspilerIntegrationTests : IAsyncLifetime
+public sealed class BabelTranspilerIntegrationTests(
+    TranspilerAssetsFixture assets,
+    ITestOutputHelper output
+) : IAsyncLifetime
 {
-    public BabelTranspilerIntegrationTests(TranspilerAssetsFixture assets, ITestOutputHelper output)
-    {
-        this._assets = assets;
-        this._output = output;
-    }
-
-    private readonly TranspilerAssetsFixture _assets;
-    private readonly ITestOutputHelper _output;
+    private readonly TranspilerAssetsFixture _assets = assets;
+    private readonly ITestOutputHelper _output = output;
     private BabelTranspiler _transpiler = null!;
 
     public async ValueTask InitializeAsync()

@@ -16,11 +16,15 @@ internal sealed class InteractiveRepl(SandboxContext session)
             Console.Write("> ");
             var line = Console.ReadLine();
             if (line is null)
+            {
                 break; // EOF / Ctrl+D
+            }
 
             line = line.Trim();
             if (line.Length == 0)
+            {
                 continue;
+            }
 
             if (line.StartsWith(':'))
             {
@@ -122,7 +126,10 @@ internal sealed class InteractiveRepl(SandboxContext session)
     {
         var tokens = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0)
+        {
             return;
+        }
+
         var cmd = tokens[0].ToLowerInvariant();
         var rest = tokens.Length > 1 ? string.Join(' ', tokens[1..]) : "";
 

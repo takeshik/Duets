@@ -136,19 +136,13 @@ public abstract class TranspilerCompatibilityTests : IAsyncLifetime
 }
 
 [Collection("TranspilerAssets")]
-public sealed class BabelTranspilerCompatibilityTests : TranspilerCompatibilityTests
+public sealed class BabelTranspilerCompatibilityTests(
+    TranspilerAssetsFixture assets,
+    ITestOutputHelper output
+) : TranspilerCompatibilityTests
 {
-    public BabelTranspilerCompatibilityTests(
-        TranspilerAssetsFixture assets,
-        ITestOutputHelper output
-    )
-    {
-        this._assets = assets;
-        this._output = output;
-    }
-
-    private readonly TranspilerAssetsFixture _assets;
-    private readonly ITestOutputHelper _output;
+    private readonly TranspilerAssetsFixture _assets = assets;
+    private readonly ITestOutputHelper _output = output;
 
     protected override async Task<ITranspiler> CreateTranspilerAsync()
     {
@@ -159,19 +153,13 @@ public sealed class BabelTranspilerCompatibilityTests : TranspilerCompatibilityT
 }
 
 [Collection("TranspilerAssets")]
-public sealed class TypeScriptServiceCompatibilityTests : TranspilerCompatibilityTests
+public sealed class TypeScriptServiceCompatibilityTests(
+    TranspilerAssetsFixture assets,
+    ITestOutputHelper output
+) : TranspilerCompatibilityTests
 {
-    public TypeScriptServiceCompatibilityTests(
-        TranspilerAssetsFixture assets,
-        ITestOutputHelper output
-    )
-    {
-        this._assets = assets;
-        this._output = output;
-    }
-
-    private readonly TranspilerAssetsFixture _assets;
-    private readonly ITestOutputHelper _output;
+    private readonly TranspilerAssetsFixture _assets = assets;
+    private readonly ITestOutputHelper _output = output;
 
     protected override async Task<ITranspiler> CreateTranspilerAsync()
     {

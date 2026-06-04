@@ -165,7 +165,7 @@ public sealed class DuetsSessionTests
         );
 
         Assert.False(evaluationTask.IsCompleted);
-        var exception = Assert.Throws<InvalidOperationException>(() => session.Dispose());
+        var exception = Assert.Throws<InvalidOperationException>(session.Dispose);
         Assert.Contains("Concurrent use of a DuetsSession is not supported.", exception.Message);
 
         gate.SetResult(null);

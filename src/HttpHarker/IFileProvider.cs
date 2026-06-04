@@ -4,5 +4,5 @@ namespace HttpHarker;
 public interface IFileProvider
 {
     /// <returns>File bytes, or <c>null</c> if the path does not exist.</returns>
-    byte[]? GetFileContent(string relativePath);
+    public byte[]? GetFileContent(string relativePath);
 }

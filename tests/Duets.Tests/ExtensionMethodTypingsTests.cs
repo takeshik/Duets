@@ -142,7 +142,7 @@ public sealed class ExtensionMethodTypingsTests
     [Fact]
     public void AddExtensionMethods_makes_generic_extension_with_delegate_callable_at_runtime()
     {
-        var (declarations, engine) = CreateEngine();
+        var (_, engine) = CreateEngine();
         using var _ = engine;
 
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
@@ -198,7 +198,7 @@ public sealed class ExtensionMethodTypingsTests
     [Fact]
     public void AddExtensionMethods_makes_no_arg_extension_callable_at_runtime()
     {
-        var (declarations, engine) = CreateEngine();
+        var (_, engine) = CreateEngine();
         using var _ = engine;
 
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
@@ -213,7 +213,7 @@ public sealed class ExtensionMethodTypingsTests
     [Fact]
     public void AddExtensionMethods_makes_value_arg_extension_callable_at_runtime()
     {
-        var (declarations, engine) = CreateEngine();
+        var (_, engine) = CreateEngine();
         using var _ = engine;
 
         engine.Execute("typings.addExtensionMethods(ExtNs.ItemExtensions)");
