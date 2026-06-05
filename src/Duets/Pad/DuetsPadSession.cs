@@ -75,7 +75,11 @@ internal sealed class DuetsPadSession : IDisposable
 
     private ObjectRenderingPipeline _pipeline;
 
-    public DuetsPadSession(Guid id, DuetsSession duetsSession)
+    public DuetsPadSession(
+        Guid id,
+        DuetsSession duetsSession,
+        IReadOnlyList<IObjectRenderer>? objectRenderers = null
+    )
     {
         this.Id =
             id == Guid.Empty
@@ -83,6 +87,7 @@ internal sealed class DuetsPadSession : IDisposable
                 : id;
         this.DuetsSession = duetsSession ?? throw new ArgumentNullException(nameof(duetsSession));
 
+        this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
 
         // Subscribe to console output — runs synchronously on the eval thread.
@@ -135,7 +140,7 @@ internal sealed class DuetsPadSession : IDisposable
 
     public TimelineState Timeline { get; private set; } = TimelineState.Empty;
 
-    public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; } = [];
+    public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
 
     // -------------------------------------------------------------------------
     // State setters (kept for compatibility with any existing callers)
@@ -153,8 +158,12 @@ internal sealed class DuetsPadSession : IDisposable
 
     public void SetObjectRenderers(IReadOnlyList<IObjectRenderer> objectRenderers)
     {
-        this.ObjectRenderers =
-            objectRenderers ?? throw new ArgumentNullException(nameof(objectRenderers));
+        if (objectRenderers is null)
+        {
+            throw new ArgumentNullException(nameof(objectRenderers));
+        }
+
+        this.ObjectRenderers = [.. objectRenderers];
 
         // Rebuild the pipeline so subsequent Dump/CanvasAdd/CanvasSet calls pick up the change.
         this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);

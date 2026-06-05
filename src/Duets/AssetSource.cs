@@ -13,19 +13,39 @@ public interface IAssetSource
 }
 
 /// <summary>
+/// Extension methods for <see cref="IAssetSource"/>.
+/// </summary>
+public static class AssetSourceExtensions
+{
+    /// <summary>
+    /// Returns the asset content decoded as a string.
+    /// </summary>
+    /// <param name="source">The asset source to read from.</param>
+    /// <param name="force">When <see langword="true"/>, bypasses any caching layer and fetches fresh content.</param>
+    /// <param name="encoding">The encoding used to decode the bytes; defaults to UTF-8 when <see langword="null"/>.</param>
+    public static async Task<string> GetStringAsync(
+        this IAssetSource source,
+        bool force = false,
+        Encoding? encoding = null
+    )
+    {
+        if (source is null)
+        {
+            throw new ArgumentNullException(nameof(source));
+        }
+
+        return (encoding ?? Encoding.UTF8).GetString(
+            await source.GetBytesAsync(force).ConfigureAwait(false)
+        );
+    }
+}
+
+/// <summary>
 /// Factory methods for creating <see cref="IAssetSource"/> instances.
 /// </summary>
 public static class AssetSources
 {
     private static readonly HttpClient _defaultHttpClient = new();
-
-    /// <summary>
-    /// Returns the asset content decoded as a UTF-8 string.
-    /// </summary>
-    /// <param name="source">The asset source to read from.</param>
-    /// <param name="force">When <see langword="true"/>, bypasses any caching layer and fetches fresh content.</param>
-    public static async Task<string> GetStringAsync(this IAssetSource source, bool force = false) =>
-        Encoding.UTF8.GetString(await source.GetBytesAsync(force));
 
     /// <summary>
     /// Creates an asset source that fetches content from the given HTTP URL.
@@ -61,12 +81,23 @@ public static class AssetSources
     /// Creates an asset source from an arbitrary text delegate. The produced string is encoded as UTF-8.
     /// Useful for testing or custom scenarios.
     /// </summary>
-    public static IAssetSource From(Func<bool, Task<string>> factory)
+    public static IAssetSource FromString(Func<bool, Task<string>> factory)
     {
+        if (factory is null)
+        {
+            throw new ArgumentNullException(nameof(factory));
+        }
+
         return new AdHocAssetSource(async force =>
-            Encoding.UTF8.GetBytes(await factory(force))
+            Encoding.UTF8.GetBytes(await factory(force).ConfigureAwait(false))
         );
     }
+
+    /// <summary>
+    /// Creates an asset source from an arbitrary text delegate. The produced string is encoded as UTF-8.
+    /// Useful for testing or custom scenarios.
+    /// </summary>
+    public static IAssetSource From(Func<bool, Task<string>> factory) => FromString(factory);
 
     /// <summary>
     /// Creates an asset source from an arbitrary binary delegate.
@@ -116,7 +147,7 @@ public static class AssetSources
                     $"Embedded resource '{resourceName}' not found."
                 );
             using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
+            await stream.CopyToAsync(ms).ConfigureAwait(false);
             return ms.ToArray();
         }
     }
@@ -132,11 +163,17 @@ public static class AssetSources
                 && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < ttl
             )
             {
-                return await File.ReadAllBytesAsync(cacheFile);
+                return await File.ReadAllBytesAsync(cacheFile).ConfigureAwait(false);
             }
 
-            var content = await inner.GetBytesAsync(force);
-            await File.WriteAllBytesAsync(cacheFile, content);
+            var content = await inner.GetBytesAsync(force).ConfigureAwait(false);
+            var dir = Path.GetDirectoryName(cacheFile);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            await File.WriteAllBytesAsync(cacheFile, content).ConfigureAwait(false);
             return content;
         }
     }

@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using Duets.Pad.Protocol;
 using HttpHarker;
@@ -17,6 +16,9 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadService : IDisposable
 {
+    private const string TablerIconsPackageVersion = "3.44.0";
+    private const string TablerCorePackageVersion = "1.4.0";
+
     private readonly DuetsPadServiceOptions _options;
     private readonly ConcurrentDictionary<Guid, DuetsPadSession> _sessions = new();
     private readonly Lazy<Task<string>> _monaco;
@@ -38,27 +40,33 @@ public sealed class DuetsPadService : IDisposable
         var tablerSource =
             options.TablerCss
             ?? AssetSources
-                .Unpkg("@tabler/core", "1.4.0", "dist/css/tabler.min.css")
+                .Unpkg("@tabler/core", TablerCorePackageVersion, "dist/css/tabler.min.css")
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler.css"));
         this._tabler = new Lazy<Task<string>>(() => tablerSource.GetStringAsync());
 
         var tablerIconsCssSource =
             options.TablerIconsCss
             ?? AssetSources
-                .Unpkg("@tabler/icons-webfont", "3.44.0", "dist/tabler-icons.min.css")
+                .Unpkg(
+                    "@tabler/icons-webfont",
+                    TablerIconsPackageVersion,
+                    "dist/tabler-icons.min.css"
+                )
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler-icons.css"));
         this._tablerIconsCss = new Lazy<Task<string>>(async () =>
-            RewriteTablerIconsCss(await tablerIconsCssSource.GetStringAsync())
+            RewriteTablerIconsCss(await tablerIconsCssSource.GetStringAsync().ConfigureAwait(false))
         );
 
         var tablerIconsFontSource =
             options.TablerIconsFont
             ?? AssetSources
-                .Unpkg("@tabler/icons-webfont", "3.44.0", "dist/fonts/tabler-icons.woff2")
+                .Unpkg(
+                    "@tabler/icons-webfont",
+                    TablerIconsPackageVersion,
+                    "dist/fonts/tabler-icons.woff2"
+                )
                 .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler-icons.woff2"));
-        this._tablerIconsFont = new Lazy<Task<byte[]>>(() =>
-            tablerIconsFontSource.GetBytesAsync()
-        );
+        this._tablerIconsFont = new Lazy<Task<byte[]>>(() => tablerIconsFontSource.GetBytesAsync());
 
         server
             .UseSimpleRouting(
@@ -174,18 +182,41 @@ public sealed class DuetsPadService : IDisposable
     }
 
     /// <summary>
-    /// Rewrites the <c>@font-face</c> <c>src:</c> in the Tabler Icons CSS so it references
-    /// only the local <c>tabler-icons.woff2</c> route, dropping woff and ttf fallbacks.
+    /// Rewrites each <c>@font-face</c> <c>src:</c> declaration in the Tabler Icons CSS so it
+    /// references only the local woff2 route, dropping the upstream woff/ttf fallback entries
+    /// that have no route in DuetsPad (ADR-33).
     /// </summary>
     internal static string RewriteTablerIconsCss(string css)
     {
-        // Match from the woff2 url() through the remaining src list to the closing } of the
-        // @font-face block, then replace the entire tail with our local reference.
-        return Regex.Replace(
-            css,
-            @"src:url\([""']?\.?/?fonts/tabler-icons\.woff2[^}]*\}",
-            @"src:url(""tabler-icons.woff2"") format(""woff2"")}"
-        );
+        // DuetsPad serves only tabler-icons.woff2 (ADR-33). Replace each @font-face src list with a
+        // single local woff2 reference, dropping the upstream woff/ttf fallbacks that have no route.
+        // (In the Tabler Icons stylesheet, "src:" appears only inside @font-face, and is the last
+        // declaration before the block's closing brace.)
+        const string canonicalSrc = "src:url(\"tabler-icons.woff2\") format(\"woff2\")";
+        var sb = new StringBuilder(css.Length);
+        var i = 0;
+        while (true)
+        {
+            var srcIdx = css.IndexOf("src:", i, StringComparison.Ordinal);
+            if (srcIdx < 0)
+            {
+                sb.Append(css, i, css.Length - i);
+                break;
+            }
+
+            var brace = css.IndexOf('}', srcIdx);
+            if (brace < 0)
+            {
+                sb.Append(css, i, css.Length - i);
+                break;
+            }
+
+            sb.Append(css, i, srcIdx - i); // text before "src:"
+            sb.Append(canonicalSrc); // canonical single-source replacement
+            i = brace; // resume at the '}' (kept)
+        }
+
+        return sb.ToString();
     }
 
     // -------------------------------------------------------------------------
@@ -232,9 +263,11 @@ public sealed class DuetsPadService : IDisposable
         // Create a new session.
         var duetsSession = await this._options.SessionFactory();
         var newId = Guid.NewGuid();
-        var session = new DuetsPadSession(newId, duetsSession);
-        session.SetObjectRenderers(this._options.ObjectRenderers);
-        this._sessions[newId] = session;
+        this._sessions[newId] = new DuetsPadSession(
+            newId,
+            duetsSession,
+            this._options.ObjectRenderers
+        );
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",

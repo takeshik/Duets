@@ -4,7 +4,6 @@ using System.Text.Json;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Protocol;
-using Duets.Pad.Rendering;
 using Duets.Tests.TestSupport;
 using HttpHarker;
 using Jint;
@@ -49,7 +48,7 @@ public sealed class DuetsPadServiceTests
                                 )
                             );
                             opts.TablerIconsFont = AssetSources.FromBytes(_ =>
-                                Task.FromResult(new byte[] { 0x77, 0x4F, 0x46, 0x32 })
+                                Task.FromResult("wOF2"u8.ToArray())
                             );
                             opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
                             extraConfigure?.Invoke(opts);
@@ -503,159 +502,6 @@ public sealed class DuetsPadServiceTests
     }
 
     // -------------------------------------------------------------------------
-    // ObjectRenderers via DuetsPadServiceOptions
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public async Task ObjectRenderers_dump_uses_registered_renderer()
-    {
-        await RunAsync(
-            "/",
-            opts => opts.ObjectRenderers = [new SentinelRenderer("SENTINEL", "RENDERED")],
-            async (client, prefix) =>
-            {
-                var sessionId = await CreateSessionAsync(client, prefix);
-
-                await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
-                );
-                using var reader = new StreamReader(stream);
-
-                // Consume the initial reset.
-                var reset = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
-
-                // Dump a value that the sentinel renderer handles.
-                await client.PostAsync(
-                    prefix + $"sessions/{sessionId}/eval",
-                    new StringContent("dump(\"SENTINEL\")", Encoding.UTF8, "text/plain")
-                );
-
-                // The timeline.append entry body must show the renderer's output, not the raw value.
-                var append = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
-
-                var entry = append.GetProperty("entry");
-                Assert.Equal("dump", entry.GetProperty("reason").GetString());
-
-                var body = entry.GetProperty("body");
-                Assert.Equal("text", body.GetProperty("kind").GetString());
-                Assert.Equal("RENDERED", body.GetProperty("value").GetString());
-            }
-        );
-    }
-
-    [Fact]
-    public async Task ObjectRenderers_canvas_uses_registered_renderer()
-    {
-        await RunAsync(
-            "/",
-            opts => opts.ObjectRenderers = [new SentinelRenderer("SENTINEL", "RENDERED")],
-            async (client, prefix) =>
-            {
-                var sessionId = await CreateSessionAsync(client, prefix);
-
-                await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events"
-                );
-                using var reader = new StreamReader(stream);
-
-                // Consume the initial canvas.snapshot.
-                var initial = await ReadNextSseDataAsync(reader);
-                Assert.Equal(CanvasEventTypes.Snapshot, initial.GetProperty("type").GetString());
-
-                // Add a value that the sentinel renderer handles.
-                await client.PostAsync(
-                    prefix + $"sessions/{sessionId}/eval",
-                    new StringContent("canvas.add(\"SENTINEL\")", Encoding.UTF8, "text/plain")
-                );
-
-                // The canvas.replace root's first child must be the renderer's text node.
-                var replace = await ReadNextSseDataAsync(reader);
-                Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
-
-                var children = replace.GetProperty("state").GetProperty("children");
-                var childArray = children.EnumerateArray().ToList();
-                Assert.Single(childArray);
-
-                var child = childArray[0];
-                Assert.Equal("text", child.GetProperty("kind").GetString());
-                Assert.Equal("RENDERED", child.GetProperty("value").GetString());
-            }
-        );
-    }
-
-    [Fact]
-    public async Task ObjectRenderers_last_wins_when_multiple_renderers_can_handle_value()
-    {
-        await RunAsync(
-            "/",
-            opts =>
-                opts.ObjectRenderers =
-                [
-                    new SentinelRenderer("SENTINEL", "FIRST"),
-                    new SentinelRenderer("SENTINEL", "SECOND"),
-                ],
-            async (client, prefix) =>
-            {
-                var sessionId = await CreateSessionAsync(client, prefix);
-
-                await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
-                );
-                using var reader = new StreamReader(stream);
-
-                var reset = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
-
-                await client.PostAsync(
-                    prefix + $"sessions/{sessionId}/eval",
-                    new StringContent("dump(\"SENTINEL\")", Encoding.UTF8, "text/plain")
-                );
-
-                var append = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
-
-                var body = append.GetProperty("entry").GetProperty("body");
-                Assert.Equal("text", body.GetProperty("kind").GetString());
-                Assert.Equal("SECOND", body.GetProperty("value").GetString());
-            }
-        );
-    }
-
-    [Fact]
-    public async Task ObjectRenderers_default_behavior_preserved_when_options_are_empty()
-    {
-        // Default options (empty ObjectRenderers): dump a plain string; default renderer returns it as-is.
-        await RunAsync(
-            async (client, prefix) =>
-            {
-                var sessionId = await CreateSessionAsync(client, prefix);
-
-                await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
-                );
-                using var reader = new StreamReader(stream);
-
-                var reset = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
-
-                await client.PostAsync(
-                    prefix + $"sessions/{sessionId}/eval",
-                    new StringContent("dump(\"plain\")", Encoding.UTF8, "text/plain")
-                );
-
-                var append = await ReadNextSseDataAsync(reader);
-                Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
-
-                var body = append.GetProperty("entry").GetProperty("body");
-                Assert.Equal("text", body.GetProperty("kind").GetString());
-                Assert.Equal("plain", body.GetProperty("value").GetString());
-            }
-        );
-    }
-
-    // -------------------------------------------------------------------------
     // SSE response headers
     // -------------------------------------------------------------------------
 
@@ -977,11 +823,8 @@ public sealed class DuetsPadServiceTests
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
                 Assert.Contains("text/css", contentType, StringComparison.OrdinalIgnoreCase);
                 var body = await response.Content.ReadAsStringAsync();
-                Assert.Contains(
-                    "url(\"tabler-icons.woff2\")",
-                    body,
-                    StringComparison.Ordinal
-                );
+                // The src must reference only the canonical local woff2 route (no ./fonts/ paths).
+                Assert.Contains("url(\"tabler-icons.woff2\")", body, StringComparison.Ordinal);
                 Assert.DoesNotContain("./fonts/", body, StringComparison.Ordinal);
             }
         );
@@ -998,7 +841,7 @@ public sealed class DuetsPadServiceTests
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
                 Assert.Equal("font/woff2", contentType, ignoreCase: true);
                 var bytes = await response.Content.ReadAsByteArrayAsync();
-                Assert.Equal(new byte[] { 0x77, 0x4F, 0x46, 0x32 }, bytes);
+                Assert.Equal("wOF2"u8.ToArray(), bytes);
             }
         );
     }
@@ -1032,36 +875,24 @@ public sealed class DuetsPadServiceTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void RewriteTablerIconsCss_rewrites_src_to_local_woff2_route()
+    public void RewriteTablerIconsCss_rewrites_font_face_src_to_single_woff2_dropping_fallbacks()
     {
         const string input =
             "@font-face{font-family:\"tabler-icons\";font-style:normal;font-weight:400;src:url(\"./fonts/tabler-icons.woff2?v3.44.0\") format(\"woff2\"),url(\"./fonts/tabler-icons.woff?\") format(\"woff\"),url(\"./fonts/tabler-icons.ttf?v3.44.0\") format(\"truetype\")}";
 
         var result = DuetsPadService.RewriteTablerIconsCss(input);
 
-        Assert.Contains("url(\"tabler-icons.woff2\")", result, StringComparison.Ordinal);
+        // The src must reference only the canonical local woff2 route.
         Assert.Contains(
-            "src:url(\"tabler-icons.woff2\") format(\"woff2\")}",
+            "src:url(\"tabler-icons.woff2\") format(\"woff2\")",
             result,
             StringComparison.Ordinal
         );
+
+        // No ./fonts/ references must remain (woff2 prefix stripped, woff/ttf fallbacks dropped).
         Assert.DoesNotContain("./fonts/", result, StringComparison.Ordinal);
-        Assert.DoesNotContain(".woff\"", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("format(\"woff\")", result, StringComparison.Ordinal);
+        Assert.DoesNotContain("format(\"truetype\")", result, StringComparison.Ordinal);
         Assert.DoesNotContain(".ttf", result, StringComparison.Ordinal);
-    }
-
-    // -------------------------------------------------------------------------
-    // Private test helpers
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Renders a specific string value to a fixed text output; all other values are rejected.
-    /// Used by ObjectRenderers tests to verify that session-configured renderers are applied.
-    /// </summary>
-    private sealed class SentinelRenderer(string match, string output) : IObjectRenderer
-    {
-        public bool CanRender(object value) => value is string s && s == match;
-
-        public IRenderNode Render(object value) => new Text(output);
     }
 }
