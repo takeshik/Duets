@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using Duets;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Protocol;
@@ -17,6 +18,41 @@ public sealed class DuetsPadSessionTests
     {
         var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
         return new DuetsPadSession(Guid.NewGuid(), duetsSession);
+    }
+
+    private static async Task<DuetsPadSession> CreatePadSessionAsync(
+        IReadOnlyList<IObjectRenderer> renderers
+    )
+    {
+        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        return new DuetsPadSession(Guid.NewGuid(), duetsSession, renderers);
+    }
+
+    /// <summary>
+    /// An object renderer that blocks inside <see cref="Render"/> until released. Used to hold an
+    /// eval open at a deterministic point (the render is driven synchronously from the eval thread
+    /// via <c>dump()</c>), so a test can call <see cref="DuetsPadSession.Dispose"/> on another
+    /// thread while the eval — and therefore the eval semaphore — is provably still in flight.
+    /// This avoids any reliance on timing or a busy loop.
+    /// </summary>
+    private sealed class BlockingRenderer : IObjectRenderer
+    {
+        private readonly ManualResetEventSlim _release = new(false);
+
+        /// <summary>Signals once <see cref="Render"/> has been entered (eval is mid-flight).</summary>
+        public ManualResetEventSlim Entered { get; } = new(false);
+
+        /// <summary>Allows the blocked <see cref="Render"/> call to complete.</summary>
+        public void Release() => this._release.Set();
+
+        public bool CanRender(object value) => value is "block";
+
+        public IRenderNode Render(object value)
+        {
+            this.Entered.Set();
+            this._release.Wait();
+            return new Text("blocked");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -331,6 +367,187 @@ public sealed class DuetsPadSessionTests
     }
 
     // -------------------------------------------------------------------------
+    // Dispose: completing subscriber channels
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Dispose_completes_canvas_subscriber_channel()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        session.AddCanvasSubscriber(channel.Writer);
+
+        // Consume the initial snapshot so the channel is not already complete.
+        await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        session.Dispose();
+
+        // After dispose the writer must be completed, so ReadAllAsync terminates.
+        var items = new List<CanvasEventMessage>();
+        await foreach (
+            var msg in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
+        )
+        {
+            items.Add(msg);
+        }
+
+        // No additional items — the channel is complete and drained.
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public async Task Dispose_completes_timeline_subscriber_channel()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+
+        // Consume the initial reset.
+        await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        session.Dispose();
+
+        var items = new List<TimelineEventMessage>();
+        await foreach (
+            var msg in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
+        )
+        {
+            items.Add(msg);
+        }
+
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public async Task Dispose_completes_type_declaration_subscriber_channel()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
+        session.AddTypeDeclarationSubscriber(channel.Writer);
+
+        session.Dispose();
+
+        // After dispose the writer must be completed, so ReadAllAsync terminates.
+        var items = new List<TypeDeclaration?>();
+        await foreach (
+            var decl in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
+        )
+        {
+            items.Add(decl);
+        }
+
+        // Channel is complete and no items were written by this test.
+        Assert.Empty(items);
+    }
+
+    [Fact]
+    public async Task HasActiveSubscribers_false_initially_true_while_attached_false_after_removal()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        Assert.False(session.HasActiveSubscribers);
+
+        // Canvas subscriber.
+        var canvasChannel = Channel.CreateUnbounded<CanvasEventMessage>();
+        var canvasKey = session.AddCanvasSubscriber(canvasChannel.Writer);
+        Assert.True(session.HasActiveSubscribers);
+        session.RemoveCanvasSubscriber(canvasKey);
+        Assert.False(session.HasActiveSubscribers);
+
+        // Timeline subscriber.
+        var timelineChannel = Channel.CreateUnbounded<TimelineEventMessage>();
+        var timelineKey = session.AddTimelineSubscriber(timelineChannel.Writer);
+        Assert.True(session.HasActiveSubscribers);
+        session.RemoveTimelineSubscriber(timelineKey);
+        Assert.False(session.HasActiveSubscribers);
+
+        // Type-declaration subscriber.
+        var declChannel = Channel.CreateUnbounded<TypeDeclaration?>();
+        var declKey = session.AddTypeDeclarationSubscriber(declChannel.Writer);
+        Assert.True(session.HasActiveSubscribers);
+        session.RemoveTypeDeclarationSubscriber(declKey);
+        Assert.False(session.HasActiveSubscribers);
+    }
+
+    // -------------------------------------------------------------------------
+    // Activity tracking: Touch() / LastActivityUtc
+    // -------------------------------------------------------------------------
+
+    private static async Task<DuetsPadSession> CreatePadSessionWithClockAsync(
+        Func<DateTimeOffset> clock
+    )
+    {
+        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        return new DuetsPadSession(Guid.NewGuid(), duetsSession, clock: clock);
+    }
+
+    [Fact]
+    public async Task Touch_updates_LastActivityUtc_to_current_clock_value()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+        using var session = await CreatePadSessionWithClockAsync(() => current);
+
+        var after0 = session.LastActivityUtc;
+        Assert.Equal(t0, after0);
+
+        var t1 = t0.AddMinutes(5);
+        current = t1;
+        session.Touch();
+
+        Assert.Equal(t1, session.LastActivityUtc);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_updates_LastActivityUtc()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+        using var session = await CreatePadSessionWithClockAsync(() => current);
+
+        var t1 = t0.AddMinutes(3);
+        current = t1;
+        await session.EvaluateAsync("1 + 1");
+
+        Assert.Equal(t1, session.LastActivityUtc);
+    }
+
+    [Fact]
+    public async Task AddCanvasSubscriber_updates_LastActivityUtc()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+        using var session = await CreatePadSessionWithClockAsync(() => current);
+
+        var t1 = t0.AddMinutes(2);
+        current = t1;
+
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        session.AddCanvasSubscriber(channel.Writer);
+
+        Assert.Equal(t1, session.LastActivityUtc);
+    }
+
+    [Fact]
+    public async Task AddTimelineSubscriber_updates_LastActivityUtc()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+        using var session = await CreatePadSessionWithClockAsync(() => current);
+
+        var t1 = t0.AddMinutes(2);
+        current = t1;
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+
+        Assert.Equal(t1, session.LastActivityUtc);
+    }
+
+    // -------------------------------------------------------------------------
     // Concurrency: two EvaluateAsync calls must not cause DuetsSession concurrent-use exception
     // -------------------------------------------------------------------------
 
@@ -395,5 +612,188 @@ public sealed class DuetsPadSessionTests
         var msg2 = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
         Assert.Equal(TimelineEventTypes.Append, msg2.Type);
         Assert.NotNull(msg2.Entry);
+    }
+
+    // -------------------------------------------------------------------------
+    // Dispose / eval coordination
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Dispose_while_eval_in_flight_does_not_throw_concurrent_operation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var renderer = new BlockingRenderer();
+        var session = await CreatePadSessionAsync([renderer]);
+
+        // Start an eval that blocks inside the renderer (driven from the eval thread via dump),
+        // so the eval — and the eval semaphore — is provably still held when we call Dispose.
+        var evalTask = Task.Run(() => session.EvaluateAsync("""dump("block")"""), ct);
+
+        // Wait until the eval is provably mid-flight (renderer entered), not on a timer.
+        Assert.True(renderer.Entered.Wait(TimeSpan.FromSeconds(30), ct));
+
+        // Dispose on a separate thread. It must block on the eval semaphore (not throw), and
+        // must not surface DuetsSession's concurrent-operation exception.
+        var disposeTask = Task.Run(session.Dispose, ct);
+
+        // Dispose cannot complete while the eval holds the semaphore: it is still pending here.
+        await Task.Delay(200, ct);
+        Assert.False(disposeTask.IsCompleted);
+
+        // Unblock the eval; Dispose then proceeds.
+        renderer.Release();
+
+        // Dispose returns without throwing; the eval completes without an unobserved exception.
+        await disposeTask;
+        var result = await evalTask;
+        Assert.True(result.Ok || result.Error == "Session has been disposed.");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_after_dispose_returns_disposed_error()
+    {
+        var session = await CreatePadSessionAsync();
+        session.Dispose();
+
+        var result = await session.EvaluateAsync("1 + 1");
+
+        Assert.False(result.Ok);
+        Assert.Equal("Session has been disposed.", result.Error);
+    }
+
+    [Fact]
+    public async Task AddCanvasSubscriber_after_dispose_returns_empty_and_completes_writer()
+    {
+        var session = await CreatePadSessionAsync();
+        session.Dispose();
+
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        var key = session.AddCanvasSubscriber(channel.Writer);
+
+        Assert.Equal(Guid.Empty, key);
+        Assert.True(channel.Reader.Completion.IsCompleted);
+    }
+
+    [Fact]
+    public async Task AddTimelineSubscriber_after_dispose_returns_empty_and_completes_writer()
+    {
+        var session = await CreatePadSessionAsync();
+        session.Dispose();
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        var key = session.AddTimelineSubscriber(channel.Writer);
+
+        Assert.Equal(Guid.Empty, key);
+        Assert.True(channel.Reader.Completion.IsCompleted);
+    }
+
+    [Fact]
+    public async Task AddTypeDeclarationSubscriber_after_dispose_returns_empty_and_completes_writer()
+    {
+        var session = await CreatePadSessionAsync();
+        session.Dispose();
+
+        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
+        var key = session.AddTypeDeclarationSubscriber(channel.Writer);
+
+        Assert.Equal(Guid.Empty, key);
+        Assert.True(channel.Reader.Completion.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Dispose_is_idempotent()
+    {
+        var session = await CreatePadSessionAsync();
+
+        session.Dispose();
+        var ex = Record.Exception(session.Dispose);
+
+        Assert.Null(ex);
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration / disposal serialization (TOCTOU)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registration and Dispose's subscriber complete/clear are serialized under the same
+    /// <c>_stateLock</c>, so a subscriber registered concurrently with Dispose can never end up
+    /// live-but-unclosed: it is either completed by Dispose's clear (registered before the clear)
+    /// or self-completes after observing the disposed flag (registered after the clear). This test
+    /// drives many concurrent registrations against a single Dispose and asserts the invariant —
+    /// after Dispose returns, every handed-out writer's channel reader has observed completion.
+    /// A fully deterministic single-interleaving test would require an intrusive production hook
+    /// (e.g. a barrier inside the lock); the lock-based structure plus this stress invariant and
+    /// the deterministic disposed-after-Add tests above are sufficient. This is an invariant
+    /// assertion, not a timing assertion, so it is not flaky.
+    /// </summary>
+    [Fact]
+    public async Task Concurrent_AddCanvasSubscriber_with_Dispose_never_leaves_writer_unclosed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var session = await CreatePadSessionAsync();
+
+        const int subscriberCount = 32;
+        var channels = Enumerable
+            .Range(0, subscriberCount)
+            .Select(_ => Channel.CreateUnbounded<CanvasEventMessage>())
+            .ToArray();
+
+        // Use a Barrier across dedicated threads (not thread-pool tasks) so every participant
+        // reaches the registration/Dispose call at the same moment, maximizing the overlap window.
+        // Dedicated threads avoid starving the thread pool with blocking barrier waits — important
+        // because Dispose also blocks (on the eval semaphore), and a starved pool would mask the
+        // race rather than exercise it.
+        using var barrier = new Barrier(subscriberCount + 1);
+        var threads = new List<Thread>(subscriberCount + 1);
+
+        foreach (var channel in channels)
+        {
+            var writer = channel.Writer;
+            var thread = new Thread(() =>
+            {
+                barrier.SignalAndWait();
+                session.AddCanvasSubscriber(writer);
+            })
+            {
+                IsBackground = true,
+            };
+            threads.Add(thread);
+            thread.Start();
+        }
+
+        var disposeThread = new Thread(() =>
+        {
+            barrier.SignalAndWait();
+            session.Dispose();
+        })
+        {
+            IsBackground = true,
+        };
+        threads.Add(disposeThread);
+        disposeThread.Start();
+
+        foreach (var thread in threads)
+        {
+            thread.Join();
+        }
+
+        // Every writer is either registered-then-completed-by-Dispose or rejected-and-self-
+        // completed: in both cases its channel reader must observe completion. None may remain
+        // live (an open SSE stream that would outlive the disposed session). A subscriber that
+        // registered before Dispose's clear has a buffered initial snapshot; for an unbounded
+        // channel Completion does not resolve until that buffered item is drained, so we drain
+        // each reader (exactly as the SSE route does) before awaiting completion. The bounded
+        // timeout turns a regression — a writer left live and never completed — into a failure
+        // rather than an indefinite hang.
+        foreach (var channel in channels)
+        {
+            while (await channel.Reader.WaitToReadAsync(ct))
+            {
+                while (channel.Reader.TryRead(out _)) { }
+            }
+
+            await channel.Reader.Completion.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        }
     }
 }

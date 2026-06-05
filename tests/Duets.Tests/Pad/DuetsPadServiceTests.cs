@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Protocol;
@@ -172,6 +173,376 @@ public sealed class DuetsPadServiceTests
 
                 Assert.False(string.IsNullOrWhiteSpace(newId));
                 Assert.NotEqual(staleGuid, newId);
+            }
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // DELETE /sessions/{sessionId}
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Delete_existing_session_returns_ok_and_subsequent_eval_returns_unknown_error()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                // DELETE the session.
+                using var deleteResponse = await client.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Delete, prefix + $"sessions/{sessionId}")
+                );
+                deleteResponse.EnsureSuccessStatusCode();
+                var deletePayload = await deleteResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(deletePayload.GetProperty("ok").GetBoolean());
+                Assert.Equal(sessionId, deletePayload.GetProperty("sessionId").GetString());
+
+                // Eval on the deleted session must return unknown-session error.
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 2", Encoding.UTF8, "text/plain")
+                );
+                evalResponse.EnsureSuccessStatusCode();
+                var evalPayload = await evalResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(evalPayload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", evalPayload.GetProperty("error").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Delete_unknown_session_returns_ok_false_with_unknown_session_error()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var unknownId = Guid.NewGuid().ToString();
+
+                using var response = await client.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Delete, prefix + $"sessions/{unknownId}")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", payload.GetProperty("error").GetString());
+                Assert.Equal(unknownId, payload.GetProperty("sessionId").GetString());
+            }
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Idle timeout: RemoveIdleSessions with injected clock
+    // -------------------------------------------------------------------------
+
+    private static DuetsPadService BuildServiceWithIdleTimeout(
+        HttpServer server,
+        string root,
+        DuetsPadServiceOptions opts
+    )
+    {
+        // DuetsPadService constructor is internal; call it directly (InternalsVisibleTo).
+        return new DuetsPadService(server, root, opts);
+    }
+
+    [Fact]
+    public async Task IdleTimeout_disabled_by_default_does_not_evict_sessions()
+    {
+        // Build a service with a clock we can advance, but IdleTimeout left at its default null.
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+
+        var opts = new DuetsPadServiceOptions
+        {
+            SessionFactory = () => DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr())),
+            Clock = () => current,
+            // IdleTimeout intentionally not set — remains null.
+        };
+
+        // We need a real server to call HandlePostSessionAsync. Spin up the full stack.
+        await RunAsync(
+            "/",
+            o =>
+            {
+                o.SessionFactory = opts.SessionFactory;
+                o.Clock = opts.Clock;
+                // IdleTimeout: null (default)
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                // Advance the clock well beyond any reasonable idle threshold.
+                current = t0.AddHours(24);
+
+                // Eval must still succeed because IdleTimeout is disabled.
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                evalResponse.EnsureSuccessStatusCode();
+                var payload = await evalResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(payload.GetProperty("ok").GetBoolean());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task IdleTimeout_enabled_RemoveIdleSessions_evicts_session_and_eval_returns_unknown()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+
+        // UseDuetsPad returns DuetsPadService; capture it so we can call RemoveIdleSessions().
+        DuetsPadService? padService = null;
+
+        await DuetsServerFixture.RunAsync(
+            server =>
+            {
+                padService = server
+                    .UseContentTypeDetection()
+                    .UseDuetsPad(
+                        "/",
+                        opts =>
+                        {
+                            opts.SessionFactory = () =>
+                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                            opts.MonacoLoader = AssetSources.From(_ =>
+                                Task.FromResult("// monaco")
+                            );
+                            opts.TablerCss = AssetSources.From(_ =>
+                                Task.FromResult("/* tabler */")
+                            );
+                            opts.TablerIconsCss = AssetSources.From(_ =>
+                                Task.FromResult(
+                                    "@font-face{font-family:\"tabler-icons\";src:url(\"./fonts/tabler-icons.woff2\") format(\"woff2\")}"
+                                )
+                            );
+                            opts.TablerIconsFont = AssetSources.FromBytes(_ =>
+                                Task.FromResult("wOF2"u8.ToArray())
+                            );
+                            opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
+                            opts.IdleTimeout = TimeSpan.FromMinutes(5);
+                            // Large CleanupInterval: background timer must not fire during the test.
+                            opts.CleanupInterval = TimeSpan.FromHours(1);
+                            opts.Clock = () => current;
+                        }
+                    );
+            },
+            async (client, prefix) =>
+            {
+                Assert.NotNull(padService);
+
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                // Confirm session is alive.
+                var evalOk = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                evalOk.EnsureSuccessStatusCode();
+                var okPayload = await evalOk.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(okPayload.GetProperty("ok").GetBoolean());
+
+                // Advance clock past the idle threshold and trigger the sweep.
+                current = t0.AddMinutes(6);
+                padService!.RemoveIdleSessions();
+
+                // Subsequent eval must return unknown-session.
+                var evalAfter = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                var evalPayload = await evalAfter.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(evalPayload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", evalPayload.GetProperty("error").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task IdleTimeout_eval_touch_prevents_premature_eviction_then_evicts_after_threshold()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+
+        DuetsPadService? padService = null;
+
+        await DuetsServerFixture.RunAsync(
+            server =>
+            {
+                padService = server
+                    .UseContentTypeDetection()
+                    .UseDuetsPad(
+                        "/",
+                        opts =>
+                        {
+                            opts.SessionFactory = () =>
+                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                            opts.MonacoLoader = AssetSources.From(_ =>
+                                Task.FromResult("// monaco")
+                            );
+                            opts.TablerCss = AssetSources.From(_ =>
+                                Task.FromResult("/* tabler */")
+                            );
+                            opts.TablerIconsCss = AssetSources.From(_ =>
+                                Task.FromResult(
+                                    "@font-face{font-family:\"tabler-icons\";src:url(\"./fonts/tabler-icons.woff2\") format(\"woff2\")}"
+                                )
+                            );
+                            opts.TablerIconsFont = AssetSources.FromBytes(_ =>
+                                Task.FromResult("wOF2"u8.ToArray())
+                            );
+                            opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
+                            opts.IdleTimeout = TimeSpan.FromMinutes(5);
+                            opts.CleanupInterval = TimeSpan.FromHours(1);
+                            opts.Clock = () => current;
+                        }
+                    );
+            },
+            async (client, prefix) =>
+            {
+                Assert.NotNull(padService);
+
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                // Advance to t0+4min (within IdleTimeout of 5min from creation).
+                current = t0.AddMinutes(4);
+                padService!.RemoveIdleSessions();
+
+                // Session must still be alive.
+                var evalMid = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                var midPayload = await evalMid.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(
+                    midPayload.GetProperty("ok").GetBoolean(),
+                    "Session should still be alive at t0+4min"
+                );
+
+                // Eval at t0+4min counts as a Touch; advance another 4min (t0+8min).
+                // That is only 4min since last activity, so must NOT be evicted.
+                current = t0.AddMinutes(8);
+                padService.RemoveIdleSessions();
+
+                var evalStillAlive = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("2 + 2", Encoding.UTF8, "text/plain")
+                );
+                var alivePayload = await evalStillAlive.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(
+                    alivePayload.GetProperty("ok").GetBoolean(),
+                    "Session should still be alive 4min after last eval"
+                );
+
+                // Now advance to 6min past the last eval (t0+10min), exceeding the 5min threshold.
+                current = t0.AddMinutes(14);
+                padService.RemoveIdleSessions();
+
+                var evalEvicted = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("3 + 3", Encoding.UTF8, "text/plain")
+                );
+                var evictedPayload = await evalEvicted.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(
+                    evictedPayload.GetProperty("ok").GetBoolean(),
+                    "Session should be evicted 6min after last activity"
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task RemoveIdleSessions_does_not_evict_session_with_active_subscriber()
+    {
+        var t0 = DateTimeOffset.UtcNow;
+        var current = t0;
+
+        DuetsPadService? padService = null;
+
+        await DuetsServerFixture.RunAsync(
+            server =>
+            {
+                padService = server
+                    .UseContentTypeDetection()
+                    .UseDuetsPad(
+                        "/",
+                        opts =>
+                        {
+                            opts.SessionFactory = () =>
+                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                            opts.MonacoLoader = AssetSources.From(_ =>
+                                Task.FromResult("// monaco")
+                            );
+                            opts.TablerCss = AssetSources.From(_ =>
+                                Task.FromResult("/* tabler */")
+                            );
+                            opts.TablerIconsCss = AssetSources.From(_ =>
+                                Task.FromResult(
+                                    "@font-face{font-family:\"tabler-icons\";src:url(\"./fonts/tabler-icons.woff2\") format(\"woff2\")}"
+                                )
+                            );
+                            opts.TablerIconsFont = AssetSources.FromBytes(_ =>
+                                Task.FromResult("wOF2"u8.ToArray())
+                            );
+                            opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
+                            opts.IdleTimeout = TimeSpan.FromMinutes(5);
+                            opts.CleanupInterval = TimeSpan.FromHours(1);
+                            opts.Clock = () => current;
+                        }
+                    );
+            },
+            async (client, prefix) =>
+            {
+                Assert.NotNull(padService);
+
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var sessionGuid = Guid.Parse(sessionId);
+
+                // Attach a canvas subscriber directly at the session level — no real sleep required.
+                var session = padService!.TryGetSession(sessionGuid);
+                Assert.NotNull(session);
+
+                var subChannel = Channel.CreateUnbounded<CanvasEventMessage>();
+                var subKey = session!.AddCanvasSubscriber(subChannel.Writer);
+
+                Assert.True(session.HasActiveSubscribers);
+
+                // Advance the clock well past IdleTimeout.
+                current = t0.AddMinutes(30);
+                padService.RemoveIdleSessions();
+
+                // Session must still be alive because the subscriber is attached.
+                var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                evalResponse.EnsureSuccessStatusCode();
+                var evalPayload = await evalResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(
+                    evalPayload.GetProperty("ok").GetBoolean(),
+                    "Session with active subscriber must not be evicted."
+                );
+
+                // Detach the subscriber. HasActiveSubscribers is now false.
+                session.RemoveCanvasSubscriber(subKey);
+                Assert.False(session.HasActiveSubscribers);
+
+                // Now with no active subscriber, sweeping past the threshold must evict it.
+                current = t0.AddMinutes(60);
+                padService.RemoveIdleSessions();
+
+                var evalAfter = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("1 + 1", Encoding.UTF8, "text/plain")
+                );
+                var afterPayload = await evalAfter.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(
+                    afterPayload.GetProperty("ok").GetBoolean(),
+                    "Session must be evicted after subscriber is removed and clock exceeds IdleTimeout."
+                );
             }
         );
     }

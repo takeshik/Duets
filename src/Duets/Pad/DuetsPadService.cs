@@ -21,6 +21,7 @@ public sealed class DuetsPadService : IDisposable
 
     private readonly DuetsPadServiceOptions _options;
     private readonly ConcurrentDictionary<Guid, DuetsPadSession> _sessions = new();
+    private readonly Timer? _cleanupTimer;
     private readonly Lazy<Task<string>> _monaco;
     private readonly Lazy<Task<string>> _tabler;
     private readonly Lazy<Task<string>> _tablerIconsCss;
@@ -82,6 +83,7 @@ public sealed class DuetsPadService : IDisposable
                         .MapGet("/tabler-icons.woff2", this.HandleTablerIconsFontAsync)
                         .MapGet("/type-declaration-events", this.HandleTypeDeclarationEventsAsync)
                         .MapPost("/sessions", this.HandlePostSessionAsync)
+                        .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
                         .MapGet("/sessions/{sessionId}/canvas-events", this.HandleCanvasEventsAsync)
                         .MapGet(
@@ -94,11 +96,25 @@ public sealed class DuetsPadService : IDisposable
                 "Duets.Resources.DuetsPadStaticFiles",
                 root
             );
+
+        // Start the idle-cleanup sweep timer only when IdleTimeout is enabled.
+        if (options.IdleTimeout is { } timeout && timeout > TimeSpan.Zero)
+        {
+            this._cleanupTimer = new Timer(options.CleanupInterval.TotalMilliseconds);
+            this._cleanupTimer.Elapsed += (_, _) => this.RemoveIdleSessions();
+            this._cleanupTimer.Start();
+        }
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
+        if (this._cleanupTimer is not null)
+        {
+            this._cleanupTimer.Stop();
+            this._cleanupTimer.Dispose();
+        }
+
         foreach (var (_, session) in this._sessions)
         {
             session.Dispose();
@@ -266,13 +282,107 @@ public sealed class DuetsPadService : IDisposable
         this._sessions[newId] = new DuetsPadSession(
             newId,
             duetsSession,
-            this._options.ObjectRenderers
+            this._options.ObjectRenderers,
+            this._options.Clock
         );
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
             new JsonObject { ["sessionId"] = newId.ToString() }.ToJsonString()
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // DELETE /sessions/{sessionId}
+    // -------------------------------------------------------------------------
+
+    private async Task HandleDeleteSessionAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+
+        if (Guid.TryParse(sessionId, out var id) && this._sessions.TryRemove(id, out var session))
+        {
+            // The session is already removed from the dictionary; a dispose failure must not
+            // escape into the HTTP handler. There is no logger here, so observe and continue.
+            try
+            {
+                session.Dispose();
+            }
+            catch
+            {
+                // Swallow: the session is orphaned but unreachable; nothing more to do.
+            }
+
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject { ["ok"] = true, ["sessionId"] = id.ToString() }.ToJsonString()
+            );
+        }
+        else
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Unknown session.",
+                    ["sessionId"] = sessionId,
+                }.ToJsonString()
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Idle session cleanup
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the <see cref="DuetsPadSession"/> identified by <paramref name="id"/>, or
+    /// <see langword="null"/> if no such session exists. Exposed for testing only.
+    /// </summary>
+    internal DuetsPadSession? TryGetSession(Guid id) =>
+        this._sessions.TryGetValue(id, out var session) ? session : null;
+
+    /// <summary>
+    /// Removes and disposes sessions that have been idle longer than
+    /// <see cref="DuetsPadServiceOptions.IdleTimeout"/>. Does nothing when
+    /// <see cref="DuetsPadServiceOptions.IdleTimeout"/> is <see langword="null"/> or non-positive.
+    /// Called by the background cleanup timer; also directly callable by tests.
+    /// </summary>
+    internal void RemoveIdleSessions()
+    {
+        if (this._options.IdleTimeout is not { } timeout || timeout <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var now = this._options.Clock();
+        foreach (var (id, session) in this._sessions)
+        {
+            // Never evict a session that has a live SSE stream; the subscriber guard is
+            // timing-independent and takes precedence over the LastActivity check.
+            if (session.HasActiveSubscribers)
+            {
+                continue;
+            }
+
+            if (now - session.LastActivityUtc > timeout)
+            {
+                if (this._sessions.TryRemove(id, out var removed))
+                {
+                    // One session's dispose failure must not abort the sweep over the others,
+                    // nor kill the cleanup timer. There is no logger here, so observe and continue.
+                    try
+                    {
+                        removed.Dispose();
+                    }
+                    catch
+                    {
+                        // Swallow and proceed to the next idle session.
+                    }
+                }
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -361,6 +471,7 @@ public sealed class DuetsPadService : IDisposable
         using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
         timer.Elapsed += (_, _) =>
         {
+            session.Touch();
             _ = WriteKeepAliveAsync(res.OutputStream, gate);
         };
         timer.Start();
@@ -432,6 +543,7 @@ public sealed class DuetsPadService : IDisposable
         using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
         timer.Elapsed += (_, _) =>
         {
+            session.Touch();
             _ = WriteKeepAliveAsync(res.OutputStream, gate);
         };
         timer.Start();
@@ -508,13 +620,24 @@ public sealed class DuetsPadService : IDisposable
         // and is therefore idempotent.
         declarations.DeclarationChanged += OnDeclarationChanged;
 
+        // Register with the session so that Dispose() completes the channel, which
+        // terminates the read loop below and allows the finally block to run.
+        var key = session.AddTypeDeclarationSubscriber(channel.Writer);
+
         foreach (var decl in declarations.GetDeclarations())
         {
             channel.Writer.TryWrite(decl);
         }
 
+        // Touch on attach (session lookup already happened; record SSE attach as activity).
+        session.Touch();
+
         using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
-        timer.Elapsed += (_, _) => channel.Writer.TryWrite(null);
+        timer.Elapsed += (_, _) =>
+        {
+            session.Touch();
+            channel.Writer.TryWrite(null);
+        };
         timer.Start();
 
         try
@@ -535,6 +658,7 @@ public sealed class DuetsPadService : IDisposable
         finally
         {
             timer.Stop();
+            session.RemoveTypeDeclarationSubscriber(key);
             declarations.DeclarationChanged -= OnDeclarationChanged;
             channel.Writer.TryComplete();
             res.Close();

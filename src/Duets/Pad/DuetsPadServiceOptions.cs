@@ -56,4 +56,32 @@ public sealed class DuetsPadServiceOptions
     /// Keepalive interval for DuetsPad SSE streams.
     /// </summary>
     public TimeSpan KeepAliveInterval { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// How long a session may be idle before it is automatically reclaimed.
+    /// When <see langword="null"/> or non-positive, idle cleanup is disabled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A session that has at least one active SSE subscriber (Canvas, Timeline, or type-declaration
+    /// stream) is never evicted regardless of its last-activity timestamp; the subscriber-presence
+    /// guard takes precedence. Only sessions with no live stream and no activity within this
+    /// threshold are reclaimed. <see cref="KeepAliveInterval"/> keepalive pings also count as
+    /// activity and provide a redundant secondary signal for sessions whose streams are open.
+    /// </para>
+    /// <para>A non-positive or <see langword="null"/> value disables automatic cleanup entirely.</para>
+    /// </remarks>
+    public TimeSpan? IdleTimeout { get; set; } = null;
+
+    /// <summary>
+    /// Testable clock used by the idle-timeout sweep. Defaults to
+    /// <see cref="DateTimeOffset.UtcNow"/>. Exposed for testing only; do not set in production code.
+    /// </summary>
+    internal Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Period of the background idle-sweep timer. Only active when
+    /// <see cref="IdleTimeout"/> is enabled. Defaults to 30 seconds.
+    /// </summary>
+    internal TimeSpan CleanupInterval { get; set; } = TimeSpan.FromSeconds(30);
 }

@@ -54,6 +54,14 @@ namespace Duets.Pad;
 /// and its channel completed via <see cref="RemoveCanvasSubscriber"/> /
 /// <see cref="RemoveTimelineSubscriber"/>.
 /// </para>
+///
+/// <para>
+/// <b>Multi-browser note</b><br/>
+/// Multiple simultaneous SSE subscribers (e.g. two browser tabs) are permitted at the
+/// infrastructure level — all subscribers receive the same broadcast events. However,
+/// first-class multi-browser session sharing is NOT supported: there is no lease mechanism,
+/// and a DELETE or idle-eviction of the session affects all subscribers simultaneously.
+/// </para>
 /// </remarks>
 internal sealed class DuetsPadSession : IDisposable
 {
@@ -62,6 +70,18 @@ internal sealed class DuetsPadSession : IDisposable
 
     // Guards state mutation and subscriber enqueue. Never held across I/O.
     private readonly object _stateLock = new();
+
+    // 0 = live, 1 = disposed. Set (via Interlocked.Exchange) at the very start of Dispose, before
+    // the eval semaphore is awaited, so an eval that begins after Dispose started observes it.
+    // Subscriber registration reads this field under _stateLock; Dispose's subscriber complete/clear
+    // also runs under _stateLock after the set, so the lock establishes the happens-before that
+    // serializes registration against teardown (closing the TOCTOU window).
+    private int _disposed;
+
+    private readonly Func<DateTimeOffset> _clock;
+
+    // Last-activity timestamp stored as UTC ticks; updated via Interlocked for lock-free reads.
+    private long _lastActivityTicks;
 
     private readonly ConcurrentDictionary<
         Guid,
@@ -73,12 +93,18 @@ internal sealed class DuetsPadSession : IDisposable
         ChannelWriter<TimelineEventMessage>
     > _timelineSubscribers = new();
 
+    private readonly ConcurrentDictionary<
+        Guid,
+        ChannelWriter<TypeDeclaration?>
+    > _typeDeclarationSubscribers = new();
+
     private ObjectRenderingPipeline _pipeline;
 
     public DuetsPadSession(
         Guid id,
         DuetsSession duetsSession,
-        IReadOnlyList<IObjectRenderer>? objectRenderers = null
+        IReadOnlyList<IObjectRenderer>? objectRenderers = null,
+        Func<DateTimeOffset>? clock = null
     )
     {
         this.Id =
@@ -86,6 +112,7 @@ internal sealed class DuetsPadSession : IDisposable
                 ? throw new ArgumentException("Session id cannot be empty.", nameof(id))
                 : id;
         this.DuetsSession = duetsSession ?? throw new ArgumentNullException(nameof(duetsSession));
+        this._clock = clock ?? (() => DateTimeOffset.UtcNow);
 
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
@@ -130,6 +157,9 @@ internal sealed class DuetsPadSession : IDisposable
             };
             """
         );
+
+        // Record creation as the first activity.
+        this.Touch();
     }
 
     public Guid Id { get; }
@@ -141,6 +171,26 @@ internal sealed class DuetsPadSession : IDisposable
     public TimelineState Timeline { get; private set; } = TimelineState.Empty;
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
+
+    /// <summary>
+    /// UTC timestamp of the most recent session activity (creation, eval, or SSE attach/keepalive).
+    /// Updated atomically via <c>Interlocked.Exchange</c>.
+    /// </summary>
+    internal DateTimeOffset LastActivityUtc =>
+        new(Interlocked.Read(ref this._lastActivityTicks), TimeSpan.Zero);
+
+    // -------------------------------------------------------------------------
+    // Activity tracking
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Records the current clock time as the most recent session activity.
+    /// Call on session creation, eval entry, SSE attach, and SSE keepalive.
+    /// </summary>
+    internal void Touch()
+    {
+        Interlocked.Exchange(ref this._lastActivityTicks, this._clock().UtcTicks);
+    }
 
     // -------------------------------------------------------------------------
     // State setters (kept for compatibility with any existing callers)
@@ -186,9 +236,22 @@ internal sealed class DuetsPadSession : IDisposable
             throw new ArgumentNullException(nameof(writer));
         }
 
+        this.Touch();
         var key = Guid.NewGuid();
         lock (this._stateLock)
         {
+            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
+            // runs under the same lock): either this registration completes before the clear (and
+            // its writer is completed by the clear), or the clear runs first and this observes
+            // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
+            // the SSE read loop at once; its finally RemoveCanvasSubscriber(Guid.Empty) is a
+            // harmless no-op.
+            if (this._disposed == 1)
+            {
+                writer.TryComplete();
+                return Guid.Empty;
+            }
+
             this._canvasSubscribers[key] = writer;
             writer.TryWrite(CanvasEventMessage.Snapshot(this.Canvas));
         }
@@ -212,9 +275,22 @@ internal sealed class DuetsPadSession : IDisposable
             throw new ArgumentNullException(nameof(writer));
         }
 
+        this.Touch();
         var key = Guid.NewGuid();
         lock (this._stateLock)
         {
+            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
+            // runs under the same lock): either this registration completes before the clear (and
+            // its writer is completed by the clear), or the clear runs first and this observes
+            // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
+            // the SSE read loop at once; its finally RemoveTimelineSubscriber(Guid.Empty) is a
+            // harmless no-op.
+            if (this._disposed == 1)
+            {
+                writer.TryComplete();
+                return Guid.Empty;
+            }
+
             this._timelineSubscribers[key] = writer;
             writer.TryWrite(TimelineEventMessage.Reset(this.Timeline, "initial"));
         }
@@ -225,6 +301,55 @@ internal sealed class DuetsPadSession : IDisposable
     /// <summary>Removes the Timeline subscriber identified by <paramref name="key"/>.</summary>
     public void RemoveTimelineSubscriber(Guid key) =>
         this._timelineSubscribers.TryRemove(key, out _);
+
+    /// <summary>
+    /// Registers a type-declaration SSE subscriber. The caller is responsible for
+    /// enqueuing existing declarations before or after this call (the route already does
+    /// this). Returns the registration key used to unregister via
+    /// <see cref="RemoveTypeDeclarationSubscriber"/>.
+    /// </summary>
+    internal Guid AddTypeDeclarationSubscriber(ChannelWriter<TypeDeclaration?> writer)
+    {
+        if (writer is null)
+        {
+            throw new ArgumentNullException(nameof(writer));
+        }
+
+        var key = Guid.NewGuid();
+        lock (this._stateLock)
+        {
+            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
+            // runs under the same lock): either this registration completes before the clear (and
+            // its writer is completed by the clear), or the clear runs first and this observes
+            // _disposed == 1 and self-completes the writer. There is no initial-snapshot enqueue
+            // here — the route enqueues existing declarations. If disposed, completing the writer
+            // ends the SSE read loop at once; its finally RemoveTypeDeclarationSubscriber(Guid.Empty)
+            // is a harmless no-op.
+            if (this._disposed == 1)
+            {
+                writer.TryComplete();
+                return Guid.Empty;
+            }
+
+            this._typeDeclarationSubscribers[key] = writer;
+        }
+
+        return key;
+    }
+
+    /// <summary>Removes the type-declaration subscriber identified by <paramref name="key"/>.</summary>
+    internal void RemoveTypeDeclarationSubscriber(Guid key) =>
+        this._typeDeclarationSubscribers.TryRemove(key, out _);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when at least one SSE subscriber (Canvas, Timeline, or
+    /// type-declaration) is currently registered. Used by the idle-eviction sweep to protect
+    /// sessions with live browser connections regardless of last-activity timestamp.
+    /// </summary>
+    internal bool HasActiveSubscribers =>
+        !this._canvasSubscribers.IsEmpty
+        || !this._timelineSubscribers.IsEmpty
+        || !this._typeDeclarationSubscribers.IsEmpty;
 
     // -------------------------------------------------------------------------
     // Internal ops — called from the eval call stack; must not acquire _evalSemaphore
@@ -357,9 +482,36 @@ internal sealed class DuetsPadSession : IDisposable
     /// </param>
     public async Task<EvalResult> EvaluateAsync(string code, bool appendResult = false)
     {
-        await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        this.Touch();
+
+        // Dispose sets _disposed = 1 BEFORE it acquires (and then disposes) the eval semaphore.
+        // Checking the flag before waiting means an eval that begins after Dispose started never
+        // touches an already-disposed DuetsSession or an already-disposed semaphore. The narrow
+        // race where Dispose disposes the semaphore between this check and the wait below is
+        // covered by catching ObjectDisposedException and reporting the same disposed result.
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return new EvalResult(Ok: false, Result: null, Error: "Session has been disposed.");
+        }
+
         try
         {
+            await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return new EvalResult(Ok: false, Result: null, Error: "Session has been disposed.");
+        }
+
+        try
+        {
+            // Re-check under the semaphore: an eval that acquired the semaphore just before
+            // Dispose did must still reject rather than evaluate a torn-down session.
+            if (Volatile.Read(ref this._disposed) == 1)
+            {
+                return new EvalResult(Ok: false, Result: null, Error: "Session has been disposed.");
+            }
+
             var value = this.DuetsSession.Evaluate(code);
 
             // After all in-eval side effects (dump, console, canvas) have run,
@@ -421,24 +573,66 @@ internal sealed class DuetsPadSession : IDisposable
 
     public void Dispose()
     {
-        this.DuetsSession.ConsoleLogged -= this.OnConsoleLogged;
-
-        // Complete all subscriber channels so readers can drain.
-        foreach (var (_, writer) in this._canvasSubscribers)
+        // Idempotency: the first caller wins; any later Dispose is a no-op.
+        if (Interlocked.Exchange(ref this._disposed, 1) == 1)
         {
-            writer.TryComplete();
+            return;
         }
 
-        this._canvasSubscribers.Clear();
-
-        foreach (var (_, writer) in this._timelineSubscribers)
+        // Acquire the eval semaphore synchronously to wait for any in-flight eval to finish
+        // before tearing down the underlying DuetsSession. DuetsSession.Dispose() enters the
+        // same single-operation guard that Evaluate uses and throws on concurrent entry, so it
+        // must never run while an eval is active. _disposed is already set above, so an eval
+        // that has not yet acquired the semaphore will reject instead of starting.
+        //
+        // This makes Dispose() block until the current eval completes. Evals are expected to be
+        // short, and this is the same serialization the eval semaphore already imposes.
+        // Dispose is only ever called from the service layer (DELETE handler, idle sweep, service
+        // Dispose), never from the eval call stack, so this synchronous wait cannot deadlock.
+        this._evalSemaphore.Wait();
+        try
         {
-            writer.TryComplete();
+            this.DuetsSession.ConsoleLogged -= this.OnConsoleLogged;
+
+            // Complete + clear all subscriber channels under _stateLock so this teardown is
+            // serialized against Add*Subscriber (which tests _disposed and inserts under the same
+            // lock). _disposed was already set to 1 above; holding _stateLock here provides the
+            // happens-before so any Add* either ran fully before this clear (and is completed by it)
+            // or observes _disposed == 1 and self-completes its writer. The lock guards only the
+            // dictionary complete/clear; DuetsSession.Dispose() runs outside it (never hold
+            // _stateLock across an I/O / teardown boundary).
+            lock (this._stateLock)
+            {
+                // Complete all subscriber channels so readers can drain.
+                foreach (var (_, writer) in this._canvasSubscribers)
+                {
+                    writer.TryComplete();
+                }
+
+                this._canvasSubscribers.Clear();
+
+                foreach (var (_, writer) in this._timelineSubscribers)
+                {
+                    writer.TryComplete();
+                }
+
+                this._timelineSubscribers.Clear();
+
+                foreach (var (_, writer) in this._typeDeclarationSubscribers)
+                {
+                    writer.TryComplete();
+                }
+
+                this._typeDeclarationSubscribers.Clear();
+            }
+
+            this.DuetsSession.Dispose();
         }
-
-        this._timelineSubscribers.Clear();
-
-        this.DuetsSession.Dispose();
+        finally
+        {
+            this._evalSemaphore.Release();
+            this._evalSemaphore.Dispose();
+        }
     }
 
     // -------------------------------------------------------------------------
