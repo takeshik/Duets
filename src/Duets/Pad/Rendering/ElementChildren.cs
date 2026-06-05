@@ -1,15 +1,20 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace Duets.Pad.Rendering;
 
 /// <summary>
 /// Immutable, order-sensitive child list for <see cref="Element" />.
 /// </summary>
+[CollectionBuilder(typeof(ElementChildren), nameof(Create))]
 public sealed class ElementChildren
     : IReadOnlyList<ITerminalRenderNode>,
         IEquatable<ElementChildren>
 {
     public static ElementChildren Empty { get; } = new([]);
+
+    public static ElementChildren Create(ReadOnlySpan<ITerminalRenderNode> items) =>
+        new(items.ToArray());
 
     private readonly ITerminalRenderNode[] children;
 

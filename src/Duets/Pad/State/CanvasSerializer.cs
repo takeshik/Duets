@@ -1,7 +1,10 @@
+using System.Text.Json.Nodes;
+using Duets.Pad.Rendering;
+
 namespace Duets.Pad.State;
 
 /// <summary>
-/// Placeholder for the Canvas wire serializer.
+/// Serializes <see cref="CanvasState" /> to the DuetsPad wire JSON format.
 /// </summary>
 /// <remarks>
 /// This type intentionally has no implementation yet, but the initial protocol shape is fixed.
@@ -27,4 +30,20 @@ namespace Duets.Pad.State;
 /// - do not introduce handler, reset, or client-owned state semantics here;
 /// - do not make the wire schema public API accidentally.
 /// </remarks>
-internal sealed class CanvasSerializer;
+internal sealed class CanvasSerializer
+{
+    /// <summary>
+    /// Serializes the root element of <paramref name="state" /> to a JSON object.
+    /// </summary>
+    public JsonObject Serialize(CanvasState state)
+    {
+        if (state is null)
+        {
+            throw new ArgumentNullException(nameof(state));
+        }
+
+        var node = RenderNodeJsonSerializer.Serialize(state.Root);
+
+        return (JsonObject)node;
+    }
+}

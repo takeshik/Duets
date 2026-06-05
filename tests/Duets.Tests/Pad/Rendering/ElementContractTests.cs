@@ -169,4 +169,35 @@ public sealed class ElementContractTests
 
         Assert.Contains("Element tag", exception.Message);
     }
+
+    [Fact]
+    public void ElementChildren_collection_expression_with_literals_builds_correctly()
+    {
+        ElementChildren xs = [new Text("a"), new Text("b")];
+
+        Assert.Equal(2, xs.Count);
+        Assert.Equal(new Text("a"), xs[0]);
+        Assert.Equal(new Text("b"), xs[1]);
+    }
+
+    [Fact]
+    public void ElementChildren_collection_expression_with_spread_builds_correctly()
+    {
+        ITerminalRenderNode[] source = [new Text("a"), new Text("b")];
+
+        ElementChildren xs = [.. source];
+
+        Assert.Equal(2, xs.Count);
+        Assert.Equal(new Text("a"), xs[0]);
+        Assert.Equal(new Text("b"), xs[1]);
+    }
+
+    [Fact]
+    public void ElementChildren_collection_expression_rejects_null_element()
+    {
+        Assert.Throws<ArgumentException>(() =>
+        {
+            ElementChildren _ = [new Text("a"), null!];
+        });
+    }
 }

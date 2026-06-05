@@ -7,29 +7,76 @@ namespace Duets.Pad.Protocol;
 /// </summary>
 internal sealed record TimelineEventMessage
 {
-    private TimelineEventMessage(string type, TimelineState? state, TimelineEntry? entry)
+    private TimelineEventMessage(
+        string type,
+        TimelineState? state,
+        string? reason,
+        TimelineEntry? entry,
+        long? removeBeforeId,
+        TimelineEntry? marker
+    )
     {
         this.Type = !string.IsNullOrWhiteSpace(type)
             ? type
             : throw new ArgumentException("Timeline event type cannot be empty.", nameof(type));
         this.State = state;
+        this.Reason = reason;
         this.Entry = entry;
+        this.RemoveBeforeId = removeBeforeId;
+        this.Marker = marker;
     }
 
     public string Type { get; }
 
     public TimelineState? State { get; }
 
+    public string? Reason { get; }
+
     public TimelineEntry? Entry { get; }
 
-    public static TimelineEventMessage Snapshot(TimelineState state) =>
-        new("snapshot", state ?? throw new ArgumentNullException(nameof(state)), entry: null);
+    public long? RemoveBeforeId { get; }
+
+    public TimelineEntry? Marker { get; }
+
+    public static TimelineEventMessage Reset(TimelineState state, string reason) =>
+        new(
+            TimelineEventTypes.Reset,
+            state ?? throw new ArgumentNullException(nameof(state)),
+            !string.IsNullOrWhiteSpace(reason)
+                ? reason
+                : throw new ArgumentException("Reset reason cannot be empty.", nameof(reason)),
+            entry: null,
+            removeBeforeId: null,
+            marker: null
+        );
 
     public static TimelineEventMessage Append(TimelineEntry entry) =>
-        new("append", state: null, entry ?? throw new ArgumentNullException(nameof(entry)));
+        new(
+            TimelineEventTypes.Append,
+            state: null,
+            reason: null,
+            entry ?? throw new ArgumentNullException(nameof(entry)),
+            removeBeforeId: null,
+            marker: null
+        );
 
-    public static TimelineEventMessage Replace(TimelineEntry entry) =>
-        new("replace", state: null, entry ?? throw new ArgumentNullException(nameof(entry)));
+    public static TimelineEventMessage Update(TimelineEntry entry) =>
+        new(
+            TimelineEventTypes.Update,
+            state: null,
+            reason: null,
+            entry ?? throw new ArgumentNullException(nameof(entry)),
+            removeBeforeId: null,
+            marker: null
+        );
 
-    public static TimelineEventMessage Clear() => new("clear", state: null, entry: null);
+    public static TimelineEventMessage Trim(long removeBeforeId, TimelineEntry? marker) =>
+        new(
+            TimelineEventTypes.Trim,
+            state: null,
+            reason: null,
+            entry: null,
+            removeBeforeId,
+            marker
+        );
 }

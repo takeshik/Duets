@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DuetsPad</title>
+    <link rel="stylesheet" href="tabler.css">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        /* ── Top bar ── */
+        #topbar {
+            height: 36px;
+            background: #12121f;
+            border-bottom: 1px solid #2d2d4a;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            flex-shrink: 0;
+            user-select: none;
+            gap: 8px;
+        }
+
+        #topbar-title {
+            color: #9d8cff;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        /* ── Main layout ── */
+        #layout {
+            display: flex;
+            height: calc(100vh - 36px);
+            overflow: hidden;
+        }
+
+        /* ── Left column ── */
+        #left-col {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 55%;
+            min-width: 0;
+            border-right: 1px solid #2d2d4a;
+        }
+
+        /* ── Editor pane ── */
+        #editor-pane {
+            flex: 1 1 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .pane-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: #6060a0;
+            padding: 4px 10px 3px;
+            background: #15151f;
+            border-bottom: 1px solid #2d2d4a;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        #editor-host {
+            flex: 1 1 0;
+            min-height: 0;
+            min-width: 0;
+        }
+
+        /* ── Editor status bar ── */
+        #editor-status {
+            height: 22px;
+            background: #15151f;
+            border-top: 1px solid #2d2d4a;
+            font-size: 11px;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            color: #888;
+            overflow: hidden;
+            white-space: nowrap;
+            flex-shrink: 0;
+            user-select: text;
+        }
+
+        #editor-status.status-ok {
+            color: #4ec9b0;
+        }
+
+        #editor-status.status-error {
+            color: #f48771;
+        }
+
+        /* ── Immediate pane ── */
+        #immediate-pane {
+            flex-shrink: 0;
+            border-top: 1px solid #2d2d4a;
+            background: #12121f;
+        }
+
+        #immediate-pane .pane-label {
+            border-top: none;
+        }
+
+        #immediate-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+        }
+
+        #immediate-input {
+            flex: 1;
+            background: #1e1e30;
+            border: 1px solid #2d2d4a;
+            border-radius: 3px;
+            color: #d4d4d4;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            font-size: 13px;
+            padding: 3px 8px;
+            outline: none;
+        }
+
+        #immediate-input:focus {
+            border-color: #7070c0;
+        }
+
+        #immediate-status {
+            font-size: 11px;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            padding: 2px 10px 4px;
+            min-height: 18px;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #immediate-status.result-ok {
+            color: #4ec9b0;
+        }
+
+        #immediate-status.result-error {
+            color: #f48771;
+        }
+
+        /* ── Right column ── */
+        #right-col {
+            display: flex;
+            flex-direction: column;
+            flex: 0 0 45%;
+            min-width: 0;
+        }
+
+        /* ── Canvas pane ── */
+        #canvas-pane {
+            flex: 1 1 50%;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            border-bottom: 1px solid #2d2d4a;
+        }
+
+        #canvas-content {
+            flex: 1 1 0;
+            overflow: auto;
+            padding: 8px 10px;
+            min-height: 0;
+        }
+
+        /* ── Timeline pane ── */
+        #timeline-pane {
+            flex: 1 1 50%;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #timeline-content {
+            flex: 1 1 0;
+            overflow: auto;
+            padding: 4px 0;
+            min-height: 0;
+        }
+
+        /* ── Timeline entry ── */
+        .tl-entry {
+            padding: 3px 10px 4px;
+            border-bottom: 1px solid #1e1e30;
+        }
+
+        .tl-entry:last-child {
+            border-bottom: none;
+        }
+
+        .tl-reason {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: #505080;
+            margin-bottom: 2px;
+        }
+
+        .tl-body {
+            font-family: Consolas, 'Cascadia Code', monospace;
+            font-size: 12px;
+            color: #c8c8e0;
+            word-break: break-word;
+        }
+
+        /* Narrow viewport: stack columns */
+        @media (max-width: 640px) {
+            #layout {
+                flex-direction: column;
+            }
+
+            #left-col, #right-col {
+                flex: none;
+                height: 50%;
+                border-right: none;
+            }
+
+            #left-col {
+                border-bottom: 1px solid #2d2d4a;
+            }
+        }
+    </style>
+</head>
+<body>
+<div id="topbar">
+    <span id="topbar-title">DuetsPad</span>
+</div>
+<div id="layout">
+    <!-- Left column: Editor + Immediate -->
+    <div id="left-col">
+        <div id="editor-pane">
+            <div class="pane-label">Editor</div>
+            <div id="editor-host"></div>
+            <div id="editor-status"></div>
+        </div>
+        <div id="immediate-pane">
+            <div class="pane-label">Immediate</div>
+            <div id="immediate-row">
+                <input id="immediate-input" type="text" placeholder="Expression…" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="immediate-status"></div>
+        </div>
+    </div>
+    <!-- Right column: Canvas + Timeline -->
+    <div id="right-col">
+        <div id="canvas-pane">
+            <div class="pane-label">Canvas</div>
+            <div id="canvas-content"></div>
+        </div>
+        <div id="timeline-pane">
+            <div class="pane-label">Timeline</div>
+            <div id="timeline-content"></div>
+        </div>
+    </div>
+</div>
+<script src="duetspad-config.js"></script>
+<script src="monaco-loader.js"></script>
+<script src="duetspad.js"></script>
+</body>
+</html>

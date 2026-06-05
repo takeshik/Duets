@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Duets.Jint;
+using Duets.Pad;
 using HttpHarker;
 using Jint;
 
@@ -30,7 +31,7 @@ internal sealed class SandboxContext : IAsyncDisposable
     private readonly Func<TypeDeclarations, Task<ITranspiler>> _babelFactory;
     private DuetsSession _session;
     private HttpServer? _webServer;
-    private ReplService? _replService;
+    private DuetsPadService? _padService;
     private CancellationTokenSource? _webServerCts;
     private Task? _webServerTask;
 
@@ -171,8 +172,8 @@ internal sealed class SandboxContext : IAsyncDisposable
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
         {
-            this._replService?.Dispose();
-            this._replService = null;
+            this._padService?.Dispose();
+            this._padService = null;
             this._webServer.Dispose();
             this._webServer = null;
             this._webServerCts = null;
@@ -181,9 +182,18 @@ internal sealed class SandboxContext : IAsyncDisposable
 
         this._webServerCts = new CancellationTokenSource();
         this._webServer = new HttpServer($"http://127.0.0.1:{port}/");
-        this._replService = this._webServer.UseContentTypeDetection().UseRepl(this._session);
+        this._padService = this
+            ._webServer.UseContentTypeDetection()
+            .UseDuetsPad(configure: opts =>
+                opts.SessionFactory = () =>
+                    CreateDuetsSessionAsync(
+                        TranspilerKind.TypeScript,
+                        this._tsFactory,
+                        this._babelFactory
+                    )
+            );
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
-        Console.Error.WriteLine($"Web REPL server started at http://127.0.0.1:{port}/");
+        Console.Error.WriteLine($"DuetsPad server started at http://127.0.0.1:{port}/");
     }
 
     public async Task StopWebServerAsync()
@@ -204,8 +214,8 @@ internal sealed class SandboxContext : IAsyncDisposable
             // fault the task may have accumulated before Stop() was called.
         }
 
-        this._replService?.Dispose();
-        this._replService = null;
+        this._padService?.Dispose();
+        this._padService = null;
         this._webServer.Dispose();
         this._webServer = null;
         this._webServerCts = null;
@@ -229,7 +239,7 @@ internal sealed class SandboxContext : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
 
-        this._replService?.Dispose();
+        this._padService?.Dispose();
         this._webServer?.Dispose();
         this._session.Dispose();
     }

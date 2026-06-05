@@ -19,5 +19,9 @@ internal sealed record CanvasEventMessage
 
     public CanvasState State { get; }
 
-    public static CanvasEventMessage Snapshot(CanvasState state) => new("snapshot", state);
+    public static CanvasEventMessage Snapshot(CanvasState state) =>
+        new(CanvasEventTypes.Snapshot, state);
+
+    public static CanvasEventMessage Replace(CanvasState state) =>
+        new(CanvasEventTypes.Replace, state);
 }

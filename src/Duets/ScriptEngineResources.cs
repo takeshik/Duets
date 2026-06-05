@@ -23,7 +23,7 @@ public static class ScriptEngineResources
     public static async Task<string> LoadLanguageServiceJsAsync()
     {
         await using var stream = typeof(ScriptEngineResources).Assembly.GetManifestResourceStream(
-            "Duets.Resources.ReplStaticFiles.language-service.js"
+            "Duets.Resources.language-service.js"
         )!;
         using var reader = new StreamReader(stream);
         return await reader.ReadToEndAsync();

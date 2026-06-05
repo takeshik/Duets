@@ -47,8 +47,9 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\ScriptEngineInit.js" />
     <EmbeddedResource Include="Resources\ScriptEngineInit.d.ts" />
-    <EmbeddedResource Include="Resources\ReplStaticFiles\index.html" />
-    <EmbeddedResource Include="Resources\ReplStaticFiles\language-service.js" />
+    <EmbeddedResource Include="Resources\language-service.js" />
+    <EmbeddedResource Include="Resources\DuetsPadStaticFiles\index.html" />
+    <EmbeddedResource Include="Resources\DuetsPadStaticFiles\duetspad.js" />
   </ItemGroup>
 
   <ItemGroup>

@@ -381,8 +381,13 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.scanAssemblyOf(DuetsNs.DuetsSession)");
 
-        var declaration = Assert.Single(harness.GetNonBuiltinDeclarations());
-        Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration =>
+                declaration.Content == "declare namespace Duets { const $name: 'Duets'; }\n"
+        );
     }
 
     [Fact]
@@ -428,8 +433,13 @@ public sealed class ScriptTypingsTests
 
         typings.ScanAssembly(assemblyRef);
 
-        var declaration = Assert.Single(declarations.GetDeclarations());
-        Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
+        Assert.Contains(
+            declarations.GetDeclarations(),
+            declaration =>
+                declaration.Content == "declare namespace Duets { const $name: 'Duets'; }\n"
+        );
     }
 
     [Fact]
@@ -441,8 +451,13 @@ public sealed class ScriptTypingsTests
             $"typings.scanAssembly('{typeof(IScriptEngine).Assembly.FullName}')"
         );
 
-        var declaration = Assert.Single(harness.GetNonBuiltinDeclarations());
-        Assert.Equal("declare namespace Duets { const $name: 'Duets'; }\n", declaration.Content);
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
+        Assert.Contains(
+            harness.GetNonBuiltinDeclarations(),
+            declaration =>
+                declaration.Content == "declare namespace Duets { const $name: 'Duets'; }\n"
+        );
     }
 
     [Fact]
