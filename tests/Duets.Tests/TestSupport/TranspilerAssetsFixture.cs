@@ -86,7 +86,7 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
         var content = await AssetSources
             .Unpkg(package, version, filePath)
             .WithDiskCache(cacheFile, TimeSpan.FromDays(30))
-            .GetAsync();
+            .GetStringAsync();
 
         return (content, version);
     }

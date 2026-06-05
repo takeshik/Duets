@@ -1,3 +1,5 @@
+using Duets.Pad.Rendering;
+
 namespace Duets.Pad;
 
 /// <summary>
@@ -28,6 +30,27 @@ public sealed class DuetsPadServiceOptions
     /// Optional Tabler CSS asset source. When omitted, DuetsPad uses the default Tabler CDN-backed source.
     /// </summary>
     public IAssetSource? TablerCss { get; set; }
+
+    /// <summary>
+    /// Optional Tabler Icons CSS asset source (<c>tabler-icons.min.css</c> from
+    /// <c>@tabler/icons-webfont</c>). When omitted, DuetsPad fetches the stylesheet from unpkg
+    /// and caches it on disk.
+    /// </summary>
+    public IAssetSource? TablerIconsCss { get; set; }
+
+    /// <summary>
+    /// Optional Tabler Icons woff2 font asset source (<c>tabler-icons.woff2</c> from
+    /// <c>@tabler/icons-webfont</c>). When omitted, DuetsPad fetches the font from unpkg
+    /// and caches it on disk.
+    /// </summary>
+    public IAssetSource? TablerIconsFont { get; set; }
+
+    /// <summary>
+    /// Object renderers applied to every DuetsPad browser session, consulted in last-wins order
+    /// (a later renderer overrides an earlier one that can render the same value) before the
+    /// built-in default renderer. Empty by default, preserving default rendering behavior.
+    /// </summary>
+    public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; set; } = [];
 
     /// <summary>
     /// Keepalive interval for DuetsPad SSE streams.

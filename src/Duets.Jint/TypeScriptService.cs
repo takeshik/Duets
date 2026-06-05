@@ -82,7 +82,7 @@ public class TypeScriptService : ITranspiler, IDisposable
 
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
-        var typeScriptJs = await this._options.TypeScriptJs.GetAsync(forceDownloadCodes);
+        var typeScriptJs = await this._options.TypeScriptJs.GetStringAsync(forceDownloadCodes);
         var languageServiceJs = await ScriptEngineResources.LoadLanguageServiceJsAsync();
 
         var newEngine = new Engine();
@@ -137,7 +137,7 @@ public class TypeScriptService : ITranspiler, IDisposable
                 ?? throw new InvalidOperationException("TypeScript version is not initialized.");
         }
 
-        var content = await this._options.LibEs5Source(version).GetAsync(forceDownload);
+        var content = await this._options.LibEs5Source(version).GetStringAsync(forceDownload);
 
         lock (this._sync)
         {

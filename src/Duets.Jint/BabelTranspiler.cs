@@ -78,7 +78,7 @@ public class BabelTranspiler : ITranspiler, IDisposable
                 """
             );
 
-            await newEngine.ExecuteAsync(await this._options.BabelJs.GetAsync(forceDownload));
+            await newEngine.ExecuteAsync(await this._options.BabelJs.GetStringAsync(forceDownload));
 
             var babel = newEngine.GetValue("Babel");
             var babelTransform = babel.Get("transform");

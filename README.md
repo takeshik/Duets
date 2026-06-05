@@ -65,13 +65,20 @@ await server.RunAsync(); // open http://127.0.0.1:17375/
 
 More examples in [`samples/`](samples/).
 
-### Editor Keybindings
+### Editor keybindings and output
 
 | Key | Action |
 |---|---|
-| <kbd>Ctrl+Enter</kbd> | Evaluate and append result |
-| <kbd>F5</kbd> | Clear output and evaluate |
-| <kbd>Ctrl+L</kbd> | Clear output pane |
+| <kbd>Ctrl+Enter</kbd> | Evaluate the editor code |
+| <kbd>F5</kbd> | Evaluate the editor code |
+
+Output goes to DuetsPad's structured surfaces, not back into the editor:
+
+- `dump(value)`, `console.*`, and rendering errors append to the **Timeline**.
+- `canvas.add(...)`, `canvas.set(...)`, and `canvas.clear()` update the **Canvas**.
+- The **Immediate** bar evaluates a single line on <kbd>Enter</kbd> and shows that result in the Timeline; it keeps no result of its own.
+
+The editor's final evaluation result is **not** automatically appended to the Timeline — use `dump(value)` to record a value there.
 
 ## Project Structure
 

@@ -4,12 +4,12 @@ using System.Text;
 namespace Duets;
 
 /// <summary>
-/// Provides text content for a runtime asset (JavaScript file, TypeScript declaration, etc.).
+/// Provides binary content for a runtime asset (JavaScript file, TypeScript declaration, font, etc.).
 /// </summary>
 public interface IAssetSource
 {
     /// <param name="force">When <see langword="true"/>, bypasses any caching layer and fetches fresh content.</param>
-    public Task<string> GetAsync(bool force = false);
+    public Task<byte[]> GetBytesAsync(bool force = false);
 }
 
 /// <summary>
@@ -18,6 +18,14 @@ public interface IAssetSource
 public static class AssetSources
 {
     private static readonly HttpClient _defaultHttpClient = new();
+
+    /// <summary>
+    /// Returns the asset content decoded as a UTF-8 string.
+    /// </summary>
+    /// <param name="source">The asset source to read from.</param>
+    /// <param name="force">When <see langword="true"/>, bypasses any caching layer and fetches fresh content.</param>
+    public static async Task<string> GetStringAsync(this IAssetSource source, bool force = false) =>
+        Encoding.UTF8.GetString(await source.GetBytesAsync(force));
 
     /// <summary>
     /// Creates an asset source that fetches content from the given HTTP URL.
@@ -50,9 +58,21 @@ public static class AssetSources
     }
 
     /// <summary>
-    /// Creates an asset source from an arbitrary delegate. Useful for testing or custom scenarios.
+    /// Creates an asset source from an arbitrary text delegate. The produced string is encoded as UTF-8.
+    /// Useful for testing or custom scenarios.
     /// </summary>
     public static IAssetSource From(Func<bool, Task<string>> factory)
+    {
+        return new AdHocAssetSource(async force =>
+            Encoding.UTF8.GetBytes(await factory(force))
+        );
+    }
+
+    /// <summary>
+    /// Creates an asset source from an arbitrary binary delegate.
+    /// Useful for testing or custom scenarios that require non-text assets.
+    /// </summary>
+    public static IAssetSource FromBytes(Func<bool, Task<byte[]>> factory)
     {
         return new AdHocAssetSource(factory);
     }
@@ -79,31 +99,32 @@ public static class AssetSources
 
     private sealed class HttpAssetSource(string url, HttpClient client) : IAssetSource
     {
-        public Task<string> GetAsync(bool force = false)
+        public Task<byte[]> GetBytesAsync(bool force = false)
         {
-            return client.GetStringAsync(url);
+            return client.GetByteArrayAsync(url);
         }
     }
 
     private sealed class EmbeddedResourceAssetSource(Assembly assembly, string resourceName)
         : IAssetSource
     {
-        public async Task<string> GetAsync(bool force = false)
+        public async Task<byte[]> GetBytesAsync(bool force = false)
         {
             await using var stream =
                 assembly.GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException(
                     $"Embedded resource '{resourceName}' not found."
                 );
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            return await reader.ReadToEndAsync();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            return ms.ToArray();
         }
     }
 
     private sealed class CachedAssetSource(IAssetSource inner, string cacheFile, TimeSpan ttl)
         : IAssetSource
     {
-        public async Task<string> GetAsync(bool force = false)
+        public async Task<byte[]> GetBytesAsync(bool force = false)
         {
             if (
                 !force
@@ -111,18 +132,18 @@ public static class AssetSources
                 && DateTime.UtcNow - File.GetCreationTimeUtc(cacheFile) < ttl
             )
             {
-                return await File.ReadAllTextAsync(cacheFile);
+                return await File.ReadAllBytesAsync(cacheFile);
             }
 
-            var content = await inner.GetAsync(force);
-            await File.WriteAllTextAsync(cacheFile, content);
+            var content = await inner.GetBytesAsync(force);
+            await File.WriteAllBytesAsync(cacheFile, content);
             return content;
         }
     }
 
-    private sealed class AdHocAssetSource(Func<bool, Task<string>> factory) : IAssetSource
+    private sealed class AdHocAssetSource(Func<bool, Task<byte[]>> factory) : IAssetSource
     {
-        public Task<string> GetAsync(bool force = false)
+        public Task<byte[]> GetBytesAsync(bool force = false)
         {
             return factory(force);
         }
