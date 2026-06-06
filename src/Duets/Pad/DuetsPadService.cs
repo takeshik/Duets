@@ -283,7 +283,8 @@ public sealed class DuetsPadService : IDisposable
             newId,
             duetsSession,
             this._options.ObjectRenderers,
-            this._options.Clock
+            this._options.Clock,
+            this._options.TimelineEntryLimit
         );
 
         await ctx.CloseAsync(

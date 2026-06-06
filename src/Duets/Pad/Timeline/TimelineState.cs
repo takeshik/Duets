@@ -66,6 +66,26 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return new TimelineState(next, Math.Max(this.NextId, entry.Id + 1));
     }
 
+    public TimelineState Trim(long removeBeforeId)
+    {
+        var firstRetain = Array.FindIndex(this.entries, e => e.Id >= removeBeforeId);
+        if (firstRetain == 0)
+        {
+            // Boundary is at or below the lowest id: nothing to remove.
+            return this;
+        }
+
+        if (firstRetain < 0)
+        {
+            // No entry qualifies to be retained: remove all entries but preserve NextId.
+            return new TimelineState([], this.NextId);
+        }
+
+        var trimmed = new TimelineEntry[this.entries.Length - firstRetain];
+        Array.Copy(this.entries, firstRetain, trimmed, 0, trimmed.Length);
+        return new TimelineState(trimmed, this.NextId);
+    }
+
     public TimelineState Clear() => Empty;
 
     public bool Equals(TimelineState? other)

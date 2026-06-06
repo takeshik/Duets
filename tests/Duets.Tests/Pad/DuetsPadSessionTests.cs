@@ -796,4 +796,203 @@ public sealed class DuetsPadSessionTests
             await channel.Reader.Completion.WaitAsync(TimeSpan.FromSeconds(30), ct);
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Timeline quota / timeline.trim
+    // -------------------------------------------------------------------------
+
+    private static async Task<DuetsPadSession> CreatePadSessionWithLimitAsync(int? limit)
+    {
+        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        return new DuetsPadSession(Guid.NewGuid(), duetsSession, timelineEntryLimit: limit);
+    }
+
+    [Fact]
+    public async Task TimelineEntryLimit_zero_or_negative_throws_ArgumentOutOfRangeException()
+    {
+        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DuetsPadSession(Guid.NewGuid(), duetsSession, timelineEntryLimit: 0)
+        );
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new DuetsPadSession(Guid.NewGuid(), duetsSession, timelineEntryLimit: -1)
+        );
+
+        duetsSession.Dispose();
+    }
+
+    [Fact]
+    public async Task Unlimited_default_never_trims_and_never_emits_timeline_trim()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+        // Drain the initial reset.
+        channel.Reader.TryRead(out _);
+
+        // Append several entries via dump.
+        const int appendCount = 10;
+        for (var i = 0; i < appendCount; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        Assert.Equal(appendCount, session.Timeline.Count);
+
+        // Drain all events; none should be timeline.trim.
+        var events = new List<TimelineEventMessage>();
+        while (channel.Reader.TryRead(out var msg))
+        {
+            events.Add(msg);
+        }
+
+        Assert.Equal(appendCount, events.Count);
+        Assert.All(events, e => Assert.Equal(TimelineEventTypes.Append, e.Type));
+    }
+
+    [Fact]
+    public async Task Exceeding_limit_drops_oldest_entries_and_keeps_most_recent()
+    {
+        const int limit = 3;
+        using var session = await CreatePadSessionWithLimitAsync(limit);
+
+        // Append more entries than the limit.
+        for (var i = 0; i < 7; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        Assert.Equal(limit, session.Timeline.Count);
+        // The most recent 3 entries (ids 4, 5, 6) are retained; the oldest are gone.
+        Assert.Equal(4L, session.Timeline[0].Id);
+        Assert.Equal(5L, session.Timeline[1].Id);
+        Assert.Equal(6L, session.Timeline[2].Id);
+    }
+
+    [Fact]
+    public async Task Live_subscriber_receives_timeline_trim_event_with_correct_removeBeforeId()
+    {
+        const int limit = 3;
+        using var session = await CreatePadSessionWithLimitAsync(limit);
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+        // Drain initial reset.
+        channel.Reader.TryRead(out _);
+
+        // Append exactly limit entries — no trim yet.
+        for (var i = 0; i < limit; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        // The (limit+1)-th append triggers the first trim.
+        await session.EvaluateAsync($"""dump("trigger")""");
+
+        // Collect all events for this fourth append.
+        var events = new List<TimelineEventMessage>();
+        while (channel.Reader.TryRead(out var msg))
+        {
+            events.Add(msg);
+        }
+
+        // Expect: 3 appends (ids 0,1,2) + then append id=3 + trim removing id 0.
+        var trimEvents = events.Where(e => e.Type == TimelineEventTypes.Trim).ToList();
+        Assert.NotEmpty(trimEvents);
+
+        var trim = trimEvents[^1];
+        // removeBeforeId == 1: entries with id < 1 (i.e. id 0) are removed; ids 1,2,3 retained.
+        Assert.Equal(1L, trim.RemoveBeforeId);
+    }
+
+    [Fact]
+    public async Task Subscriber_sees_append_before_trim_for_same_eval()
+    {
+        const int limit = 2;
+        using var session = await CreatePadSessionWithLimitAsync(limit);
+
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+        // Drain initial reset.
+        channel.Reader.TryRead(out _);
+
+        // Fill to limit.
+        for (var i = 0; i < limit; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        // Drain the limit-filling appends.
+        while (channel.Reader.TryRead(out _)) { }
+
+        // This append triggers a trim.
+        await session.EvaluateAsync("""dump("trigger")""");
+
+        // Collect events from the triggering eval.
+        var events = new List<TimelineEventMessage>();
+        while (channel.Reader.TryRead(out var msg))
+        {
+            events.Add(msg);
+        }
+
+        Assert.True(events.Count >= 2, "Expected at least one append and one trim event.");
+        var appendIdx = events.FindIndex(e => e.Type == TimelineEventTypes.Append);
+        var trimIdx = events.FindIndex(e => e.Type == TimelineEventTypes.Trim);
+        Assert.True(
+            appendIdx >= 0 && trimIdx > appendIdx,
+            "timeline.append must appear before timeline.trim"
+        );
+    }
+
+    [Fact]
+    public async Task Entry_ids_are_not_reused_after_trim()
+    {
+        const int limit = 2;
+        using var session = await CreatePadSessionWithLimitAsync(limit);
+
+        // Append enough to force a trim.
+        for (var i = 0; i < limit + 1; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        // At this point Timeline has 2 entries; NextId must be limit+1 (= 3), not reset.
+        Assert.Equal(limit + 1, (int)session.Timeline.NextId);
+
+        // A further append uses the next id (= 3), not 0 or 1.
+        await session.EvaluateAsync("""dump("after-trim")""");
+
+        var lastId = session.Timeline[^1].Id;
+        Assert.Equal(limit + 1L, lastId);
+    }
+
+    [Fact]
+    public async Task Late_subscriber_receives_trimmed_state_via_timeline_reset()
+    {
+        const int limit = 2;
+        using var session = await CreatePadSessionWithLimitAsync(limit);
+
+        // Cause a trim by appending beyond the limit.
+        for (var i = 0; i < limit + 2; i++)
+        {
+            await session.EvaluateAsync($"""dump("{i}")""");
+        }
+
+        Assert.Equal(limit, session.Timeline.Count);
+
+        // A subscriber attaching now should receive a reset reflecting only the trimmed entries.
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+
+        var reset = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(TimelineEventTypes.Reset, reset.Type);
+        Assert.NotNull(reset.State);
+        Assert.Equal(limit, reset.State!.Count);
+
+        // The reset state must NOT include entries that were trimmed.
+        var lowestRetainedId = session.Timeline[0].Id;
+        Assert.All(reset.State!, e => Assert.True(e.Id >= lowestRetainedId));
+    }
 }

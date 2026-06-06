@@ -46,6 +46,15 @@ public sealed class DuetsPadServiceOptions
     public IAssetSource? TablerIconsFont { get; set; }
 
     /// <summary>
+    /// Maximum number of Timeline entries retained per session.
+    /// <see langword="null"/> (the default) means unlimited. When set to a positive value,
+    /// entries older than the limit are dropped after each append and a <c>timeline.trim</c>
+    /// event is emitted to all live subscribers so the browser converges to the same
+    /// bounded state. A non-null value must be positive.
+    /// </summary>
+    public int? TimelineEntryLimit { get; set; } = null;
+
+    /// <summary>
     /// Object renderers applied to every DuetsPad browser session, consulted in last-wins order
     /// (a later renderer overrides an earlier one that can render the same value) before the
     /// built-in default renderer. Empty by default, preserving default rendering behavior.

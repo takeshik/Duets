@@ -100,11 +100,14 @@ internal sealed class DuetsPadSession : IDisposable
 
     private ObjectRenderingPipeline _pipeline;
 
+    private readonly int? _timelineEntryLimit;
+
     public DuetsPadSession(
         Guid id,
         DuetsSession duetsSession,
         IReadOnlyList<IObjectRenderer>? objectRenderers = null,
-        Func<DateTimeOffset>? clock = null
+        Func<DateTimeOffset>? clock = null,
+        int? timelineEntryLimit = null
     )
     {
         this.Id =
@@ -113,6 +116,12 @@ internal sealed class DuetsPadSession : IDisposable
                 : id;
         this.DuetsSession = duetsSession ?? throw new ArgumentNullException(nameof(duetsSession));
         this._clock = clock ?? (() => DateTimeOffset.UtcNow);
+        this._timelineEntryLimit = timelineEntryLimit is null or > 0
+            ? timelineEntryLimit
+            : throw new ArgumentOutOfRangeException(
+                nameof(timelineEntryLimit),
+                "Timeline entry limit must be positive."
+            );
 
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
@@ -674,6 +683,13 @@ internal sealed class DuetsPadSession : IDisposable
             this.Timeline = this.Timeline.Append(reason, body);
             var entry = this.Timeline[^1];
             this.BroadcastTimeline(TimelineEventMessage.Append(entry));
+
+            if (this._timelineEntryLimit is int max && this.Timeline.Count > max)
+            {
+                var removeBeforeId = this.Timeline[^max].Id;
+                this.Timeline = this.Timeline.Trim(removeBeforeId);
+                this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
+            }
         }
     }
 
