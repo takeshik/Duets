@@ -95,7 +95,10 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline)
             columns = ResolveColumnsFromRows(rowList);
         }
 
-        return this.BuildTable(columns, rowList);
+        var projectedRows = rowList
+            .Select(r => (IReadOnlyList<KeyValuePair<string, object?>>)[.. r])
+            .ToList();
+        return TableRenderBuilder.Build(columns, projectedRows, this._pipeline.Render);
     }
 
     private static IDictionary<string, object?> CoerceRow(object? row)
@@ -108,6 +111,18 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline)
         if (row is IDictionary nonGenericDict)
         {
             return ConvertNonGenericDictionary(nonGenericDict);
+        }
+
+        if (RecordProjector.IsRecordLike(row))
+        {
+            var projected = RecordProjector.Project(row!);
+            var result = new Dictionary<string, object?>(projected.Count);
+            foreach (var kv in projected)
+            {
+                result[kv.Key] = kv.Value;
+            }
+
+            return result;
         }
 
         throw new ArgumentException(
@@ -176,74 +191,6 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline)
         }
 
         return [.. rowList[0].Keys];
-    }
-
-    private Rendering.Element BuildTable(
-        List<string> columns,
-        List<IDictionary<string, object?>> rowList
-    )
-    {
-        var tableAttributes = new ElementAttributes(
-            new KeyValuePair<string, string?>("class", "duetspad-table")
-        );
-
-        var theadChildren = BuildHeaderRow(columns);
-        var thead = new Rendering.Element("thead", ElementAttributes.Empty, theadChildren);
-
-        var tbodyChildren = this.BuildBodyRows(columns, rowList);
-        var tbody = new Rendering.Element("tbody", ElementAttributes.Empty, tbodyChildren);
-
-        return new Rendering.Element("table", tableAttributes, new ElementChildren(thead, tbody));
-    }
-
-    private static ElementChildren BuildHeaderRow(List<string> columns)
-    {
-        var thNodes = columns
-            .Select(col =>
-                (ITerminalRenderNode)
-                    new Rendering.Element(
-                        "th",
-                        ElementAttributes.Empty,
-                        new ElementChildren(new Rendering.Text(col))
-                    )
-            )
-            .ToArray();
-
-        var headerRow = new Rendering.Element("tr", ElementAttributes.Empty, [.. thNodes]);
-
-        return new ElementChildren(headerRow);
-    }
-
-    private ElementChildren BuildBodyRows(
-        List<string> columns,
-        List<IDictionary<string, object?>> rowList
-    )
-    {
-        var trNodes = rowList
-            .Select(row => (ITerminalRenderNode)this.BuildBodyRow(columns, row))
-            .ToArray();
-
-        return [.. trNodes];
-    }
-
-    private Rendering.Element BuildBodyRow(List<string> columns, IDictionary<string, object?> row)
-    {
-        var tdNodes = columns
-            .Select(col =>
-            {
-                var cellContent = row.TryGetValue(col, out var cellValue)
-                    ? this._pipeline.Render(cellValue)
-                    : new Rendering.Text("");
-                return (ITerminalRenderNode)
-                    new Rendering.Element(
-                        "td",
-                        ElementAttributes.Empty,
-                        new ElementChildren(cellContent)
-                    );
-            })
-            .ToArray();
-
-        return new Rendering.Element("tr", ElementAttributes.Empty, [.. tdNodes]);
     }
 
     private static ElementAttributes BuildAttributes(object? attributes)

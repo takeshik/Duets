@@ -234,7 +234,53 @@ public sealed class UiApiTests
         Assert.Equal("", (string?)cells[1]!["children"]![0]!["value"]);
     }
 
-    // ── Negative: Element ─────────────────────────────────────────────────
+    // ── Positive: Table with CLR object rows ──────────────────────────────
+
+    [Fact]
+    public void Table_with_clr_object_rows_uses_projected_properties_as_columns()
+    {
+        var ui = CreateUiApi();
+        var rows = new object?[] { new SimpleRow("Alice", 30), new SimpleRow("Bob", 25) };
+
+        var result = ui.Table(rows);
+
+        var json = RenderNodeJsonSerializer.Serialize(result);
+        Assert.Equal("table", (string?)json["tag"]);
+        Assert.Equal("duetspad-table", (string?)json["attributes"]!["class"]);
+
+        var headerRow = json["children"]![0]!["children"]![0];
+        var headers = headerRow!["children"]!.AsArray();
+        Assert.Equal(2, headers.Count);
+        Assert.Equal("Name", (string?)headers[0]!["children"]![0]!["value"]);
+        Assert.Equal("Age", (string?)headers[1]!["children"]![0]!["value"]);
+
+        var bodyRow0 = json["children"]![1]!["children"]![0];
+        var cells0 = bodyRow0!["children"]!.AsArray();
+        Assert.Equal("Alice", (string?)cells0[0]!["children"]![0]!["value"]);
+        Assert.Equal("30", (string?)cells0[1]!["children"]![0]!["value"]);
+    }
+
+    [Fact]
+    public void Table_with_explicit_columns_over_clr_object_rows_honors_column_order()
+    {
+        var ui = CreateUiApi();
+        var rows = new object?[] { new SimpleRow("Alice", 30) };
+        var options = new Dictionary<string, object?>
+        {
+            ["columns"] = new object[] { "Age", "Name" },
+        };
+
+        var result = ui.Table(rows, options);
+
+        var json = RenderNodeJsonSerializer.Serialize(result);
+        var headerRow = json["children"]![0]!["children"]![0];
+        var headers = headerRow!["children"]!.AsArray();
+        Assert.Equal(2, headers.Count);
+        Assert.Equal("Age", (string?)headers[0]!["children"]![0]!["value"]);
+        Assert.Equal("Name", (string?)headers[1]!["children"]![0]!["value"]);
+    }
+
+    // ── Negative: Table ───────────────────────────────────────────────────
 
     [Fact]
     public void Element_script_tag_throws()
@@ -344,4 +390,37 @@ public sealed class UiApiTests
         Assert.Equal("options", ex.ParamName);
         Assert.Contains("strings", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Table_with_string_element_row_throws_invalid_row()
+    {
+        var ui = CreateUiApi();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { "a string" }));
+        Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Table_with_int_element_row_throws_invalid_row()
+    {
+        var ui = CreateUiApi();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { 42 }));
+        Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Table_with_array_element_row_throws_invalid_row()
+    {
+        var ui = CreateUiApi();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Table(new object?[] { new object[] { 1, 2 } })
+        );
+        Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── Helper types ──────────────────────────────────────────────────────
+
+    private sealed record SimpleRow(string Name, int Age);
 }

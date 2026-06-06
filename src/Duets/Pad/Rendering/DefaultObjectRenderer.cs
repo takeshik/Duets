@@ -8,6 +8,8 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 {
     private const int MaxDepth = 32;
 
+    private static readonly RenderTreeReducer Reducer = new();
+
     public bool CanRender(object value) => true;
 
     public IRenderNode Render(object value) =>
@@ -27,6 +29,17 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         if (depth >= MaxDepth)
         {
             return new Text("[…]");
+        }
+
+        // Render nodes are already in the rendering domain — pass them through without reflection.
+        if (value is ITerminalRenderNode terminalNode)
+        {
+            return terminalNode;
+        }
+
+        if (value is IRenderNode renderNode)
+        {
+            return Reducer.Reduce(renderNode);
         }
 
         switch (value)
@@ -92,7 +105,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
                 return RenderEnumerable(enumerable, visited, depth);
             }
 
-            return new Text(value.ToString() ?? "");
+            return RenderClrObject(value, visited, depth);
         }
         finally
         {
@@ -130,9 +143,63 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         int depth
     )
     {
-        var children = new List<ITerminalRenderNode>();
-
+        // Materialize items into a list.
+        var items = new List<object?>();
         foreach (var item in enumerable)
+        {
+            items.Add(item);
+        }
+
+        // Determine if all items are record-like (dictionaries or non-primitive, non-string,
+        // non-enumerable CLR objects). Empty lists are not tabular.
+        if (items.Count > 0 && items.All(RecordProjector.IsRecordLike))
+        {
+            return RenderTabular(items, visited, depth);
+        }
+
+        return RenderArray(items, visited, depth);
+    }
+
+    private static Element RenderTabular(List<object?> items, HashSet<object> visited, int depth)
+    {
+        // Build projected rows and compute union of columns in first-seen order.
+        var projectedRows = new List<IReadOnlyList<KeyValuePair<string, object?>>>(items.Count);
+        var columnOrder = new List<string>();
+        var columnSet = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var item in items)
+        {
+            var projected = RecordProjector.Project(item!);
+            projectedRows.Add(projected);
+
+            foreach (var kv in projected)
+            {
+                if (columnSet.Add(kv.Key))
+                {
+                    columnOrder.Add(kv.Key);
+                }
+            }
+        }
+
+        // If every item projects to zero members (e.g. types with no public properties or fields),
+        // the union of columns is empty and building a 0-column table is not useful.
+        // Fall back to array rendering so each item renders via its ToString() fallback.
+        if (columnOrder.Count == 0)
+        {
+            return RenderArray(items, visited, depth);
+        }
+
+        return TableRenderBuilder.Build(
+            columnOrder,
+            projectedRows,
+            v => RenderValue(v, visited, depth + 1)
+        );
+    }
+
+    private static Element RenderArray(List<object?> items, HashSet<object> visited, int depth)
+    {
+        var children = new List<ITerminalRenderNode>(items.Count);
+        foreach (var item in items)
         {
             children.Add(RenderValue(item, visited, depth + 1));
         }
@@ -140,6 +207,46 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         return new Element(
             "div",
             new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-array")),
+            [.. children]
+        );
+    }
+
+    private static ITerminalRenderNode RenderClrObject(
+        object value,
+        HashSet<object> visited,
+        int depth
+    )
+    {
+        var members = RecordProjector.Project(value);
+
+        // Fall back to ToString() if the object exposes no public members.
+        if (members.Count == 0)
+        {
+            return new Text(value.ToString() ?? "");
+        }
+
+        var children = new List<ITerminalRenderNode>(members.Count);
+        foreach (var member in members)
+        {
+            var keyText = new Text(member.Key);
+            var valueNode = member.Value is ITerminalRenderNode markerNode
+                ? markerNode
+                : RenderValue(member.Value, visited, depth + 1);
+
+            // RecordProjector may already return a Text("[error]") marker as the value if the
+            // getter threw; render it as-is rather than recursing again.
+
+            var entryElement = new Element(
+                "div",
+                ElementAttributes.Empty,
+                new ElementChildren(keyText, valueNode)
+            );
+            children.Add(entryElement);
+        }
+
+        return new Element(
+            "div",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-object")),
             [.. children]
         );
     }

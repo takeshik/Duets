@@ -226,6 +226,87 @@
             word-break: break-word;
         }
 
+        /* ── Output rendering: table ── */
+        .duetspad-table {
+            border-collapse: collapse;
+            font-size: 12px;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            display: block;
+            overflow-x: auto;
+            max-width: 100%;
+            color: #c8c8e0;
+        }
+
+        .duetspad-table th,
+        .duetspad-table td {
+            padding: 3px 10px;
+            border: 1px solid #2d2d4a;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .duetspad-table th {
+            color: #9d8cff;
+            background: #15151f;
+            font-weight: 600;
+        }
+
+        .duetspad-table tr:nth-child(even) td {
+            background: #14142a;
+        }
+
+        /* ── Output rendering: object (key/value) ── */
+        .duetspad-object {
+            display: inline-block;
+            font-size: 12px;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            color: #c8c8e0;
+        }
+
+        .duetspad-object > div {
+            display: flex;
+            gap: 8px;
+            padding: 1px 0;
+        }
+
+        .duetspad-object > div > :first-child {
+            color: #7a7ac0;
+            flex-shrink: 0;
+            min-width: 6em;
+        }
+
+        /* ── Output rendering: array ── */
+        .duetspad-array {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 12px;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            color: #c8c8e0;
+            padding-left: 12px;
+            border-left: 2px solid #2d2d4a;
+        }
+
+        /* ── Output rendering: error marker ── */
+        .duetspad-output-error {
+            color: #f48771;
+            font-family: Consolas, 'Cascadia Code', monospace;
+            font-size: 12px;
+        }
+
+        /* ── Output rendering: label / stack ── */
+        .duetspad-label {
+            color: #9d8cff;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .duetspad-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
         /* Narrow viewport: stack columns */
         @media (max-width: 640px) {
             #layout {
