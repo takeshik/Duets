@@ -8,7 +8,7 @@ Duets lets you drop a fully-featured TypeScript REPL into **any** .NET applicati
 
 - **TypeScript transpilation & execution** — powered by [Jint](https://github.com/sebastienros/jint) running Babel (default) or the official TypeScript compiler in-process. No Node.js required.
 - **Auto-generated type declarations** — expose .NET types to the editor and get IntelliSense-style completions via automatically generated `.d.ts` files. Attach .NET XML documentation (`JsDocProviders`) to include prose summaries, `@param`, and `@returns` annotations in the editor.
-- **Web-based REPL UI** — a Monaco Editor frontend served over a built-in HTTP server, with SSE-based live type declaration updates.
+- **Browser debug pad (DuetsPad)** — a Monaco Editor frontend served over a built-in HTTP server, with an output canvas, execution timeline, and SSE-based live type declaration updates.
 - **Zero heavy dependencies** — deliberately avoids ASP.NET Core / Kestrel. The built-in HTTP layer ([HttpHarker](src/HttpHarker/)) is a thin wrapper around `System.Net.HttpListener`, keeping the footprint minimal for embedding.
 
 ## Packages
@@ -21,7 +21,7 @@ dotnet add package Duets.Jint
 
 | Package | Targets | Description |
 |---------|---------|-------------|
-| [`Duets`](https://www.nuget.org/packages/Duets) | netstandard2.1; net8.0 | Core library: session, declarations, REPL |
+| [`Duets`](https://www.nuget.org/packages/Duets) | netstandard2.1; net8.0 | Core library: session, declarations, DuetsPad |
 | [`Duets.Jint`](https://www.nuget.org/packages/Duets.Jint) | netstandard2.1; net8.0 | [Jint](https://github.com/sebastienros/jint) backend; depends on `Duets` |
 | [`HttpHarker`](https://www.nuget.org/packages/HttpHarker) | netstandard2.1; net8.0 | Lightweight HTTP server (also available standalone) |
 
@@ -52,14 +52,12 @@ Console.WriteLine(session.Evaluate("""
     """));
 ```
 
-To serve a browser-based TypeScript console with Monaco editor and live .NET type completions:
+To serve the DuetsPad browser debug pad with Monaco editor, live .NET type completions, Canvas, and Timeline:
 
 ```csharp
-using var session = await DuetsSession.CreateAsync(config => config
-    .UseJint(opts => opts.AllowClr()));
-
 using var server = new HttpServer("http://127.0.0.1:17375/");
-server.UseContentTypeDetection().UseRepl(session);
+using var pad = server.UseContentTypeDetection().UseDuetsPad(configure: opts =>
+    opts.SessionFactory = () => DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr())));
 await server.RunAsync(); // open http://127.0.0.1:17375/
 ```
 
@@ -83,7 +81,7 @@ The editor's final evaluation result is **not** automatically appended to the Ti
 ## Project Structure
 
 - `src/`
-  - `Duets/` — Core library: session, declarations, transpiler interface, REPL service
+  - `Duets/` — Core library: session, declarations, transpiler interface, DuetsPad browser debug pad
   - `Duets.Jint/` — Jint backend: `JintScriptEngine`, `BabelTranspiler`, `TypeScriptService`, `ExtensionMethodRegistry`
   - `HttpHarker/` — Lightweight `HttpListener`-based HTTP server with middleware pipeline
   - `Duets.Sandbox/` — Multi-mode debugging CLI (run with `--help` or `batch` → `{"op":"help"}` for usage)

@@ -35,9 +35,9 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 - `Duets.slnx` — Solution file (XML-based slnx format)
 - `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects
 - `src/`
-  - `Duets/` — Core library (public API): session, declarations, transpiler interface, REPL service
-    - `Resources/ReplStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `ReplService` at
-      runtime
+  - `Duets/` — Core library (public API): session, declarations, transpiler interface, DuetsPad browser debug pad
+    - `Resources/DuetsPadStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `DuetsPadService` at runtime
+    - `Resources/language-service.js` — Embedded TypeScript language service script loaded server-side by `TypeScriptService` for completions
   - `Duets.Jint/` — [Jint](https://github.com/sebastienros/jint) backend package: `JintScriptEngine`,
     `BabelTranspiler`, `TypeScriptService`, `ExtensionMethodRegistry`, `DuetsSessionConfigurationExtensions`
   - `HttpHarker/` — Standalone lightweight HTTP server library (may be extracted to its own repo)
