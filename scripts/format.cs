@@ -23,6 +23,7 @@ run(async () =>
         ]
     );
     await start("dotnet", ["csharpier", "format", dir]);
+    await start("biome", ["check", "--write", dir]);
 });
 
 // dotnet format only applies analyzer code fixes (e.g. `this.` qualification, IDE0003/IDE0009)

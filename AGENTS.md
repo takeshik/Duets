@@ -82,7 +82,9 @@ content, and the distinction must be respected even when the subject matter is c
 
 ## Code Style
 
-Code style is enforced via [CSharpier](https://github.com/belav/csharpier) and `dotnet format`. Rules are defined in `.editorconfig`.
+Use `scripts/format.cs` as the repository formatting entry point. It is okay to run this script manually, even though
+Agent Stop hooks also run it automatically. Generated code must still follow the code style and rules defined in
+`.editorconfig`.
 
 ## Testing
 
@@ -90,7 +92,8 @@ Code style is enforced via [CSharpier](https://github.com/belav/csharpier) and `
 dotnet test
 ```
 
-Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`. xUnit v3 runs on Microsoft.Testing.Platform; use `--filter-class`/`--filter-method` instead of `--filter`.
+Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`. xUnit v3 runs on Microsoft.Testing.Platform;
+use `--filter-class`/`--filter-method` instead of `--filter`.
 
 ## End-to-end verification with Duets.Sandbox
 

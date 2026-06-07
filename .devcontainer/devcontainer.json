@@ -22,8 +22,6 @@
       }
     }
   },
-  "forwardPorts": [
-    17375
-  ],
+  "forwardPorts": [17375],
   "postCreateCommand": "dotnet tool restore && dotnet restore"
 }

@@ -6,8 +6,6 @@
     ":configMigration",
     "abandonments:recommended"
   ],
-  "labels": [
-    "renovate"
-  ],
+  "labels": ["renovate"],
   "prHourlyLimit": 0
 }

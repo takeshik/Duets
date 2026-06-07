@@ -24,6 +24,7 @@ run(async () =>
         ]
     );
     await start("dotnet", ["csharpier", "check", dir]);
+    await start("biome", ["check", dir]);
 });
 
 // dotnet format only applies analyzer code fixes (e.g. `this.` qualification, IDE0003/IDE0009)

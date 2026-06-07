@@ -2,3 +2,6 @@
 includes = [
     "scripts/"
 ]
+
+[tools]
+biome = "2.4.16"
