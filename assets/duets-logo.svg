@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 38" role="img" aria-label="DuetsPad">
+  <title>Duets logo</title>
+  <style>
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --logo-duets: #849dff;
+      }
+    }
+  </style>
+  <defs>
+    <mask id="plus" maskUnits="userSpaceOnUse" x="0" y="0" width="38" height="38">
+      <rect x="0" y="0" width="38" height="38" fill="#fff"></rect>
+      <path fill="#000" d="M7.87 14.85Q7.87 14.30 8.42 14.30L9.92 14.30Q10.47 14.30 10.47 14.85L10.47 17.15Q10.47 17.70 11.02 17.70L13.32 17.70Q13.87 17.70 13.87 18.25L13.87 19.75Q13.87 20.30 13.32 20.30L11.02 20.30Q10.47 20.30 10.47 20.85L10.47 23.15Q10.47 23.70 9.92 23.70L8.42 23.70Q7.87 23.70 7.87 23.15L7.87 20.85Q7.87 20.30 7.32 20.30L5.02 20.30Q4.47 20.30 4.47 19.75L4.47 18.25Q4.47 17.70 5.02 17.70L7.32 17.70Q7.87 17.70 7.87 17.15Z"></path>
+    </mask>
+  </defs>
+  <g mask="url(#plus)">
+    <path fill-rule="evenodd" fill="var(--logo-duets, #4558ce)" d="M15.00 5.80Q15.00 3.00 17.19 4.75L32.81 17.25Q35.00 19.00 32.81 20.75L17.19 33.25Q15.00 35.00 15.00 32.20Z M3.00 5.80Q3.00 3.00 5.19 4.75L20.81 17.25Q23.00 19.00 20.81 20.75L5.19 33.25Q3.00 35.00 3.00 32.20Z"></path>
+  </g>
+</svg>

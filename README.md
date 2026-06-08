@@ -1,7 +1,12 @@
-# Duets
+<div align="center">
+  <img src="assets/duets-logo.svg" height="96" alt="Duets logo">
+  &nbsp;
+  <img src="assets/duets-text.svg" height="96" alt="Duets">
+  <br>
+  A library of Embeddable TypeScript console for .NET applications.
+</div>
 
-Embeddable TypeScript console for .NET applications.
-
+<br>
 Duets lets you drop a fully-featured TypeScript REPL into **any** .NET application — desktop, mobile (iOS / Android / MAUI), game engines (Unity, Godot), servers, and everything in between. Use it for live debugging, runtime scripting, or as an in-app scripting language.
 
 ## Features
