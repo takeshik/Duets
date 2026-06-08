@@ -189,7 +189,8 @@ internal sealed class SandboxContext : IAsyncDisposable
                     CreateDuetsSessionAsync(
                         TranspilerKind.TypeScript,
                         this._tsFactory,
-                        this._babelFactory
+                        this._babelFactory,
+                        announce: false
                     )
             );
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
@@ -247,7 +248,8 @@ internal sealed class SandboxContext : IAsyncDisposable
     private static async Task<DuetsSession> CreateDuetsSessionAsync(
         TranspilerKind kind,
         Func<TypeDeclarations, Task<ITranspiler>> tsFactory,
-        Func<TypeDeclarations, Task<ITranspiler>> babelFactory
+        Func<TypeDeclarations, Task<ITranspiler>> babelFactory,
+        bool announce = true
     )
     {
         var factory = kind switch
@@ -263,11 +265,20 @@ internal sealed class SandboxContext : IAsyncDisposable
             _ => throw new UnreachableException(),
         };
 
-        await Console.Error.WriteAsync($"Initializing {kindName} engine...");
+        if (announce)
+        {
+            await Console.Error.WriteAsync($"Initializing {kindName} engine...");
+        }
+
         var session = await DuetsSession.CreateAsync(config =>
             config.UseTranspiler(factory).UseJint(opts => opts.AllowClr())
         );
-        await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
+
+        if (announce)
+        {
+            await Console.Error.WriteLineAsync($" {session.Transpiler.Description}");
+        }
+
         return session;
     }
 }
