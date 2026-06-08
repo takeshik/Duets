@@ -610,25 +610,57 @@ html[data-bs-theme="light"] .immediate-console {
 .duetspad-table tr:nth-child(even) td {
     background: color-mix(in srgb, var(--common-text) 3%, transparent);
 }
-.duetspad-object {
-    display: inline-block;
+.duetspad-object,
+.duetspad-map {
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: var(--common-data-size);
     font-family: var(--common-font-mono);
+    display: inline-block;
+    max-width: 100%;
     color: var(--common-text);
     border: 1px solid var(--common-border);
     border-radius: var(--common-radius-sm);
-    padding: 6px 10px;
-    background: var(--common-surface-2);
 }
-.duetspad-object > div {
-    display: flex;
-    gap: 12px;
-    padding: 2px 0;
+.duetspad-object th,
+.duetspad-object td,
+.duetspad-map th,
+.duetspad-map td {
+    padding: 4px 11px;
+    border-bottom: 1px solid var(--common-border-soft);
+    border-right: 1px solid var(--common-border-soft);
+    text-align: left;
+    vertical-align: top;
 }
-.duetspad-object > div > :first-child {
+.duetspad-object th:last-child,
+.duetspad-object td:last-child,
+.duetspad-map th:last-child,
+.duetspad-map td:last-child {
+    border-right: none;
+}
+.duetspad-object tr:last-child td,
+.duetspad-map tr:last-child td {
+    border-bottom: none;
+}
+.duetspad-object th,
+.duetspad-map th {
     color: var(--common-accent-text);
-    flex-shrink: 0;
-    min-width: 6em;
+    background: var(--common-surface-2);
+    font-weight: 600;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+.duetspad-typeheader {
+    text-transform: none;
+    font-size: var(--common-data-size);
+    letter-spacing: normal;
+}
+.duetspad-key {
+    color: var(--common-accent-text);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
 }
 
 .duetspad-array {

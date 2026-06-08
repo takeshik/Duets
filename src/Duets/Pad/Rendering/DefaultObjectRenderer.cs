@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace Duets.Pad.Rendering;
@@ -44,6 +45,9 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         switch (value)
         {
+            case Enum e:
+                return new Text(e.ToString());
+
             case string s:
                 return new Text(s);
 
@@ -95,17 +99,49 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         try
         {
-            if (value is IDictionary dict)
+            // 1. Dynamic JS-object shape (e.g. ExpandoObject, the shape Jint marshals JS object
+            //    literals to) → named-member object (Form A), projecting its string keys as member
+            //    names. An empty dynamic object still renders as an empty object table rather than
+            //    leaking the marshaled CLR type name via ToString(). This is checked before the map
+            //    path because ExpandoObject also implements IDictionary<,>, yet ADR-40 routes it to
+            //    Form A to converge with ordinary CLR objects.
+            if (RecordProjector.TryProjectDynamicObjectLike(value, out var dynamicMembers))
             {
-                return RenderDictionary(dict, visited, depth);
+                return RenderNamedMemberObject(
+                    value,
+                    dynamicMembers,
+                    showTypeHeader: false,
+                    allowEmptyTable: true,
+                    visited,
+                    depth
+                );
             }
 
+            // 2. Map (Form B): non-generic IDictionary, or a generic dictionary
+            //    (IDictionary<,> / IReadOnlyDictionary<,>) that is not the dynamic shape handled
+            //    above. A bare IEnumerable<KeyValuePair<,>> is not a map.
+            if (RecordProjector.TryExtractMapEntries(value, out var mapEntries))
+            {
+                return RenderMap(value.GetType(), mapEntries, visited, depth);
+            }
+
+            // 3. IEnumerable → existing collection path.
             if (value is IEnumerable enumerable)
             {
                 return RenderEnumerable(enumerable, visited, depth);
             }
 
-            return RenderClrObject(value, visited, depth);
+            // 4. Ordinary CLR object → named-member object (Form A).
+            var members = RecordProjector.Project(value);
+            var showTypeHeader = !IsAnonymousOrCompilerGenerated(value.GetType());
+            return RenderNamedMemberObject(
+                value,
+                members,
+                showTypeHeader,
+                allowEmptyTable: false,
+                visited,
+                depth
+            );
         }
         finally
         {
@@ -113,27 +149,74 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         }
     }
 
-    private static Element RenderDictionary(IDictionary dict, HashSet<object> visited, int depth)
-    {
-        var children = new List<ITerminalRenderNode>();
+    private static bool IsAnonymousOrCompilerGenerated(Type type) =>
+        Attribute.IsDefined(type, typeof(CompilerGeneratedAttribute))
+        || type.Name.Contains("AnonymousType", StringComparison.Ordinal);
 
-        foreach (DictionaryEntry entry in dict)
+    private static Element RenderMap(
+        Type mapType,
+        IReadOnlyList<KeyValuePair<string, object?>> entries,
+        HashSet<object> visited,
+        int depth
+    )
+    {
+        var typeHeader = new Element(
+            "tr",
+            ElementAttributes.Empty,
+            new ElementChildren(
+                new Element(
+                    "th",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
+                        new KeyValuePair<string, string?>("colspan", "2")
+                    ),
+                    new ElementChildren(new Text($"{mapType.Name} ({entries.Count} items)"))
+                )
+            )
+        );
+
+        var columnHeader = new Element(
+            "tr",
+            ElementAttributes.Empty,
+            new ElementChildren(
+                new Element("th", ElementAttributes.Empty, new ElementChildren(new Text("Key"))),
+                new Element("th", ElementAttributes.Empty, new ElementChildren(new Text("Value")))
+            )
+        );
+
+        var thead = new Element(
+            "thead",
+            ElementAttributes.Empty,
+            new ElementChildren(typeHeader, columnHeader)
+        );
+
+        var rows = new List<ITerminalRenderNode>(entries.Count);
+        foreach (var entry in entries)
         {
-            var keyText = new Text(entry.Key?.ToString() ?? "");
             var valueNode = RenderValue(entry.Value, visited, depth + 1);
 
-            var entryElement = new Element(
-                "div",
-                ElementAttributes.Empty,
-                new ElementChildren(keyText, valueNode)
+            rows.Add(
+                new Element(
+                    "tr",
+                    ElementAttributes.Empty,
+                    new ElementChildren(
+                        new Element(
+                            "td",
+                            ElementAttributes.Empty,
+                            new ElementChildren(new Text(entry.Key))
+                        ),
+                        new Element("td", ElementAttributes.Empty, new ElementChildren(valueNode))
+                    )
+                )
             );
-            children.Add(entryElement);
         }
 
+        var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
+
         return new Element(
-            "div",
-            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-object")),
-            [.. children]
+            "table",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-map")),
+            new ElementChildren(thead, tbody)
         );
     }
 
@@ -211,24 +294,37 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         );
     }
 
-    private static ITerminalRenderNode RenderClrObject(
+    /// <summary>
+    /// Renders a named-member object (Form A) — a vertical property table with one row per
+    /// member (member name → rendered value). Used for ordinary CLR objects, JS object literals
+    /// / dynamic-object values, and anonymous types.
+    /// </summary>
+    /// <param name="allowEmptyTable">
+    /// When <see langword="true" />, a value with zero projectable members still renders as an
+    /// empty object table (used for dynamic/JS objects, where <c>ToString()</c> would leak the
+    /// marshaled CLR type name such as <c>System.Dynamic.ExpandoObject</c>). When
+    /// <see langword="false" /> (ordinary CLR objects), a zero-member value falls back to
+    /// <c>ToString()</c>.
+    /// </param>
+    private static ITerminalRenderNode RenderNamedMemberObject(
         object value,
+        IReadOnlyList<KeyValuePair<string, object?>> members,
+        bool showTypeHeader,
+        bool allowEmptyTable,
         HashSet<object> visited,
         int depth
     )
     {
-        var members = RecordProjector.Project(value);
-
-        // Fall back to ToString() if the object exposes no public members.
-        if (members.Count == 0)
+        // Fall back to ToString() if the object exposes no projectable members, unless an empty
+        // table is explicitly allowed (dynamic/JS objects).
+        if (members.Count == 0 && !allowEmptyTable)
         {
             return new Text(value.ToString() ?? "");
         }
 
-        var children = new List<ITerminalRenderNode>(members.Count);
+        var rows = new List<ITerminalRenderNode>(members.Count);
         foreach (var member in members)
         {
-            var keyText = new Text(member.Key);
             var valueNode = member.Value is ITerminalRenderNode markerNode
                 ? markerNode
                 : RenderValue(member.Value, visited, depth + 1);
@@ -236,18 +332,71 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             // RecordProjector may already return a Text("[error]") marker as the value if the
             // getter threw; render it as-is rather than recursing again.
 
-            var entryElement = new Element(
-                "div",
+            rows.Add(BuildMemberRow(member.Key, valueNode));
+        }
+
+        var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
+
+        ElementChildren tableChildren;
+        if (showTypeHeader)
+        {
+            var thead = new Element(
+                "thead",
                 ElementAttributes.Empty,
-                new ElementChildren(keyText, valueNode)
+                new ElementChildren(
+                    new Element(
+                        "tr",
+                        ElementAttributes.Empty,
+                        new ElementChildren(
+                            new Element(
+                                "th",
+                                new ElementAttributes(
+                                    new KeyValuePair<string, string?>(
+                                        "class",
+                                        "duetspad-typeheader"
+                                    ),
+                                    new KeyValuePair<string, string?>("colspan", "2")
+                                ),
+                                new ElementChildren(new Text(value.GetType().Name))
+                            )
+                        )
+                    )
+                )
             );
-            children.Add(entryElement);
+
+            tableChildren = new ElementChildren(thead, tbody);
+        }
+        else
+        {
+            tableChildren = new ElementChildren(tbody);
         }
 
         return new Element(
-            "div",
+            "table",
             new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-object")),
-            [.. children]
+            tableChildren
+        );
+    }
+
+    /// <summary>
+    /// Builds a member row <c>&lt;tr&gt;</c> for a named-member object table — a
+    /// <c>&lt;th class="duetspad-key"&gt;</c> holding the member name, and a <c>&lt;td&gt;</c>
+    /// holding the rendered value.
+    /// </summary>
+    private static Element BuildMemberRow(string key, ITerminalRenderNode valueNode)
+    {
+        var keyElement = new Element(
+            "th",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-key")),
+            new ElementChildren(new Text(key))
+        );
+
+        var valueCell = new Element("td", ElementAttributes.Empty, new ElementChildren(valueNode));
+
+        return new Element(
+            "tr",
+            ElementAttributes.Empty,
+            new ElementChildren(keyElement, valueCell)
         );
     }
 

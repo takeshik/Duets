@@ -1,10 +1,89 @@
 using Duets.Pad.Rendering;
+using Duets.Tests.TestSupport;
 
 namespace Duets.Tests.Pad.Rendering;
 
 public sealed class DefaultObjectRendererTests
 {
     private readonly DefaultObjectRenderer renderer = new();
+
+    /// <summary>
+    /// Asserts that <paramref name="node"/> is a member row <c>&lt;tr&gt;</c> of a named-member
+    /// object table (Form A) — a <c>&lt;th class="duetspad-key"&gt;</c> holding a <see cref="Text"/>
+    /// with the given member name, followed by a <c>&lt;td&gt;</c> holding the value — and returns
+    /// the row for further inspection.
+    /// </summary>
+    private static Element AssertMemberRow(ITerminalRenderNode node, string expectedKey)
+    {
+        var row = Assert.IsType<Element>(node);
+        Assert.Equal("tr", row.Tag);
+
+        var keyElement = Assert.IsType<Element>(row.Children[0]);
+        Assert.Equal("th", keyElement.Tag);
+        Assert.Equal("duetspad-key", keyElement.Attributes["class"]);
+        Assert.Equal(new Text(expectedKey), Assert.Single(keyElement.Children));
+
+        Assert.IsType<Element>(row.Children[1]);
+        Assert.Equal("td", ((Element)row.Children[1]).Tag);
+
+        return row;
+    }
+
+    /// <summary>
+    /// Returns the value node held by the <c>&lt;td&gt;</c> of a member row produced by
+    /// <see cref="AssertMemberRow"/>.
+    /// </summary>
+    private static ITerminalRenderNode GetRowValue(Element row) =>
+        Assert.Single(((Element)row.Children[1]).Children);
+
+    /// <summary>
+    /// Asserts that <paramref name="result"/> is a Form A named-member object table
+    /// (<c>&lt;table class="duetspad-object"&gt;</c>) and returns its <c>&lt;tbody&gt;</c> rows.
+    /// </summary>
+    private static (Element Table, IReadOnlyList<Element> Rows, Element? Thead) AssertObjectTable(
+        IRenderNode result
+    )
+    {
+        var table = Assert.IsType<Element>(result);
+        Assert.Equal("table", table.Tag);
+        Assert.Equal("duetspad-object", table.Attributes["class"]);
+
+        Element? thead = null;
+        Element tbody;
+
+        if (table.Children.Count == 2)
+        {
+            thead = Assert.IsType<Element>(table.Children[0]);
+            Assert.Equal("thead", thead.Tag);
+            tbody = Assert.IsType<Element>(table.Children[1]);
+        }
+        else
+        {
+            tbody = Assert.IsType<Element>(table.Children[0]);
+        }
+
+        Assert.Equal("tbody", tbody.Tag);
+
+        var rows = tbody.Children.Select(Assert.IsType<Element>).ToList();
+
+        return (table, rows, thead);
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="thead"/> is a typeheader row holding the given type name in
+    /// a <c>&lt;th class="duetspad-typeheader" colspan="2"&gt;</c>.
+    /// </summary>
+    private static void AssertTypeHeader(Element thead, string expectedTypeName)
+    {
+        var headerRow = Assert.IsType<Element>(Assert.Single(thead.Children));
+        Assert.Equal("tr", headerRow.Tag);
+
+        var th = Assert.IsType<Element>(Assert.Single(headerRow.Children));
+        Assert.Equal("th", th.Tag);
+        Assert.Equal("duetspad-typeheader", th.Attributes["class"]);
+        Assert.Equal("2", th.Attributes["colspan"]);
+        Assert.Equal(new Text(expectedTypeName), Assert.Single(th.Children));
+    }
 
     [Fact]
     public void CanRender_always_returns_true()
@@ -81,26 +160,54 @@ public sealed class DefaultObjectRendererTests
     }
 
     [Fact]
-    public void Render_dictionary_returns_duetspad_object_element()
+    public void Render_dictionary_returns_duetspad_map_table()
     {
         var dict = new Dictionary<string, object?> { ["key1"] = "value1", ["key2"] = 42 };
 
         var result = this.renderer.Render(dict);
 
-        var element = Assert.IsType<Element>(result);
-        Assert.Equal("div", element.Tag);
-        Assert.Equal("duetspad-object", element.Attributes["class"]);
-        Assert.Equal(2, element.Children.Count);
+        var table = Assert.IsType<Element>(result);
+        Assert.Equal("table", table.Tag);
+        Assert.Equal("duetspad-map", table.Attributes["class"]);
 
-        var entry0 = Assert.IsType<Element>(element.Children[0]);
-        Assert.Equal("div", entry0.Tag);
-        Assert.Equal(new Text("key1"), entry0.Children[0]);
-        Assert.Equal(new Text("value1"), entry0.Children[1]);
+        var thead = Assert.IsType<Element>(table.Children[0]);
+        Assert.Equal("thead", thead.Tag);
+        Assert.Equal(2, thead.Children.Count);
 
-        var entry1 = Assert.IsType<Element>(element.Children[1]);
-        Assert.Equal("div", entry1.Tag);
-        Assert.Equal(new Text("key2"), entry1.Children[0]);
-        Assert.Equal(new Text("42"), entry1.Children[1]);
+        // Type header row: th.duetspad-typeheader[colspan=2] = "{TypeName} ({N} items)"
+        var typeHeaderRow = Assert.IsType<Element>(thead.Children[0]);
+        Assert.Equal("tr", typeHeaderRow.Tag);
+        var typeHeaderCell = Assert.IsType<Element>(Assert.Single(typeHeaderRow.Children));
+        Assert.Equal("th", typeHeaderCell.Tag);
+        Assert.Equal("duetspad-typeheader", typeHeaderCell.Attributes["class"]);
+        Assert.Equal("2", typeHeaderCell.Attributes["colspan"]);
+        Assert.Equal(
+            new Text($"{dict.GetType().Name} (2 items)"),
+            Assert.Single(typeHeaderCell.Children)
+        );
+
+        // Key/Value column header row.
+        var columnHeaderRow = Assert.IsType<Element>(thead.Children[1]);
+        Assert.Equal("tr", columnHeaderRow.Tag);
+        var columnHeaders = columnHeaderRow.Children.OfType<Element>().ToList();
+        Assert.Equal(2, columnHeaders.Count);
+        Assert.Equal(new Text("Key"), Assert.Single(columnHeaders[0].Children));
+        Assert.Equal(new Text("Value"), Assert.Single(columnHeaders[1].Children));
+
+        var tbody = Assert.IsType<Element>(table.Children[1]);
+        Assert.Equal("tbody", tbody.Tag);
+        Assert.Equal(2, tbody.Children.Count);
+
+        var row0 = Assert.IsType<Element>(tbody.Children[0]);
+        var cells0 = row0.Children.OfType<Element>().ToList();
+        Assert.Equal("td", cells0[0].Tag);
+        Assert.Equal(new Text("key1"), Assert.Single(cells0[0].Children));
+        Assert.Equal(new Text("value1"), Assert.Single(cells0[1].Children));
+
+        var row1 = Assert.IsType<Element>(tbody.Children[1]);
+        var cells1 = row1.Children.OfType<Element>().ToList();
+        Assert.Equal(new Text("key2"), Assert.Single(cells1[0].Children));
+        Assert.Equal(new Text("42"), Assert.Single(cells1[1].Children));
     }
 
     [Fact]
@@ -184,21 +291,40 @@ public sealed class DefaultObjectRendererTests
 
         var result = this.renderer.Render(obj);
 
-        var element = Assert.IsType<Element>(result);
-        Assert.Equal("div", element.Tag);
-        Assert.Equal("duetspad-object", element.Attributes["class"]);
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, nameof(SimpleRecord));
+
         // Expect Name and Age entries
-        Assert.True(element.Children.Count >= 2);
+        Assert.True(rows.Count >= 2);
 
-        var entry0 = Assert.IsType<Element>(element.Children[0]);
-        Assert.Equal("div", entry0.Tag);
-        Assert.Equal(new Text("Name"), entry0.Children[0]);
-        Assert.Equal(new Text("Alice"), entry0.Children[1]);
+        var row0 = AssertMemberRow(rows[0], "Name");
+        Assert.Equal(new Text("Alice"), GetRowValue(row0));
 
-        var entry1 = Assert.IsType<Element>(element.Children[1]);
-        Assert.Equal("div", entry1.Tag);
-        Assert.Equal(new Text("Age"), entry1.Children[0]);
-        Assert.Equal(new Text("30"), entry1.Children[1]);
+        var row1 = AssertMemberRow(rows[1], "Age");
+        Assert.Equal(new Text("30"), GetRowValue(row1));
+    }
+
+    [Fact]
+    public void Render_clr_object_with_terminal_text_members_keeps_key_and_value_distinct()
+    {
+        // Regression test: the member name must remain structurally distinct from its value —
+        // the key is a <th> and the value lives in a separate <td>, so adjacent terminal Text
+        // nodes cannot merge their rendered text.
+        var obj = new SimpleRecord(Name: "Alice", Age: 30);
+
+        var result = this.renderer.Render(obj);
+
+        var (_, rows, _) = AssertObjectTable(result);
+        var row = rows[0];
+
+        var keyElement = Assert.IsType<Element>(row.Children[0]);
+        Assert.Equal("th", keyElement.Tag);
+        Assert.Equal("duetspad-key", keyElement.Attributes["class"]);
+
+        var valueNode = GetRowValue(row);
+        Assert.IsType<Text>(valueNode);
+        Assert.NotSame(keyElement, valueNode);
     }
 
     [Fact]
@@ -208,12 +334,22 @@ public sealed class DefaultObjectRendererTests
 
         var result = this.renderer.Render(obj);
 
-        var element = Assert.IsType<Element>(result);
-        Assert.Equal("duetspad-object", element.Attributes["class"]);
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, nameof(ObjectWithPublicField));
 
-        var entries = element.Children.OfType<Element>().ToList();
-        Assert.Contains(entries, e => e.Children[0] is Text { Value: "Tag" });
-        Assert.Contains(entries, e => e.Children[0] is Text { Value: "Count" });
+        Assert.Contains(
+            rows,
+            r =>
+                r.Children[0] is Element { Tag: "th" } key
+                && key.Children[0] is Text { Value: "Tag" }
+        );
+        Assert.Contains(
+            rows,
+            r =>
+                r.Children[0] is Element { Tag: "th" } key
+                && key.Children[0] is Text { Value: "Count" }
+        );
     }
 
     // ── CLR object: list renders as table ─────────────────────────────────
@@ -348,13 +484,14 @@ public sealed class DefaultObjectRendererTests
         // Must not throw; the throwing property should appear as an error marker.
         var result = this.renderer.Render(obj);
 
-        var element = Assert.IsType<Element>(result);
-        Assert.Equal("duetspad-object", element.Attributes["class"]);
+        var (_, rows, _) = AssertObjectTable(result);
 
-        var entries = element.Children.OfType<Element>().ToList();
-        var errorEntry = entries.FirstOrDefault(e => e.Children[0] is Text { Value: "Exploding" });
-        Assert.NotNull(errorEntry);
-        Assert.Equal(new Text("[error]"), errorEntry.Children[1]);
+        var errorRow = rows.FirstOrDefault(r =>
+            r.Children[0] is Element { Tag: "th" } key
+            && key.Children[0] is Text { Value: "Exploding" }
+        );
+        Assert.NotNull(errorRow);
+        Assert.Equal(new Text("[error]"), GetRowValue(errorRow!));
     }
 
     // ── Render node passthrough ───────────────────────────────────────────
@@ -394,13 +531,11 @@ public sealed class DefaultObjectRendererTests
 
         var result = this.renderer.Render(obj);
 
-        var element = Assert.IsType<Element>(result);
-        Assert.Equal("duetspad-object", element.Attributes["class"]);
+        var (_, rows, _) = AssertObjectTable(result);
 
-        var entry = Assert.IsType<Element>(element.Children[0]);
-        Assert.Equal(new Text("Node"), entry.Children[0]);
+        var row = AssertMemberRow(rows[0], "Node");
         // The value should be the Element itself, not a reflected Text object.
-        var child = Assert.IsType<Element>(entry.Children[1]);
+        var child = Assert.IsType<Element>(GetRowValue(row));
         Assert.Equal("span", child.Tag);
         Assert.Equal("duetspad-label", child.Attributes["class"]);
     }
@@ -433,9 +568,163 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal(new Text("[error]"), errorCell.Children[0]);
     }
 
+    // ── ADR-40: enum and JS-object/CLR-object convergence regressions ────
+
+    [Fact]
+    public void Render_enum_returns_text_with_member_name()
+    {
+        var result = this.renderer.Render(PlatformID.Win32NT);
+
+        Assert.Equal(new Text("Win32NT"), result);
+    }
+
+    [Fact]
+    public void Render_expando_object_converges_with_clr_object_presentation()
+    {
+        // ExpandoObject is the shape Jint marshals JS object literals to: a string-keyed,
+        // enumerable, dictionary-like value that does NOT implement non-generic IDictionary.
+        // ADR-40 routes it through the named-member-object presentation (Form A) — the same
+        // <table class="duetspad-object"> shape as an ordinary CLR object — rather than the
+        // Key/Value map grid (Form B), and OMITS the type header (the marshaled CLR type name
+        // like "ExpandoObject" would be noise to a script author).
+        dynamic expando = new System.Dynamic.ExpandoObject();
+        expando.foo = "abc";
+        expando.bar = 42;
+
+        var result = this.renderer.Render((object)expando);
+
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.Null(thead);
+
+        var row0 = AssertMemberRow(rows[0], "foo");
+        Assert.Equal(new Text("abc"), GetRowValue(row0));
+
+        var row1 = AssertMemberRow(rows[1], "bar");
+        Assert.Equal(new Text("42"), GetRowValue(row1));
+    }
+
+    [Fact]
+    public void Render_empty_expando_object_returns_empty_object_table_without_type_leak()
+    {
+        // Regression: dump({}) marshals to an empty ExpandoObject. It must render as an empty
+        // Form A object table (no rows), NOT fall back to value.ToString() and leak the marshaled
+        // CLR type name "System.Dynamic.ExpandoObject".
+        var expando = new System.Dynamic.ExpandoObject();
+
+        var result = this.renderer.Render(expando);
+
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.Null(thead);
+        Assert.Empty(rows);
+    }
+
+    [Fact]
+    public void Render_generic_only_read_only_dictionary_returns_map_table()
+    {
+        // Regression (Symptom 1): a genuine generic-only CLR map — implements
+        // IReadOnlyDictionary<,> (hence IEnumerable<KeyValuePair<,>>) but NOT non-generic
+        // IDictionary and is NOT a dynamic JS object — must render as a Key/Value map grid
+        // (Form B, duetspad-map), not a named-member object table.
+        var map = new GenericOnlyReadOnlyDictionary(
+            new Dictionary<string, object?> { ["key1"] = "value1", ["key2"] = 42 }
+        );
+
+        var result = this.renderer.Render(map);
+
+        var table = Assert.IsType<Element>(result);
+        Assert.Equal("table", table.Tag);
+        Assert.Equal("duetspad-map", table.Attributes["class"]);
+    }
+
+    [Fact]
+    public void Render_real_jint_js_object_literal_uses_object_presentation()
+    {
+        // End-to-end: a JS object literal is marshaled by Jint to System.Dynamic.ExpandoObject.
+        // It must render through the named-member object presentation (Form A,
+        // duetspad-object), converging with ordinary CLR objects, not the Key/Value map grid.
+        using var engine = JintTestRuntime.CreateEngine();
+        var value = engine.Evaluate("({a:1})").ToObject();
+        Assert.NotNull(value);
+
+        var result = this.renderer.Render(value!);
+
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.Null(thead);
+
+        var row0 = AssertMemberRow(rows[0], "a");
+        Assert.Equal(new Text("1"), GetRowValue(row0));
+    }
+
+    [Fact]
+    public void Render_expando_object_collection_renders_as_single_table_not_array_of_objects()
+    {
+        // ADR-40 classifies a JS object literal (ExpandoObject) as a named-member object, the same
+        // as a CLR object, in isolation and within collections. The concrete shape is not fixed by
+        // the ADR; this test verifies that convergence at the implementation level: a collection of
+        // such values renders as a single duetspad-table, not a duetspad-array of duetspad-objects.
+        dynamic obj1 = new System.Dynamic.ExpandoObject();
+        obj1.a = 1;
+        dynamic obj2 = new System.Dynamic.ExpandoObject();
+        obj2.a = 2;
+        var list = new List<object> { (object)obj1, (object)obj2 };
+
+        var result = this.renderer.Render(list);
+
+        var table = Assert.IsType<Element>(result);
+        Assert.Equal("table", table.Tag);
+        Assert.Equal("duetspad-table", table.Attributes["class"]);
+
+        // Verify the "a" column is present.
+        var thead = Assert.IsType<Element>(table.Children[0]);
+        var headerRow = Assert.IsType<Element>(thead.Children[0]);
+        var headers = headerRow
+            .Children.OfType<Element>()
+            .Select(h => Assert.IsType<Text>(h.Children[0]).Value)
+            .ToList();
+        Assert.Contains("a", headers);
+    }
+
+    [Fact]
+    public void Render_bare_key_value_pair_sequence_is_not_a_map()
+    {
+        // A List<KeyValuePair<,>> implements IEnumerable<KeyValuePair<,>> but NOT IDictionary<,>
+        // or IReadOnlyDictionary<,>. It is intentionally NOT classified as a map (Form B) and
+        // falls through to the collection path. Assert the result is NOT duetspad-map.
+        var list = new List<KeyValuePair<string, object?>>
+        {
+            new("key1", "value1"),
+            new("key2", 42),
+        };
+
+        var result = this.renderer.Render(list);
+
+        var element = Assert.IsType<Element>(result);
+        Assert.NotEqual("duetspad-map", element.Attributes["class"]);
+    }
+
+    [Fact]
+    public void Render_object_with_nested_object_member_renders_nested_table()
+    {
+        var obj = new ObjectWithNestedMember(Inner: new SimpleRecord("Alice", 30));
+
+        var result = this.renderer.Render(obj);
+
+        var (_, rows, _) = AssertObjectTable(result);
+        var row = AssertMemberRow(rows[0], "Inner");
+
+        var (_, nestedRows, nestedThead) = AssertObjectTable(GetRowValue(row));
+        Assert.NotNull(nestedThead);
+        AssertTypeHeader(nestedThead!, nameof(SimpleRecord));
+
+        var nestedRow0 = AssertMemberRow(nestedRows[0], "Name");
+        Assert.Equal(new Text("Alice"), GetRowValue(nestedRow0));
+    }
+
     // ── Helper types ──────────────────────────────────────────────────────
 
     private sealed record SimpleRecord(string Name, int Age);
+
+    private sealed record ObjectWithNestedMember(SimpleRecord Inner);
 
     private sealed class ObjectWithPublicField
     {
@@ -464,5 +753,32 @@ public sealed class DefaultObjectRendererTests
                 new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-label")),
                 new ElementChildren(new Text("rendered"))
             );
+    }
+
+    /// <summary>
+    /// A generic-only map: implements <see cref="IReadOnlyDictionary{TKey, TValue}"/> (hence
+    /// <see cref="IEnumerable{T}"/> of <see cref="KeyValuePair{TKey, TValue}"/>) but NOT the
+    /// non-generic <see cref="System.Collections.IDictionary"/> and is NOT a dynamic JS object.
+    /// Used to verify such values render as a map (Form B), not a named-member object table.
+    /// </summary>
+    private sealed class GenericOnlyReadOnlyDictionary(IReadOnlyDictionary<string, object?> inner)
+        : IReadOnlyDictionary<string, object?>
+    {
+        public object? this[string key] => inner[key];
+
+        public IEnumerable<string> Keys => inner.Keys;
+
+        public IEnumerable<object?> Values => inner.Values;
+
+        public int Count => inner.Count;
+
+        public bool ContainsKey(string key) => inner.ContainsKey(key);
+
+        public bool TryGetValue(string key, out object? value) => inner.TryGetValue(key, out value);
+
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() => inner.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+            inner.GetEnumerator();
     }
 }
