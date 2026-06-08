@@ -1,364 +1,244 @@
 <!DOCTYPE html>
-<html data-bs-theme="dark">
-<head>
+<html lang="en" data-bs-theme="dark">
+  <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DuetsPad</title>
     <link rel="stylesheet" href="tabler.css">
     <link rel="stylesheet" href="tabler-icons.css">
-    <style>
-        *, *::before, *::after {
-            box-sizing: border-box;
-        }
-
-        html, body {
-            height: 100%;
-            margin: 0;
-            overflow: hidden;
-            background: #1a1a2e;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-        }
-
-        /* ── Top bar ── */
-        #topbar {
-            height: 36px;
-            background: #12121f;
-            border-bottom: 1px solid #2d2d4a;
-            display: flex;
-            align-items: center;
-            padding: 0 12px;
-            flex-shrink: 0;
-            user-select: none;
-            gap: 8px;
-        }
-
-        #topbar-title {
-            color: #9d8cff;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-
-        /* ── Main layout ── */
-        #layout {
-            display: flex;
-            height: calc(100vh - 36px);
-            overflow: hidden;
-        }
-
-        /* ── Left column ── */
-        #left-col {
-            display: flex;
-            flex-direction: column;
-            flex: 1 1 55%;
-            min-width: 0;
-            border-right: 1px solid #2d2d4a;
-        }
-
-        /* ── Editor pane ── */
-        #editor-pane {
-            flex: 1 1 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        .pane-label {
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.8px;
-            text-transform: uppercase;
-            color: #6060a0;
-            padding: 4px 10px 3px;
-            background: #15151f;
-            border-bottom: 1px solid #2d2d4a;
-            flex-shrink: 0;
-            user-select: none;
-        }
-
-        #editor-host {
-            flex: 1 1 0;
-            min-height: 0;
-            min-width: 0;
-        }
-
-        /* ── Editor status bar ── */
-        #editor-status {
-            height: 22px;
-            background: #15151f;
-            border-top: 1px solid #2d2d4a;
-            font-size: 11px;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            padding: 0 10px;
-            display: flex;
-            align-items: center;
-            color: #888;
-            overflow: hidden;
-            white-space: nowrap;
-            flex-shrink: 0;
-            user-select: text;
-        }
-
-        #editor-status.status-ok {
-            color: #4ec9b0;
-        }
-
-        #editor-status.status-error {
-            color: #f48771;
-        }
-
-        /* ── Immediate pane ── */
-        #immediate-pane {
-            flex-shrink: 0;
-            border-top: 1px solid #2d2d4a;
-            background: #12121f;
-        }
-
-        #immediate-pane .pane-label {
-            border-top: none;
-        }
-
-        #immediate-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 8px;
-        }
-
-        #immediate-input {
-            flex: 1;
-            background: #1e1e30;
-            border: 1px solid #2d2d4a;
-            border-radius: 3px;
-            color: #d4d4d4;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            font-size: 13px;
-            padding: 3px 8px;
-            outline: none;
-        }
-
-        #immediate-input:focus {
-            border-color: #7070c0;
-        }
-
-        #immediate-status {
-            font-size: 11px;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            padding: 2px 10px 4px;
-            min-height: 18px;
-            color: #888;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        #immediate-status.result-ok {
-            color: #4ec9b0;
-        }
-
-        #immediate-status.result-error {
-            color: #f48771;
-        }
-
-        /* ── Right column ── */
-        #right-col {
-            display: flex;
-            flex-direction: column;
-            flex: 0 0 45%;
-            min-width: 0;
-        }
-
-        /* ── Canvas pane ── */
-        #canvas-pane {
-            flex: 1 1 50%;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            border-bottom: 1px solid #2d2d4a;
-        }
-
-        #canvas-content {
-            flex: 1 1 0;
-            overflow: auto;
-            padding: 8px 10px;
-            min-height: 0;
-        }
-
-        /* ── Timeline pane ── */
-        #timeline-pane {
-            flex: 1 1 50%;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-        }
-
-        #timeline-content {
-            flex: 1 1 0;
-            overflow: auto;
-            padding: 4px 0;
-            min-height: 0;
-        }
-
-        /* ── Timeline entry ── */
-        .tl-entry {
-            padding: 3px 10px 4px;
-            border-bottom: 1px solid #1e1e30;
-        }
-
-        .tl-entry:last-child {
-            border-bottom: none;
-        }
-
-        .tl-reason {
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            color: #505080;
-            margin-bottom: 2px;
-        }
-
-        .tl-body {
-            font-family: Consolas, 'Cascadia Code', monospace;
-            font-size: 12px;
-            color: #c8c8e0;
-            word-break: break-word;
-        }
-
-        /* ── Output rendering: table ── */
-        .duetspad-table {
-            border-collapse: collapse;
-            font-size: 12px;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            display: block;
-            overflow-x: auto;
-            max-width: 100%;
-            color: #c8c8e0;
-        }
-
-        .duetspad-table th,
-        .duetspad-table td {
-            padding: 3px 10px;
-            border: 1px solid #2d2d4a;
-            text-align: left;
-            white-space: nowrap;
-        }
-
-        .duetspad-table th {
-            color: #9d8cff;
-            background: #15151f;
-            font-weight: 600;
-        }
-
-        .duetspad-table tr:nth-child(even) td {
-            background: #14142a;
-        }
-
-        /* ── Output rendering: object (key/value) ── */
-        .duetspad-object {
-            display: inline-block;
-            font-size: 12px;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            color: #c8c8e0;
-        }
-
-        .duetspad-object > div {
-            display: flex;
-            gap: 8px;
-            padding: 1px 0;
-        }
-
-        .duetspad-object > div > :first-child {
-            color: #7a7ac0;
-            flex-shrink: 0;
-            min-width: 6em;
-        }
-
-        /* ── Output rendering: array ── */
-        .duetspad-array {
-            display: inline-flex;
-            flex-direction: column;
-            gap: 2px;
-            font-size: 12px;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            color: #c8c8e0;
-            padding-left: 12px;
-            border-left: 2px solid #2d2d4a;
-        }
-
-        /* ── Output rendering: error marker ── */
-        .duetspad-output-error {
-            color: #f48771;
-            font-family: Consolas, 'Cascadia Code', monospace;
-            font-size: 12px;
-        }
-
-        /* ── Output rendering: label / stack ── */
-        .duetspad-label {
-            color: #9d8cff;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .duetspad-stack {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        /* Narrow viewport: stack columns */
-        @media (max-width: 640px) {
-            #layout {
-                flex-direction: column;
-            }
-
-            #left-col, #right-col {
-                flex: none;
-                height: 50%;
-                border-right: none;
-            }
-
-            #left-col {
-                border-bottom: 1px solid #2d2d4a;
-            }
-        }
-    </style>
-</head>
-<body>
-<div id="topbar">
-    <span id="topbar-title">DuetsPad</span>
-</div>
-<div id="layout">
-    <!-- Left column: Editor + Immediate -->
-    <div id="left-col">
-        <div id="editor-pane">
-            <div class="pane-label">Editor</div>
-            <div id="editor-host"></div>
-            <div id="editor-status"></div>
+    <link rel="stylesheet" href="duetspad.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" sizes="32x32" href="favicon.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  </head>
+  <body>
+    <div class="app" id="app" data-view="split">
+      <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 38 38" aria-hidden="true">
+            <defs>
+              <mask
+                id="plus"
+                maskUnits="userSpaceOnUse"
+                x="0"
+                y="0"
+                width="38"
+                height="38"
+              >
+                <rect x="0" y="0" width="38" height="38" fill="#fff"></rect>
+                <path
+                  fill="#000"
+                  d="M7.87 14.85Q7.87 14.30 8.42 14.30L9.92 14.30Q10.47 14.30 10.47 14.85L10.47 17.15Q10.47 17.70 11.02 17.70L13.32 17.70Q13.87 17.70 13.87 18.25L13.87 19.75Q13.87 20.30 13.32 20.30L11.02 20.30Q10.47 20.30 10.47 20.85L10.47 23.15Q10.47 23.70 9.92 23.70L8.42 23.70Q7.87 23.70 7.87 23.15L7.87 20.85Q7.87 20.30 7.32 20.30L5.02 20.30Q4.47 20.30 4.47 19.75L4.47 18.25Q4.47 17.70 5.02 17.70L7.32 17.70Q7.87 17.70 7.87 17.15Z"
+                ></path>
+              </mask>
+            </defs>
+            <g mask="url(#plus)">
+              <path
+                fill-rule="evenodd"
+                fill="var(--logo-duets, #4558ce)"
+                d="M15.00 5.80Q15.00 3.00 17.19 4.75L32.81 17.25Q35.00 19.00 32.81 20.75L17.19 33.25Q15.00 35.00 15.00 32.20Z M3.00 5.80Q3.00 3.00 5.19 4.75L20.81 17.25Q23.00 19.00 20.81 20.75L5.19 33.25Q3.00 35.00 3.00 32.20Z"
+              ></path>
+            </g>
+          </svg>
+          <svg
+            class="brand-name"
+            viewBox="0 0 487 81"
+            role="img"
+            aria-label="DuetsPad"
+          >
+            <g transform="translate(-2.55 79.56)">
+              <path
+                fill="var(--logo-duets, #4558ce)"
+                d="M2.55 0L27.50 0C48.25 0 58.30-14.75 58.30-38.05C58.30-61.30 48.25-73 27.50-73L2.55-73L2.55-66.15L7.55-63.85L7.55-9.15L2.55-6.85ZM22.10-9.30L22.10-63.70L26.10-63.70C37.50-63.70 43-55.70 43-38.05C43-20.40 37.50-9.30 26.10-9.30ZM80.55 1.20C86.65 1.20 92.95-1.30 99.75-5.25L99.75 0.05L101.55 0.60L119.85-4.65L119.85-12.35L112.90-14.05L112.90-54.45L111.15-55.05L91.95-49.80L91.95-42.10L98.95-40.40L98.95-12C95.75-10.65 92-9.50 88.50-9.50C85.10-9.50 82.10-11.85 82.10-17.30L82.10-54.40L80.30-55L61.10-49.75L61.10-42.05L68.10-40.30L68.10-13.85C68.10-4.60 70.80 1.20 80.55 1.20ZM151.60 1.20C158.20 1.20 163.90-0.05 170.20-2.65L173.65-14.75L165.80-16.45L164.05-13.55C161.60-9.30 157.75-7.70 153-7.70C142.05-7.70 137.60-15.90 137-25.85L174.40-25.85L174.40-30.05C174.40-47.35 166.15-55.55 151.30-55.55C134.25-55.55 122.10-44.35 122.10-25.90C122.10-8.75 132.75 1.20 151.60 1.20ZM137.20-33.15C138.45-42.35 143.50-46.10 149.75-46.10C157.50-46.10 160.40-40.85 160.60-33.15ZM212.10 1.15C218.55 1.15 224.60 0 230.65-2L233.85-19.55L226.95-21.25L225.50-17.65C222.70-10.70 220.10-7.70 214.60-7.75C208.60-7.75 207.15-11.25 207.15-16.55L207.15-41.05L229.50-41.05L231.55-50.75L207.25-50.75L207.25-67.10L201.95-67.10L193.75-50.30L179.70-47.30L179.70-41.05L193.15-41.05L193.15-14.80C193.15-5.50 196.65 1.15 212.10 1.15ZM265.50 1.20C283.30 1.20 291.90-6.25 291.90-17.20C291.90-27.75 283.70-31.25 270.90-33.75C262.95-35.30 257.85-36.90 257.85-41.40C257.85-45.60 262.45-47.25 268.90-47.25C275.80-47.25 280.25-45.35 282.10-39.95L283.15-36.90L290.90-38.60L288.60-52.40C281.65-54.75 275.55-55.60 269.75-55.60C252.70-55.60 244.25-48.55 244.25-38.50C244.25-29.15 251.55-23.60 262.45-21.55C272.85-19.60 278.15-18.65 278.15-13.55C278.15-10.05 275.50-7.25 266.10-7.25C257.95-7.20 253.45-9.35 251.55-14.90L250.55-17.85L242.70-16.15L245.05-1.95C249.95-0.45 257 1.20 265.50 1.20Z"
+              ></path>
+              <path
+                fill="var(--logo-pad, #15171d)"
+                d="M315.26 1.20C319.83 1.20 323.37-1.77 323.37-7.28C323.37-10.19 322.43-12.58 320.98-13.68C321.03-16.74 321.24-19.86 321.50-22.98C341.05-23.56 360.39-33.64 360.39-52.52C360.39-68.74 346.20-78.21 326.44-78.21C321.08-78.21 315.46-77.32 312.14-76.34C307.61-74.93 305.90-71.76 305.90-68.69C305.90-64.27 309.54-62.61 313.80-62.71L314.16-62.71C311.25-47.11 307.30-25.01 307.30-10.40C307.30-2.03 310.73 1.20 315.26 1.20ZM323.00-35.88C324.51-46.18 326.49-55.90 327.94-63.02C328.05-63.49 328.10-63.96 328.10-64.43C328.78-64.48 329.40-64.48 330.08-64.48C339.54-64.48 346.51-59.85 346.51-52.05C346.51-42.12 334.91-36.24 323.00-35.88ZM382.80 1.14C390.81 1.14 398.87-5.04 404.23-18.77L405.58-18.77C405.22-15.65 405.01-12.84 405.01-10.71C405.01-3.64 408.13 1.25 414.16 1.25C419.00 1.25 422.06-1.98 422.06-6.29C422.06-9.78 420.56-12.84 417.80-13.78C419.41-24.86 421.08-36.35 422.69-46.80C423.68-53.35 422.38-56.16 418.16-56.73C414.16-57.30 411.56-54.76 410.47-49.50C408.18-53.46 402.30-55.54 396.32-55.54C384.42-55.54 367.67-42.95 367.67-18.98C367.67-5.51 375.26 1.14 382.80 1.14ZM380.31-21.22C380.31-32.81 388.89-44.15 397.05-44.15C397.68-44.15 398.30-44.10 398.87-43.99C399.81-40.40 402.51-38.27 405.68-38.27L406.10-38.27C401.06-23.35 391.64-10.40 386.24-10.40C381.87-10.40 380.31-15.29 380.31-21.22ZM447.70 1.14C455.29 1.14 463.35-5.04 468.71-18.77L470.48-18.77C470.22-15.86 470.06-13.26 470.06-11.13C470.06-3.95 472.19 1.25 478.38 1.25C483.53 1.25 486.65-2.55 486.65-7.59C486.65-10.40 485.61-13.57 482.49-14.40C484.98-31.82 489.25-58.14 489.25-69.26C489.25-76.23 486.39-79.56 481.66-79.56C477.08-79.56 472.76-76.54 472.76-70.10C472.76-67.24 473.44-63.60 475.57-61.78C475.31-58.29 474.90-54.44 474.43-50.39C472.04-53.72 467.04-55.54 462.05-55.54C449.42-55.54 432.15-43.89 432.15-19.40C432.15-5.10 439.69 1.14 447.70 1.14ZM444.53-21.16C444.53-32.86 452.54-44.15 461.53-44.15C462.16-44.15 462.73-44.10 463.30-43.99C463.92-39.99 465.95-38.27 469.44-38.27C469.85-38.27 470.27-38.32 470.63-38.38C465.69-23.40 457.11-10.35 450.51-10.35C446.71-10.35 444.53-14.56 444.53-21.16Z"
+              ></path>
+            </g>
+          </svg>
         </div>
-        <div id="immediate-pane">
-            <div class="pane-label">Immediate</div>
-            <div id="immediate-row">
-                <input id="immediate-input" type="text" placeholder="Expression…" autocomplete="off" spellcheck="false">
+
+        <div class="vr toolbar-divider"></div>
+
+        <div class="btn-list">
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary"
+            id="btn-run"
+            title="Run (Ctrl/Cmd+Enter)"
+          >
+            <i class="ti ti-player-play"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary"
+            id="btn-clear"
+            title="Clear timeline"
+          >
+            <i class="ti ti-eraser"></i>
+          </button>
+        </div>
+
+        <div class="toolbar-spacer"></div>
+
+        <div
+          class="btn-group seg-panes"
+          id="seg-panes"
+          role="group"
+          aria-label="Show / hide panes"
+        >
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary active"
+            data-pane="editor"
+            title="Editor"
+          >
+            <i class="ti ti-code"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary active"
+            data-pane="canvas"
+            title="Canvas"
+          >
+            <i class="ti ti-layout-dashboard"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary active"
+            data-pane="timeline"
+            title="Timeline + Immediate"
+          >
+            <i class="ti ti-timeline-event"></i>
+          </button>
+        </div>
+
+        <div
+          class="btn-group seg-view"
+          id="seg-view"
+          role="group"
+          aria-label="Workspace arrangement"
+        >
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary active"
+            data-arrange="vertical"
+            title="Split vertically — editor beside results"
+          >
+            <i class="ti ti-layout-columns"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary"
+            data-arrange="horizontal"
+            title="Split horizontally — editor above results"
+          >
+            <i class="ti ti-layout-rows"></i>
+          </button>
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary"
+            data-arrange="tabs"
+            title="Tabs — one pane fullscreen"
+          >
+            <i class="ti ti-layout-navbar"></i>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-ghost-secondary"
+          id="btn-theme"
+          title="Toggle light / dark"
+        >
+          <i class="ti ti-moon"></i>
+        </button>
+
+        <span
+          id="session-status"
+          class="status status-yellow session-status"
+          title="Session status"
+        >
+          <span class="status-dot status-dot-animated"></span>connecting
+        </span>
+
+        <button
+          type="button"
+          class="btn btn-icon btn-ghost-secondary"
+          id="btn-more"
+          title="More"
+        >
+          <i class="ti ti-dots-vertical"></i>
+        </button>
+      </header>
+
+      <!-- ── Tab bar (only visible in 'tabs' view) ───────────────────────── -->
+      <ul class="nav nav-tabs workspace-tabbar" id="workspace-tabbar"></ul>
+
+      <!-- ── Workspace (panes are reorganised by duetspad-ui.js per layout) ──── -->
+      <div class="workspace" id="workspace">
+        <section class="pane" id="pane-editor">
+          <div class="pane-head">
+            <i class="ti ti-code pane-icon"></i>
+            <span class="pane-title">Editor</span>
+            <span class="pane-sub"></span>
+          </div>
+          <div id="editor-host"></div>
+        </section>
+
+        <section class="pane" id="pane-canvas">
+          <div class="pane-head">
+            <i class="ti ti-layout-dashboard pane-icon"></i>
+            <span class="pane-title">Canvas</span>
+            <div class="pane-tools btn-list">
+              <button
+                type="button"
+                class="btn btn-icon btn-sm btn-ghost-secondary"
+                title="Refresh"
+              >
+                <i class="ti ti-refresh"></i>
+              </button>
             </div>
-            <div id="immediate-status"></div>
-        </div>
+          </div>
+          <div id="canvas-content"></div>
+        </section>
+
+        <section class="pane" id="pane-timeline">
+          <div class="pane-head">
+            <i class="ti ti-timeline-event pane-icon"></i>
+            <span class="pane-title">Timeline</span>
+            <div class="pane-tools btn-list">
+              <button
+                type="button"
+                class="btn btn-icon btn-sm btn-ghost-secondary"
+                title="Clear"
+              >
+                <i class="ti ti-eraser"></i>
+              </button>
+            </div>
+          </div>
+          <div id="timeline-content"></div>
+          <!-- ── Immediate console ──── -->
+          <div class="immediate-console">
+            <div class="immediate-bar">
+              <span class="immediate-prompt" title="Immediate">›</span>
+              <div id="immediate-input" class="immediate-editor"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── Status line ──────────────────────────────────────────────────── -->
+      <div class="statusline">
+        <div id="editor-status"></div>
+      </div>
     </div>
-    <!-- Right column: Canvas + Timeline -->
-    <div id="right-col">
-        <div id="canvas-pane">
-            <div class="pane-label">Canvas</div>
-            <div id="canvas-content"></div>
-        </div>
-        <div id="timeline-pane">
-            <div class="pane-label">Timeline</div>
-            <div id="timeline-content"></div>
-        </div>
-    </div>
-</div>
-<script src="duetspad-config.js"></script>
-<script src="monaco-loader.js"></script>
-<script src="duetspad.js"></script>
-</body>
+
+    <script src="duetspad-config.js"></script>
+    <script src="monaco-loader.js"></script>
+    <script src="duetspad.js"></script>
+    <script src="duetspad-ui.js"></script>
+  </body>
 </html>

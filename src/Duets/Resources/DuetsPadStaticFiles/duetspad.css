@@ -1,0 +1,698 @@
+/* ---- Fonts ---------------------------------------------------------------- */
+:root {
+    --common-font-ui:
+        "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --common-font-mono:
+        "Cascadia Code", "JetBrains Mono", "SFMono-Regular", Consolas,
+        "Liberation Mono", Menlo, monospace;
+
+    /* Brand accent — fixed #4558ce in both themes (white text on it clears
+     contrast); accent text/icons lift to a lighter tint on dark for legibility. */
+    --common-accent: #4558ce;
+    --common-accent-strong: #3848b0;
+    --common-radius-sm: 5px;
+    --common-gutter: 6px; /* splitter thickness */
+
+    --common-head-h: 28px;
+    --common-row-pad: 3px;
+    --common-data-size: 12px;
+}
+
+/* ---- Theme tokens ---------------------------------------------------------
+   Neutrals are keyed to --common-hue (231° = the #4558ce accent hue) at very low
+   saturation, so backgrounds / borders / text are DERIVED FROM the brand accent
+   — not chosen arbitrarily, and not the old purple shell. Re-tinting the whole
+   app is a one-line change to --common-hue. */
+:root {
+    --common-hue: 231;
+}
+
+/* DARK (default) */
+:root,
+[data-bs-theme="dark"] {
+    --common-bg: hsl(var(--common-hue) 16% 8.5%);
+    --common-surface: hsl(var(--common-hue) 15% 12.5%);
+    --common-surface-2: hsl(var(--common-hue) 16% 10.5%);
+    --common-elevated: hsl(var(--common-hue) 13% 16.5%);
+    --common-border: hsl(var(--common-hue) 14% 23%);
+    --common-border-soft: hsl(var(--common-hue) 15% 17%);
+    --common-border-strong: hsl(var(--common-hue) 14% 31%);
+    --common-text: hsl(var(--common-hue) 20% 93%);
+    --common-text-muted: hsl(var(--common-hue) 12% 66%);
+    --common-text-faint: hsl(var(--common-hue) 10% 46%);
+    --common-accent-text: oklch(from var(--common-accent) 0.72 0.145 h);
+    --common-accent-soft: oklch(from var(--common-accent-text) l c h / 0.16);
+    --common-ok: #46d2b6;
+    --common-err: #ff7a85;
+    --common-err-soft: rgba(255, 122, 133, 0.14);
+    --common-rail: hsl(var(--common-hue) 14% 27%);
+    --logo-duets: var(--common-accent-text);
+    --logo-pad: #f4f5f8; /* hsl(231 16% 96%) */
+}
+
+/* LIGHT */
+[data-bs-theme="light"] {
+    --common-bg: hsl(var(--common-hue) 20% 94%);
+    --common-surface: #ffffff;
+    --common-surface-2: hsl(var(--common-hue) 28% 97.5%);
+    --common-elevated: #ffffff;
+    --common-border: hsl(var(--common-hue) 22% 88%);
+    --common-border-soft: hsl(var(--common-hue) 24% 92.5%);
+    --common-border-strong: hsl(var(--common-hue) 18% 78%);
+    --common-text: hsl(var(--common-hue) 28% 14%);
+    --common-text-muted: hsl(var(--common-hue) 14% 38%);
+    --common-text-faint: hsl(var(--common-hue) 12% 60%);
+    --common-accent-text: oklch(from var(--common-accent) 0.46 0.175 h);
+    --common-accent-soft: oklch(from var(--common-accent) l c h / 0.1);
+    --common-ok: #0f9d8b;
+    --common-err: #d6455a;
+    --common-err-soft: rgba(214, 69, 90, 0.1);
+    --common-rail: hsl(var(--common-hue) 20% 85%);
+    --logo-duets: var(--common-accent);
+    --logo-pad: #15171d; /* hsl(231 14% 10%) */
+}
+
+/* ---- Plumb the accent-derived ramp INTO Tabler's own variables ------------
+   Every Tabler component (.btn, .card, .form-control, .nav-tabs, .badge,
+   .table, .status…) then picks up the same surfaces / borders / text and the
+   #4558ce primary. This is Tabler's supported customization path — we FEED the
+   framework's variables rather than bypass its components. Loaded after
+   tabler.css, so these win (equal specificity, later source order). */
+:root {
+    --tblr-primary: var(--common-accent);
+    --tblr-primary-rgb: 69, 88, 206; /* #4558ce */
+    --tblr-primary-fg: #fff;
+    --tblr-body-bg: var(--common-bg);
+    --tblr-body-color: var(--common-text);
+    --tblr-border-color: var(--common-border);
+    --tblr-border-color-translucent: var(--common-border);
+    --tblr-bg-surface: var(--common-surface);
+    --tblr-bg-surface-secondary: var(--common-surface-2);
+    --tblr-bg-surface-tertiary: var(--common-elevated);
+    --tblr-secondary: var(--common-text-muted);
+    --tblr-secondary-rgb: 152, 160, 179;
+    --tblr-muted: var(--common-text-faint);
+    --tblr-card-bg: var(--common-surface);
+    --tblr-card-cap-bg: var(--common-surface-2);
+    --tblr-card-border-color: var(--common-border);
+    --tblr-border-radius: var(--common-radius-sm);
+    --tblr-font-sans-serif: var(--common-font-ui);
+}
+
+/* #4558ce primary fed through the button component's own variables. Hover /
+   active are compiled from the literal stock primary, so we restate them. */
+.btn-primary {
+    --tblr-btn-bg: var(--common-accent);
+    --tblr-btn-border-color: var(--common-accent);
+    --tblr-btn-color: #fff;
+    --tblr-btn-hover-bg: var(--common-accent-strong);
+    --tblr-btn-hover-border-color: var(--common-accent-strong);
+    --tblr-btn-active-bg: var(--common-accent-strong);
+    --tblr-btn-active-border-color: var(--common-accent-strong);
+}
+
+/* ============================================================================
+   Base
+   ============================================================================ */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--common-bg);
+    color: var(--common-text);
+    font-family: var(--common-font-ui);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+}
+
+.app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--common-bg);
+}
+
+::selection {
+    background: var(--common-accent-soft);
+}
+
+/* thin scrollbars throughout */
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--common-border-strong);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--common-text-faint);
+    background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ============================================================================
+   Top bar (navbar)
+   ============================================================================ */
+.topbar {
+    height: 48px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px 0 12px;
+    background: var(--common-surface-2);
+    border-bottom: 1px solid var(--common-border);
+    user-select: none;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-right: 6px;
+}
+.brand-mark {
+    height: 28px;
+    width: auto;
+    flex: 0 0 auto;
+    display: block;
+}
+.brand-name {
+    height: 15px;
+    width: auto;
+    display: block;
+}
+.brand-tag {
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+/* Tabler .vr is the divider; just give it room */
+.toolbar-divider {
+    align-self: stretch;
+    margin: 9px 2px;
+    opacity: 0.55;
+}
+.toolbar-spacer {
+    flex: 1 1 auto;
+}
+
+/* Toolbar icon buttons — compact, icon-forward (Tabler .btn-icon) */
+.topbar .btn {
+    --tblr-btn-padding-y: 0.34rem;
+}
+.topbar .btn-icon {
+    --tblr-btn-padding-x: 0.4rem;
+}
+.topbar .btn .ti {
+    font-size: 18px;
+}
+
+/* Segmented groups (Tabler .btn-group): active state in our accent.
+   seg-panes = multi toggle (soft tint), seg-view = single select (solid). */
+.seg-panes .btn.active {
+    background: var(--common-accent-soft);
+    color: var(--common-accent-text);
+}
+.seg-view .btn.active {
+    background: var(--common-accent);
+    color: #fff;
+}
+/* Immediate toggle removed — the console now follows the Timeline pane. */
+
+/* Session status (Tabler .status) */
+.session-status {
+    font-family: var(--common-font-mono);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* ============================================================================
+   Workspace + panes
+   ============================================================================ */
+.workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+    background: var(--common-bg);
+}
+.workspace-col,
+.workspace-row {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+.workspace-col {
+    flex-direction: column;
+}
+.workspace-row {
+    flex-direction: row;
+}
+
+.pane {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--common-surface);
+    overflow: hidden;
+}
+/* hairline separators between adjacent panes handled by splitters */
+
+.pane-head {
+    height: var(--common-head-h);
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 0 10px;
+    background: var(--common-surface-2);
+    border-bottom: 1px solid var(--common-border);
+    user-select: none;
+}
+.pane-head .pane-icon {
+    font-size: 15px;
+    color: var(--common-accent-text);
+    line-height: 1;
+}
+.pane-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    color: var(--common-text-muted);
+}
+.pane-sub {
+    font-size: 11px;
+    font-family: var(--common-font-mono);
+    color: var(--common-text-faint);
+    margin-left: 2px;
+}
+.pane-head .pane-tools {
+    margin-left: auto;
+}
+/* pane-head buttons are Tabler .btn.btn-icon.btn-sm.btn-ghost-secondary;
+   nudge the glyph size only */
+.pane-head .pane-tools .btn {
+    --tblr-btn-icon-size: 1.55rem;
+    color: var(--common-text-faint);
+}
+.pane-head .pane-tools .btn .ti {
+    font-size: 16px;
+}
+
+/* ---- Splitters ------------------------------------------------------------ */
+.splitter {
+    flex: 0 0 var(--common-gutter);
+    background: var(--common-bg);
+    position: relative;
+    z-index: 3;
+}
+.splitter::after {
+    content: "";
+    position: absolute;
+    background: var(--common-border);
+    transition: background 0.12s;
+}
+.splitter:hover::after,
+.splitter.is-dragging::after {
+    background: var(--common-accent);
+}
+.splitter.v {
+    cursor: col-resize;
+}
+.splitter.v::after {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    transform: translateX(-0.5px);
+}
+.splitter.v:hover::after,
+.splitter.v.is-dragging::after {
+    width: 2px;
+}
+.splitter.h {
+    cursor: row-resize;
+}
+.splitter.h::after {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    transform: translateY(-0.5px);
+}
+.splitter.h:hover::after,
+.splitter.h.is-dragging::after {
+    height: 2px;
+}
+/* grip dots */
+.splitter::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.12s;
+    background: var(--common-text-faint);
+    border-radius: 2px;
+}
+.splitter.v::before {
+    width: 2px;
+    height: 22px;
+}
+.splitter.h::before {
+    width: 22px;
+    height: 2px;
+}
+.splitter:hover::before {
+    opacity: 0.5;
+}
+
+/* ============================================================================
+   Editor pane
+   ============================================================================ */
+#editor-host {
+    flex: 1 1 0;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* ============================================================================
+   Status line — global bottom bar (real #editor-status)
+   ============================================================================ */
+/* A direct child of .app, pinned to the very bottom of the shell. Belongs to no
+   pane, so it survives even when every pane is hidden (emacs modeline). */
+.statusline {
+    flex: 0 0 auto;
+}
+#editor-status {
+    height: 24px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    background: var(--common-surface-2);
+    border-top: 1px solid var(--common-border);
+    font-family: var(--common-font-mono);
+    font-size: 11.5px;
+    color: var(--common-text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+}
+#editor-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--common-text-faint);
+    flex: 0 0 auto;
+}
+#editor-status.status-ok {
+    color: var(--common-ok);
+}
+#editor-status.status-ok::before {
+    background: var(--common-ok);
+}
+#editor-status.status-error {
+    color: var(--common-err);
+}
+#editor-status.status-error::before {
+    background: var(--common-err);
+}
+
+/* ============================================================================
+   Immediate — docked at the bottom of the Timeline pane
+   ============================================================================ */
+/* Follows the Timeline pane's show/hide (as it once followed the Editor). */
+.immediate-console {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--common-border);
+}
+html[data-bs-theme="dark"] .immediate-console {
+    background: #1e1e1e;
+}
+html[data-bs-theme="light"] .immediate-console {
+    background: #ffffff;
+}
+/* plain flex row — no input-group chrome */
+.immediate-bar {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    background: transparent;
+}
+.immediate-prompt {
+    flex: 0 0 auto;
+    font-family: var(--common-font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--common-accent-text);
+    padding: 0 8px 0 12px;
+    transition: color 0.12s;
+}
+.immediate-console:focus-within .immediate-prompt {
+    color: var(--common-accent);
+}
+.immediate-bar .immediate-editor {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 22px; /* one line at fontSize 13 */
+}
+
+/* Immediate editor placeholder — content widget shown when the editor is empty */
+.immediate-placeholder {
+    font-family: var(--common-font-mono);
+    font-size: 13px;
+    color: var(--common-text-faint);
+    opacity: 0.6;
+    pointer-events: none;
+    white-space: nowrap;
+    line-height: 22px; /* match .immediate-editor height */
+}
+
+/* ============================================================================
+   Canvas pane
+   ============================================================================ */
+#canvas-content {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px 16px 20px;
+}
+
+/* ============================================================================
+   Timeline pane — append-only log with a left rail
+   ============================================================================ */
+#timeline-content {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 4px 0 10px;
+    position: relative;
+}
+
+/* the rail */
+.timeline-entry {
+    position: relative;
+    padding: var(--common-row-pad) 14px var(--common-row-pad) 38px;
+    border-bottom: 1px solid var(--common-border-soft);
+}
+.timeline-entry::before {
+    /* vertical rail */
+    content: "";
+    position: absolute;
+    left: 19px;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--common-rail);
+}
+.timeline-entry:first-child::before {
+    top: 12px;
+}
+.timeline-entry:last-child {
+    border-bottom: none;
+}
+.timeline-entry::after {
+    /* node */
+    content: "";
+    position: absolute;
+    left: 15.5px;
+    top: 11px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--common-accent);
+    box-shadow: 0 0 0 3px var(--common-surface);
+}
+.timeline-entry:hover {
+    background: var(--common-surface-2);
+}
+
+.timeline-reason {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--common-font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--common-text-faint);
+    margin-bottom: 4px;
+}
+.timeline-body {
+    font-family: var(--common-font-mono);
+    font-size: var(--common-data-size);
+    color: var(--common-text);
+    word-break: break-word;
+}
+
+/* ============================================================================
+   Output renderers — REAL classes emitted by duetspad.js projectNode()
+   ============================================================================ */
+.duetspad-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--common-data-size);
+    font-family: var(--common-font-mono);
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    color: var(--common-text);
+    border: 1px solid var(--common-border);
+    border-radius: var(--common-radius-sm);
+}
+.duetspad-table th,
+.duetspad-table td {
+    padding: 4px 11px;
+    border-bottom: 1px solid var(--common-border-soft);
+    border-right: 1px solid var(--common-border-soft);
+    text-align: left;
+    white-space: nowrap;
+}
+.duetspad-table th:last-child,
+.duetspad-table td:last-child {
+    border-right: none;
+}
+.duetspad-table tr:last-child td {
+    border-bottom: none;
+}
+.duetspad-table th {
+    color: var(--common-accent-text);
+    background: var(--common-surface-2);
+    font-weight: 600;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    position: sticky;
+    top: 0;
+}
+.duetspad-table tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--common-text) 3%, transparent);
+}
+.duetspad-object {
+    display: inline-block;
+    font-size: var(--common-data-size);
+    font-family: var(--common-font-mono);
+    color: var(--common-text);
+    border: 1px solid var(--common-border);
+    border-radius: var(--common-radius-sm);
+    padding: 6px 10px;
+    background: var(--common-surface-2);
+}
+.duetspad-object > div {
+    display: flex;
+    gap: 12px;
+    padding: 2px 0;
+}
+.duetspad-object > div > :first-child {
+    color: var(--common-accent-text);
+    flex-shrink: 0;
+    min-width: 6em;
+}
+
+.duetspad-array {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--common-data-size);
+    font-family: var(--common-font-mono);
+    color: var(--common-text);
+    padding-left: 12px;
+    border-left: 2px solid var(--common-border-strong);
+}
+
+.duetspad-output-error {
+    color: var(--common-err);
+    font-family: var(--common-font-mono);
+    font-size: var(--common-data-size);
+    background: var(--common-err-soft);
+    border-left: 2px solid var(--common-err);
+    border-radius: 0 var(--common-radius-sm) var(--common-radius-sm) 0;
+    padding: 6px 10px;
+    white-space: pre-wrap;
+}
+
+.duetspad-label {
+    color: var(--common-accent-text);
+    font-size: var(--common-data-size);
+    font-weight: 600;
+}
+
+.duetspad-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* ============================================================================
+   View mode: Tabs — the bar is a Tabler .nav.nav-tabs; we only toggle its
+   visibility and give it the surface background + density.
+   ============================================================================ */
+.workspace-tabbar {
+    display: none;
+    flex: 0 0 auto;
+    padding: 4px 8px 0;
+    background: var(--common-surface-2);
+    --tblr-nav-tabs-link-active-color: var(--common-accent-text);
+    --tblr-nav-link-color: var(--common-text-muted);
+}
+.app[data-view="tabs"] .workspace-tabbar {
+    display: flex;
+}
+.workspace-tabbar .nav-link {
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.workspace-tabbar .nav-link .ti {
+    font-size: 16px;
+}
+
+/* ============================================================================
+   Responsive — narrow viewports stack
+   ============================================================================ */
+@media (max-width: 720px) {
+    .brand-tag {
+        display: none;
+    }
+}

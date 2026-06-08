@@ -1113,6 +1113,32 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
+    public async Task Static_duetspad_ui_js_returns_200()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                using var response = await client.GetAsync(prefix + "duetspad-ui.js");
+                Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadUiJs_uses_modern_bindings_and_dom_construction()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad-ui.js");
+
+                Assert.DoesNotMatch(@"\bvar\b", js);
+                Assert.DoesNotContain("innerHTML", js, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
     public async Task Tabler_css_returns_stub_content()
     {
         await RunAsync(
