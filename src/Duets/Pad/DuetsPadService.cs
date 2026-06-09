@@ -146,7 +146,7 @@ public sealed class DuetsPadService : IDisposable
 
     private async Task HandleDuetsPadConfigJsAsync(HttpActionContext ctx)
     {
-        var url = JsonSerializer.Serialize(this._options.MonacoBaseUrl);
+        var url = JsonValue.Create(this._options.MonacoBaseUrl).ToJsonString();
         var js = $"window.DUETSPAD_MONACO_VS = {url};";
         await ctx.CloseAsync("text/javascript; charset=utf-8", js);
     }
