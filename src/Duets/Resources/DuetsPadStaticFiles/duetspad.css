@@ -196,7 +196,6 @@ body {
 }
 .brand-tag {
     letter-spacing: 0.5px;
-    text-transform: uppercase;
     font-size: 10px;
     white-space: nowrap;
 }
@@ -296,7 +295,6 @@ body {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.7px;
-    text-transform: uppercase;
     color: var(--common-text-muted);
 }
 .pane-sub {
@@ -556,7 +554,6 @@ html[data-bs-theme="light"] .immediate-console {
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.6px;
-    text-transform: uppercase;
     color: var(--common-text-faint);
     margin-bottom: 4px;
 }
@@ -611,7 +608,6 @@ html[data-bs-theme="light"] .immediate-console {
     font-weight: 600;
     font-size: 10.5px;
     letter-spacing: 0.4px;
-    text-transform: uppercase;
     position: sticky;
     top: 0;
 }
@@ -657,10 +653,8 @@ html[data-bs-theme="light"] .immediate-console {
     font-weight: 600;
     font-size: 10.5px;
     letter-spacing: 0.4px;
-    text-transform: uppercase;
 }
 .duetspad-typeheader {
-    text-transform: none;
     font-size: var(--common-data-size);
     letter-spacing: normal;
 }
