@@ -492,14 +492,26 @@
         }
       }
 
-      // Submit on Enter only when the suggest widget is NOT open,
-      // so Enter still accepts a completion when the popup is visible.
+      // Scope the Enter keybinding to the immediate editor only. Monaco
+      // registers standalone keybindings in a page-global service, so without
+      // an editor-specific context key the Enter handler below would also fire
+      // while the main Editor pane has focus and swallow its newline insertion.
+      const immediateFocused = immediateEditor.createContextKey(
+        "duetspadImmediateFocused",
+        false,
+      );
+      immediateEditor.onDidFocusEditorText(() => immediateFocused.set(true));
+      immediateEditor.onDidBlurEditorText(() => immediateFocused.set(false));
+
+      // Submit on Enter only when the immediate editor is focused and the
+      // suggest widget is NOT open, so Enter still accepts a completion when
+      // the popup is visible.
       immediateEditor.addCommand(
         monaco.KeyCode.Enter,
         () => {
           submitImmediate();
         },
-        "!suggestWidgetVisible",
+        "duetspadImmediateFocused && !suggestWidgetVisible",
       );
     });
   }
