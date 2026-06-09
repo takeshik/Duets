@@ -454,7 +454,7 @@ html[data-bs-theme="light"] .immediate-console {
 /* plain flex row — no input-group chrome */
 .immediate-bar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     margin: 0;
     background: transparent;
 }
@@ -465,6 +465,7 @@ html[data-bs-theme="light"] .immediate-console {
     font-weight: 700;
     color: var(--common-accent-text);
     padding: 0 8px 0 12px;
+    line-height: 22px; /* align with one-line editor */
     transition: color 0.12s;
 }
 .immediate-console:focus-within .immediate-prompt {
@@ -473,7 +474,8 @@ html[data-bs-theme="light"] .immediate-console {
 .immediate-bar .immediate-editor {
     flex: 1 1 auto;
     min-width: 0;
-    height: 22px; /* one line at fontSize 13 */
+    min-height: 22px; /* one line at fontSize 13 */
+    /* height is driven dynamically by JS (onDidContentSizeChange) */
 }
 
 /* Immediate editor placeholder — content widget shown when the editor is empty */
@@ -484,7 +486,18 @@ html[data-bs-theme="light"] .immediate-console {
     opacity: 0.6;
     pointer-events: none;
     white-space: nowrap;
-    line-height: 22px; /* match .immediate-editor height */
+    line-height: 22px; /* match .immediate-editor min-height */
+}
+
+/* Main editor placeholder — content widget shown when the main editor is empty */
+.editor-placeholder {
+    font-family: var(--common-font-mono);
+    font-size: 13px;
+    color: var(--common-text-faint);
+    opacity: 0.6;
+    pointer-events: none;
+    white-space: nowrap;
+    line-height: 19px; /* match Monaco fontSize 13 line height */
 }
 
 /* ============================================================================

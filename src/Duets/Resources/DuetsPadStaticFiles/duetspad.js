@@ -399,6 +399,38 @@
         run: () => runCurrent(),
       });
 
+      // Placeholder content widget for the main editor — shown when empty.
+      const editorPlaceholder = {
+        getId: () => "editor-placeholder",
+        getDomNode: () => {
+          if (!editorPlaceholder._node) {
+            const node = document.createElement("div");
+            node.className = "editor-placeholder";
+            node.textContent =
+              "Type code and press Ctrl/Cmd+Enter or F5 to run…";
+            editorPlaceholder._node = node;
+          }
+          return editorPlaceholder._node;
+        },
+        getPosition: () => ({
+          position: { lineNumber: 1, column: 1 },
+          preference: [monaco.editor.ContentWidgetPositionPreference.EXACT],
+        }),
+        _node: null,
+      };
+
+      function syncEditorPlaceholder() {
+        const isEmpty = editor.getValue() === "";
+        if (isEmpty) {
+          editor.addContentWidget(editorPlaceholder);
+        } else {
+          editor.removeContentWidget(editorPlaceholder);
+        }
+      }
+
+      editor.onDidChangeModelContent(syncEditorPlaceholder);
+      syncEditorPlaceholder();
+
       // Open canvas and timeline SSE streams.
       // Drive the session-status indicator from the timeline stream's open/error events.
       openSse(`sessions/${id}/canvas-events`, handleCanvasEvent);
@@ -442,13 +474,46 @@
         },
       );
 
-      // Keep single-line: collapse any pasted newlines to spaces.
-      immediateEditor.onDidChangeModelContent(() => {
-        const value = immediateEditor.getValue();
-        if (value.includes("\n")) {
-          immediateEditor.setValue(value.replace(/\s*\n\s*/g, " "));
+      // ── Immediate history (localStorage) ──────────────────────────────────
+      const HISTORY_KEY = "duetspad.immediate.history";
+      const HISTORY_MAX = 100;
+
+      function loadHistory() {
+        try {
+          return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+        } catch {
+          return [];
         }
-      });
+      }
+
+      function saveHistory(hist) {
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+        } catch {
+          // localStorage may be unavailable (private browsing quota etc.)
+        }
+      }
+
+      function pushHistory(code) {
+        const hist = loadHistory();
+        if (hist.length > 0 && hist[hist.length - 1] === code) return;
+        hist.push(code);
+        if (hist.length > HISTORY_MAX)
+          hist.splice(0, hist.length - HISTORY_MAX);
+        saveHistory(hist);
+      }
+
+      // Navigation state: index into history (-1 = not navigating / at draft),
+      // and the draft text saved before the user started navigating.
+      let histNavIndex = -1;
+      let histNavDraft = null;
+      // Flag to suppress nav-state reset when we do setValue during navigation.
+      let histNavSetting = false;
+
+      function resetHistNav() {
+        histNavIndex = -1;
+        histNavDraft = null;
+      }
 
       // Placeholder content widget — shown when the immediate editor is empty.
       const immediatePlaceholder = {
@@ -478,9 +543,47 @@
         }
       }
 
-      immediateEditor.onDidChangeModelContent(syncImmediatePlaceholder);
+      immediateEditor.onDidChangeModelContent(() => {
+        syncImmediatePlaceholder();
+        // Reset history navigation on user edits (not on programmatic setValue).
+        if (!histNavSetting) {
+          resetHistNav();
+        }
+      });
+
       // Show placeholder initially (editor starts empty).
       syncImmediatePlaceholder();
+
+      // ── Dynamic height for multi-line Immediate ────────────────────────────
+      const IMMEDIATE_MAX_HEIGHT = 200; // ~8 lines
+      const immediateInputEl = document.getElementById("immediate-input");
+
+      function updateImmediateHeight() {
+        const contentHeight = Math.min(
+          immediateEditor.getContentHeight(),
+          IMMEDIATE_MAX_HEIGHT,
+        );
+        immediateInputEl.style.height = `${contentHeight}px`;
+        immediateEditor.layout();
+      }
+
+      immediateEditor.onDidContentSizeChange(updateImmediateHeight);
+      updateImmediateHeight();
+
+      // ── Scrollbar becomes visible only when content exceeds max height ─────
+      // scrollbar config is already set to hidden; override when needed.
+      immediateEditor.onDidContentSizeChange(() => {
+        const overflow =
+          immediateEditor.getContentHeight() > IMMEDIATE_MAX_HEIGHT;
+        immediateEditor.updateOptions({
+          scrollbar: {
+            vertical: overflow ? "auto" : "hidden",
+            horizontal: "hidden",
+            handleMouseWheel: overflow,
+            useShadows: false,
+          },
+        });
+      });
 
       async function submitImmediate() {
         const code = immediateEditor.getValue().trim();
@@ -489,8 +592,13 @@
         try {
           const data = await evalCode(code, /*immediate*/ true);
           if (data.ok) {
+            // Save to history before clearing.
+            pushHistory(code);
+            resetHistNav();
             // Result arrives in Timeline via SSE; clear input and status.
+            histNavSetting = true;
             immediateEditor.setValue("");
+            histNavSetting = false;
             setEditorStatus("", false);
           } else {
             setEditorStatus(data.error ?? "Error", true);
@@ -500,10 +608,11 @@
         }
       }
 
-      // Scope the Enter keybinding to the immediate editor only. Monaco
-      // registers standalone keybindings in a page-global service, so without
-      // an editor-specific context key the Enter handler below would also fire
-      // while the main Editor pane has focus and swallow its newline insertion.
+      // Scope the Enter / Up / Down keybindings to the immediate editor only.
+      // Monaco registers standalone keybindings in a page-global service, so
+      // without an editor-specific context key the Enter handler below would also
+      // fire while the main Editor pane has focus and swallow its newline
+      // insertion.
       const immediateFocused = immediateEditor.createContextKey(
         "duetspadImmediateFocused",
         false,
@@ -511,13 +620,94 @@
       immediateEditor.onDidFocusEditorText(() => immediateFocused.set(true));
       immediateEditor.onDidBlurEditorText(() => immediateFocused.set(false));
 
-      // Submit on Enter only when the immediate editor is focused and the
-      // suggest widget is NOT open, so Enter still accepts a completion when
-      // the popup is visible.
+      // Submit on plain Enter only when the immediate editor is focused and the
+      // suggest widget is NOT open, so Enter still accepts a completion when the
+      // popup is visible.  Shift+Enter falls through to Monaco's default
+      // (insert newline).
       immediateEditor.addCommand(
         monaco.KeyCode.Enter,
         () => {
           submitImmediate();
+        },
+        "duetspadImmediateFocused && !suggestWidgetVisible",
+      );
+
+      // ↑ — navigate to previous history entry when cursor is on the first line.
+      immediateEditor.addCommand(
+        monaco.KeyCode.UpArrow,
+        () => {
+          const pos = immediateEditor.getPosition();
+          if (pos?.lineNumber !== 1) {
+            // Not on the first line — fall through to normal cursor movement.
+            immediateEditor.trigger("keyboard", "cursorUp", null);
+            return;
+          }
+          const hist = loadHistory();
+          if (hist.length === 0) return;
+          if (histNavIndex === -1) {
+            // Start navigation: save current draft.
+            histNavDraft = immediateEditor.getValue();
+            histNavIndex = hist.length - 1;
+          } else if (histNavIndex > 0) {
+            histNavIndex--;
+          }
+          histNavSetting = true;
+          immediateEditor.setValue(hist[histNavIndex]);
+          histNavSetting = false;
+          // Move cursor to end of content.
+          const model = immediateEditor.getModel();
+          if (model) {
+            const lastLine = model.getLineCount();
+            const lastCol = model.getLineLength(lastLine) + 1;
+            immediateEditor.setPosition({
+              lineNumber: lastLine,
+              column: lastCol,
+            });
+          }
+        },
+        "duetspadImmediateFocused && !suggestWidgetVisible",
+      );
+
+      // ↓ — navigate to next history entry when cursor is on the last line;
+      //       restores draft when going past the newest entry.
+      immediateEditor.addCommand(
+        monaco.KeyCode.DownArrow,
+        () => {
+          if (histNavIndex === -1) {
+            // Not navigating — fall through to normal cursor movement.
+            immediateEditor.trigger("keyboard", "cursorDown", null);
+            return;
+          }
+          const model = immediateEditor.getModel();
+          const lastLine = model ? model.getLineCount() : 1;
+          const pos = immediateEditor.getPosition();
+          if (!pos || pos.lineNumber !== lastLine) {
+            // Not on the last line — fall through.
+            immediateEditor.trigger("keyboard", "cursorDown", null);
+            return;
+          }
+          const hist = loadHistory();
+          histNavSetting = true;
+          if (histNavIndex < hist.length - 1) {
+            histNavIndex++;
+            immediateEditor.setValue(hist[histNavIndex]);
+          } else {
+            // Past the newest entry — restore draft.
+            immediateEditor.setValue(histNavDraft ?? "");
+            histNavSetting = false;
+            resetHistNav();
+            return;
+          }
+          histNavSetting = false;
+          // Move cursor to end of content.
+          if (model) {
+            const newLastLine = model.getLineCount();
+            const lastCol = model.getLineLength(newLastLine) + 1;
+            immediateEditor.setPosition({
+              lineNumber: newLastLine,
+              column: lastCol,
+            });
+          }
         },
         "duetspadImmediateFocused && !suggestWidgetVisible",
       );
