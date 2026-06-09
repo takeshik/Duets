@@ -194,6 +194,14 @@
     reasonEl.className = "timeline-reason";
     reasonEl.textContent = entry.reason ?? "";
 
+    if (entry.timestamp) {
+      const tsEl = document.createElement("span");
+      tsEl.className = "timeline-timestamp";
+      tsEl.textContent = new Date(entry.timestamp).toLocaleTimeString();
+      tsEl.title = entry.timestamp;
+      reasonEl.appendChild(tsEl);
+    }
+
     const bodyEl = document.createElement("div");
     bodyEl.className = "timeline-body";
     bodyEl.appendChild(projectNode(entry.body));

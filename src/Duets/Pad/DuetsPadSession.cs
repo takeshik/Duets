@@ -824,7 +824,7 @@ internal sealed class DuetsPadSession : IDisposable
     {
         lock (this._stateLock)
         {
-            this.Timeline = this.Timeline.Append(reason, body);
+            this.Timeline = this.Timeline.Append(reason, body, this._clock());
             var entry = this.Timeline[^1];
             this.BroadcastTimeline(TimelineEventMessage.Append(entry));
 

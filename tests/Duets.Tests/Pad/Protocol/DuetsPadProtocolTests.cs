@@ -40,7 +40,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Timeline_reset_event_has_type_reason_and_entries()
     {
-        var state = TimelineState.Empty.Append("dump", new Text("hello"));
+        var state = TimelineState.Empty.Append("dump", new Text("hello"), DateTimeOffset.MinValue);
 
         var message = TimelineEventMessage.Reset(state, "initial");
 
@@ -55,7 +55,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Timeline_append_event_carries_one_entry()
     {
-        var entry = new TimelineEntry(0, "dump", new Text("hello"));
+        var entry = new TimelineEntry(0, "dump", new Text("hello"), DateTimeOffset.MinValue);
 
         var message = TimelineEventMessage.Append(entry);
 
@@ -70,7 +70,12 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Timeline_update_event_carries_one_entry()
     {
-        var entry = new TimelineEntry(0, "render-error", new Text("failed"));
+        var entry = new TimelineEntry(
+            0,
+            "render-error",
+            new Text("failed"),
+            DateTimeOffset.MinValue
+        );
 
         var message = TimelineEventMessage.Update(entry);
 
@@ -85,7 +90,12 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Timeline_trim_event_carries_removeBeforeId_and_non_null_marker()
     {
-        var marker = new TimelineEntry(5, "trim-marker", new Text("trimmed"));
+        var marker = new TimelineEntry(
+            5,
+            "trim-marker",
+            new Text("trimmed"),
+            DateTimeOffset.MinValue
+        );
 
         var message = TimelineEventMessage.Trim(removeBeforeId: 5, marker);
 
@@ -140,7 +150,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Serializer_timeline_reset_emits_type_reason_and_entries()
     {
-        var state = TimelineState.Empty.Append("dump", new Text("hi"));
+        var state = TimelineState.Empty.Append("dump", new Text("hi"), DateTimeOffset.MinValue);
         var message = TimelineEventMessage.Reset(state, "initial");
 
         var json = SseSerializer.Serialize(message);
@@ -153,7 +163,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Serializer_timeline_append_emits_type_and_entry()
     {
-        var entry = new TimelineEntry(0, "dump", new Text("hi"));
+        var entry = new TimelineEntry(0, "dump", new Text("hi"), DateTimeOffset.MinValue);
         var message = TimelineEventMessage.Append(entry);
 
         var json = SseSerializer.Serialize(message);
@@ -165,7 +175,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Serializer_timeline_update_emits_type_and_entry()
     {
-        var entry = new TimelineEntry(0, "render-error", new Text("oops"));
+        var entry = new TimelineEntry(0, "render-error", new Text("oops"), DateTimeOffset.MinValue);
         var message = TimelineEventMessage.Update(entry);
 
         var json = SseSerializer.Serialize(message);
@@ -189,7 +199,12 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Serializer_timeline_trim_emits_non_null_marker()
     {
-        var marker = new TimelineEntry(7, "trim-marker", new Text("retained"));
+        var marker = new TimelineEntry(
+            7,
+            "trim-marker",
+            new Text("retained"),
+            DateTimeOffset.MinValue
+        );
         var message = TimelineEventMessage.Trim(removeBeforeId: 7, marker);
 
         var json = SseSerializer.Serialize(message);

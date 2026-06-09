@@ -34,14 +34,14 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
 
     public TimelineEntry this[int index] => this.entries[index];
 
-    public TimelineState Append(string reason, ITerminalRenderNode body)
+    public TimelineState Append(string reason, ITerminalRenderNode body, DateTimeOffset timestamp)
     {
         if (body is null)
         {
             throw new ArgumentNullException(nameof(body));
         }
 
-        var entry = new TimelineEntry(this.NextId, reason, body);
+        var entry = new TimelineEntry(this.NextId, reason, body, timestamp);
         var next = new TimelineEntry[this.entries.Length + 1];
         Array.Copy(this.entries, next, this.entries.Length);
         next[^1] = entry;

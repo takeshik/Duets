@@ -560,6 +560,14 @@ html[data-bs-theme="light"] .immediate-console {
     color: var(--common-text-faint);
     margin-bottom: 4px;
 }
+.timeline-timestamp {
+    font-family: var(--common-font-mono);
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--common-text-faint);
+    margin-left: 6px;
+    cursor: default;
+}
 .timeline-body {
     font-family: var(--common-font-mono);
     font-size: var(--common-data-size);

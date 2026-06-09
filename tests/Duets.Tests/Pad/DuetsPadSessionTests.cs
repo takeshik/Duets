@@ -671,6 +671,18 @@ public sealed class DuetsPadSessionTests
         Assert.Equal(t1, session.LastActivityUtc);
     }
 
+    [Fact]
+    public async Task EvaluateAsync_timeline_entry_timestamp_reflects_injected_clock()
+    {
+        var t0 = new DateTimeOffset(2026, 3, 15, 12, 0, 0, TimeSpan.Zero);
+        using var session = await CreatePadSessionWithClockAsync(() => t0);
+
+        await session.EvaluateAsync("""dump("hello")""");
+
+        var entry = Assert.Single(session.Timeline);
+        Assert.Equal(t0, entry.Timestamp);
+    }
+
     // -------------------------------------------------------------------------
     // Concurrency: two EvaluateAsync calls must not cause DuetsSession concurrent-use exception
     // -------------------------------------------------------------------------

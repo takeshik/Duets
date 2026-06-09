@@ -106,6 +106,7 @@ internal static class SseSerializer
             ["id"] = entry.Id,
             ["reason"] = entry.Reason,
             ["body"] = Rendering.RenderNodeJsonSerializer.Serialize(entry.Body),
+            ["timestamp"] = entry.Timestamp.ToString("O"),
         };
     }
 }
