@@ -9,10 +9,12 @@ namespace Duets.Pad;
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
 /// <see cref="Stack"/>, and <see cref="Table"/>.
 /// </summary>
-internal sealed class UiApi(ObjectRenderingPipeline pipeline)
+internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOptions)
 {
     private readonly ObjectRenderingPipeline _pipeline =
         pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    private readonly DumpOptions _dumpOptions =
+        dumpOptions ?? throw new ArgumentNullException(nameof(dumpOptions));
 
     /// <summary>
     /// Returns a <see cref="Rendering.RawHtml"/> node. This is the only raw-HTML escape hatch.
@@ -98,7 +100,11 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline)
         var projectedRows = rowList
             .Select(r => (IReadOnlyList<KeyValuePair<string, object?>>)[.. r])
             .ToList();
-        return TableRenderBuilder.Build(columns, projectedRows, this._pipeline.Render);
+        return TableRenderBuilder.Build(
+            columns,
+            projectedRows,
+            v => this._pipeline.Render(v, this._dumpOptions)
+        );
     }
 
     private static IDictionary<string, object?> CoerceRow(object? row)
@@ -252,7 +258,10 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline)
 
         if (children is IEnumerable childrenEnumerable)
         {
-            var nodes = childrenEnumerable.Cast<object?>().Select(this._pipeline.Render).ToArray();
+            var nodes = childrenEnumerable
+                .Cast<object?>()
+                .Select(v => this._pipeline.Render(v, this._dumpOptions))
+                .ToArray();
 
             return [.. nodes];
         }

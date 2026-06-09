@@ -284,7 +284,8 @@ public sealed class DuetsPadService : IDisposable
             duetsSession,
             this._options.ObjectRenderers,
             this._options.Clock,
-            this._options.TimelineEntryLimit
+            this._options.TimelineEntryLimit,
+            this._options.DumpOptions
         );
 
         await ctx.CloseAsync(

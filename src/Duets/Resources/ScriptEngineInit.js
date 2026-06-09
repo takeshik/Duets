@@ -83,14 +83,6 @@ var util = Object.freeze({
   },
 });
 
-// dump(value): outputs the value to the REPL output pane and returns it unchanged,
-// enabling use in the middle of an expression chain.
-// biome-ignore lint/correctness/noUnusedVariables: Exposed as a script-engine global.
-var dump = (value, opts) => {
-  __consoleImpl__("log", inspect(value, opts));
-  return value;
-};
-
 // biome-ignore lint/correctness/noUnusedVariables: Exposed as a script-engine global.
 var console = (() => {
   // Top-level strings are not quoted (matching console.log behavior);

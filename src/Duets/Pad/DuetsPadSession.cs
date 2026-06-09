@@ -107,7 +107,8 @@ internal sealed class DuetsPadSession : IDisposable
         DuetsSession duetsSession,
         IReadOnlyList<IObjectRenderer>? objectRenderers = null,
         Func<DateTimeOffset>? clock = null,
-        int? timelineEntryLimit = null
+        int? timelineEntryLimit = null,
+        DumpOptions? dumpOptions = null
     )
     {
         this.Id =
@@ -125,19 +126,27 @@ internal sealed class DuetsPadSession : IDisposable
 
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
+        this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
         // Subscribe to console output — runs synchronously on the eval thread.
         this.DuetsSession.ConsoleLogged += this.OnConsoleLogged;
 
-        // Bind __padDump__ and override dump in JS without touching ScriptEngineInit.js.
-        this.DuetsSession.SetValue("__padDump__", new Action<object?>(this.Dump));
-        this.DuetsSession.Execute("dump = function (v) { __padDump__(v); return v; };");
+        // Bind __padDump__ and define the dump global in JS.
+        // Core (ScriptEngineInit.js) does not define dump; DuetsPad owns it.
+        // The second argument is a JS options object; MergeDumpOptions reads maxDepth/maxItems from it.
+        this.DuetsSession.SetValue(
+            "__padDump__",
+            new Action<object?, object?>((v, opts) => this.Dump(v, this.MergeDumpOptions(opts)))
+        );
+        this.DuetsSession.Execute(
+            "var dump = function (v, opts) { __padDump__(v, opts); return v; };"
+        );
 
         // Bind canvas and ui globals.
         this.DuetsSession.SetValue("canvas", new CanvasApi(this));
-        this.DuetsSession.SetValue("ui", new UiApi(this._pipeline));
+        this.DuetsSession.SetValue("ui", new UiApi(this._pipeline, this.DumpOptions));
 
-        // Register per-session d.ts declarations for canvas and ui.
+        // Register per-session d.ts declarations for canvas, ui, and dump.
         this.DuetsSession.Declarations.RegisterDeclaration(
             """
             // DuetsPad per-session globals
@@ -164,6 +173,17 @@ internal sealed class DuetsPadSession : IDisposable
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
             };
+
+            /**
+             * Renders value to the DuetsPad Timeline and returns it unchanged,
+             * so it can be inserted anywhere in an expression chain without breaking it.
+             *
+             * ```ts
+             * dump(someArray)          // renders the array, returns it
+             * dump(obj).someProperty   // renders obj, then accesses .someProperty — type is preserved
+             * ```
+             */
+            declare function dump<T>(value: T, opts?: { maxDepth?: number; maxItems?: number }): T;
             """
         );
 
@@ -180,6 +200,13 @@ internal sealed class DuetsPadSession : IDisposable
     public TimelineState Timeline { get; private set; } = TimelineState.Empty;
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
+
+    /// <summary>
+    /// Session-default <see cref="Rendering.DumpOptions" /> applied to all render entry points
+    /// (<c>dump</c>, <c>canvas</c>, <c>ui</c>). The <c>dump(value, opts?)</c> function accepts
+    /// a per-call override merged over this value via <see cref="MergeDumpOptions"/>.
+    /// </summary>
+    public DumpOptions DumpOptions { get; private set; }
 
     /// <summary>
     /// UTC timestamp of the most recent session activity (creation, eval, or SSE attach/keepalive).
@@ -365,17 +392,18 @@ internal sealed class DuetsPadSession : IDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Renders <paramref name="value"/> and appends a Timeline entry with reason "dump".
-    /// On render failure, appends an output-error marker entry instead. Never throws.
+    /// Renders <paramref name="value"/> using the given <paramref name="options"/> and appends a
+    /// Timeline entry with reason "dump". On render failure, appends an output-error marker entry
+    /// instead. Never throws.
     /// </summary>
-    internal void Dump(object? value)
+    internal void Dump(object? value, DumpOptions options)
     {
         try
         {
             ITerminalRenderNode body;
             try
             {
-                body = this._pipeline.Render(value);
+                body = this._pipeline.Render(value, options);
             }
             catch (Exception ex)
             {
@@ -403,7 +431,7 @@ internal sealed class DuetsPadSession : IDisposable
             ITerminalRenderNode node;
             try
             {
-                node = this._pipeline.Render(value);
+                node = this._pipeline.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
@@ -435,7 +463,7 @@ internal sealed class DuetsPadSession : IDisposable
             ITerminalRenderNode node;
             try
             {
-                node = this._pipeline.Render(value);
+                node = this._pipeline.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
@@ -557,7 +585,7 @@ internal sealed class DuetsPadSession : IDisposable
             ITerminalRenderNode body;
             try
             {
-                body = this._pipeline.Render(value);
+                body = this._pipeline.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
@@ -647,6 +675,122 @@ internal sealed class DuetsPadSession : IDisposable
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Merges a JS options value (the second argument to <c>dump(v, opts?)</c>) over the
+    /// session-default <see cref="DumpOptions"/>. Reads <c>maxDepth</c> and <c>maxItems</c>
+    /// integer fields from <paramref name="opts"/> when present; missing or null fields retain
+    /// the session default value. A null or absent <paramref name="opts"/> returns the session
+    /// default unchanged.
+    /// </summary>
+    private DumpOptions MergeDumpOptions(object? opts)
+    {
+        if (opts is null)
+        {
+            return this.DumpOptions;
+        }
+
+        IDictionary<string, object?>? dict = null;
+
+        if (opts is IDictionary<string, object?> genericDict)
+        {
+            dict = genericDict;
+        }
+        else if (opts is System.Collections.IDictionary nonGenericDict)
+        {
+            var converted = new Dictionary<string, object?>();
+            foreach (System.Collections.DictionaryEntry entry in nonGenericDict)
+            {
+                var key =
+                    System.Convert.ToString(
+                        entry.Key,
+                        System.Globalization.CultureInfo.InvariantCulture
+                    ) ?? "";
+                converted[key] = entry.Value;
+            }
+
+            dict = converted;
+        }
+        else if (opts is System.Dynamic.IDynamicMetaObjectProvider)
+        {
+            // Project dynamic object (e.g. Jint object literal) as key/value pairs.
+            var converted = new Dictionary<string, object?>();
+            if (opts is System.Collections.IEnumerable enumerable)
+            {
+                foreach (var item in enumerable)
+                {
+                    if (item is null)
+                    {
+                        continue;
+                    }
+
+                    var itemType = item.GetType();
+                    var keyProp = itemType.GetProperty("Key");
+                    var valueProp = itemType.GetProperty("Value");
+                    if (keyProp is null || valueProp is null)
+                    {
+                        continue;
+                    }
+
+                    var k = keyProp.GetValue(item)?.ToString() ?? "";
+                    converted[k] = valueProp.GetValue(item);
+                }
+            }
+
+            dict = converted;
+        }
+
+        if (dict is null)
+        {
+            return this.DumpOptions;
+        }
+
+        var maxDepth = this.DumpOptions.MaxDepth;
+        var maxItems = this.DumpOptions.MaxItems;
+
+        if (
+            dict.TryGetValue("maxDepth", out var maxDepthRaw)
+            && maxDepthRaw is not null
+            && TryParseInt(maxDepthRaw, out var parsedDepth)
+            && parsedDepth >= 0
+        )
+        {
+            maxDepth = parsedDepth;
+        }
+
+        if (
+            dict.TryGetValue("maxItems", out var maxItemsRaw)
+            && maxItemsRaw is not null
+            && TryParseInt(maxItemsRaw, out var parsedItems)
+            && parsedItems >= 0
+        )
+        {
+            maxItems = parsedItems;
+        }
+
+        return this.DumpOptions with
+        {
+            MaxDepth = maxDepth,
+            MaxItems = maxItems,
+        };
+    }
+
+    private static bool TryParseInt(object value, out int result)
+    {
+        try
+        {
+            result = System.Convert.ToInt32(
+                value,
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+            return true;
+        }
+        catch
+        {
+            result = 0;
+            return false;
+        }
+    }
 
     private void OnConsoleLogged(ScriptConsoleEntry entry)
     {

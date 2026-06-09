@@ -102,40 +102,61 @@ internal static class RecordProjector
             return false;
         }
 
-        members = EnumerateKeyValuePairs(enumerable);
+        members = [.. EnumerateKeyValuePairs(enumerable)];
         return true;
     }
 
     /// <summary>
-    /// Attempts to extract the entries of a map value for the Key/Value grid (Form B). Handles a
-    /// non-generic <see cref="IDictionary" />, or a generic-only dictionary value that implements
+    /// Attempts to detect whether <paramref name="value"/> is a map value for the Key/Value grid
+    /// (Form B) and, when it is, returns a lazy enumerable of its entries. Handles a non-generic
+    /// <see cref="IDictionary" />, or a generic-only dictionary value that implements
     /// <see cref="IDictionary{TKey, TValue}" /> or <see cref="IReadOnlyDictionary{TKey, TValue}" />.
     /// Keys are projected via <c>ToString()</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The returned enumerable is intentionally lazy — callers must enumerate only as many entries
+    /// as they need (e.g. up to <c>MaxItems + 1</c>) to keep materialization bounded for large or
+    /// custom map types.
+    /// </para>
+    /// <para>
     /// The dynamic JS-object shape (<see cref="System.Dynamic.IDynamicMetaObjectProvider" />, e.g.
     /// <see cref="System.Dynamic.ExpandoObject" />) is excluded here: although it is
     /// dictionary-like, ADR-40 routes it to the named-member object presentation (Form A) via
     /// <see cref="TryProjectDynamicObjectLike" />, which the renderer checks first.
+    /// </para>
     /// </remarks>
+    /// <param name="value">The value to test.</param>
+    /// <param name="entries">
+    /// Set to a lazy enumerable of key/value pairs when this method returns
+    /// <see langword="true" />; otherwise an empty enumerable.
+    /// </param>
+    /// <param name="cheapCount">
+    /// Set to the exact entry count when <paramref name="value" /> exposes it cheaply via
+    /// <see cref="IDictionary.Count" /> or <see cref="ICollection{T}.Count" />; otherwise
+    /// <see langword="null" />.
+    /// </param>
     /// <returns>
-    /// <see langword="true" /> and the extracted entries if <paramref name="value" /> is a map;
-    /// otherwise <see langword="false" /> and an empty list.
+    /// <see langword="true" /> if <paramref name="value" /> is a map; otherwise
+    /// <see langword="false" />.
     /// </returns>
     public static bool TryExtractMapEntries(
         object value,
-        out IReadOnlyList<KeyValuePair<string, object?>> entries
+        out IEnumerable<KeyValuePair<string, object?>> entries,
+        out int? cheapCount
     )
     {
         if (value is IDictionary dict)
         {
-            entries = ProjectDictionary(dict);
+            entries = EnumerateDictionaryEntries(dict);
+            cheapCount = dict.Count;
             return true;
         }
 
         if (value is System.Dynamic.IDynamicMetaObjectProvider)
         {
             entries = [];
+            cheapCount = null;
             return false;
         }
 
@@ -145,6 +166,8 @@ internal static class RecordProjector
         )
         {
             entries = EnumerateKeyValuePairs(enumerable);
+            // Attempt to read Count cheaply from the generic dictionary.
+            cheapCount = TryGetGenericCollectionCount(value);
             return true;
         }
 
@@ -152,7 +175,36 @@ internal static class RecordProjector
         // NOT treated as a map: only genuine dictionary interfaces qualify. Such sequences fall
         // through to the collection path and render as an array or tabular list.
         entries = [];
+        cheapCount = null;
         return false;
+    }
+
+    /// <summary>
+    /// Attempts to read <c>Count</c> cheaply from a generic collection interface without
+    /// full enumeration. Checks <see cref="ICollection{T}"/> and
+    /// <see cref="IReadOnlyCollection{T}"/> via reflection.
+    /// </summary>
+    private static int? TryGetGenericCollectionCount(object value)
+    {
+        foreach (var iface in value.GetType().GetInterfaces())
+        {
+            if (!iface.IsGenericType)
+            {
+                continue;
+            }
+
+            var def = iface.GetGenericTypeDefinition();
+            if (def == typeof(ICollection<>) || def == typeof(IReadOnlyCollection<>))
+            {
+                var countProp = iface.GetProperty("Count");
+                if (countProp is not null)
+                {
+                    return (int?)countProp.GetValue(value);
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -185,16 +237,15 @@ internal static class RecordProjector
     }
 
     /// <summary>
-    /// Enumerates an <see cref="IEnumerable" /> whose items expose <c>Key</c>/<c>Value</c>
+    /// Lazily enumerates an <see cref="IEnumerable" /> whose items expose <c>Key</c>/<c>Value</c>
     /// properties (e.g. <see cref="KeyValuePair{TKey, TValue}" />), projecting each key via
-    /// <c>ToString()</c>. Items without both properties (or null items) are skipped.
+    /// <c>ToString()</c>. Items without both properties (or null items) are skipped. The enumerable
+    /// is deferred — callers enumerate only as many entries as needed.
     /// </summary>
-    private static IReadOnlyList<KeyValuePair<string, object?>> EnumerateKeyValuePairs(
+    private static IEnumerable<KeyValuePair<string, object?>> EnumerateKeyValuePairs(
         IEnumerable enumerable
     )
     {
-        var result = new List<KeyValuePair<string, object?>>();
-
         foreach (var item in enumerable)
         {
             if (item is null)
@@ -214,10 +265,8 @@ internal static class RecordProjector
             var key = keyProperty.GetValue(item);
             var memberValue = valueProperty.GetValue(item);
 
-            result.Add(new KeyValuePair<string, object?>(key?.ToString() ?? "", memberValue));
+            yield return new KeyValuePair<string, object?>(key?.ToString() ?? "", memberValue);
         }
-
-        return result;
     }
 
     /// <summary>
@@ -239,23 +288,68 @@ internal static class RecordProjector
 
         if (value is IDictionary dict)
         {
-            return ProjectDictionary(dict);
+            return [.. EnumerateDictionaryEntries(dict)];
         }
 
         return ProjectClrObject(value);
     }
 
-    private static IReadOnlyList<KeyValuePair<string, object?>> ProjectDictionary(IDictionary dict)
+    /// <summary>
+    /// Projects <paramref name="value" /> into an ordered list of key/value pairs, identical to
+    /// <see cref="Project"/> for CLR objects and dynamic JS-object-shaped values, but bounds
+    /// dictionary materialization to at most <paramref name="maxItems" /> entries when
+    /// <paramref name="value" /> is an <see cref="IDictionary" />. Used by the tabular path to
+    /// prevent a large map used as a row from being fully enumerated during per-row column
+    /// extraction.
+    /// </summary>
+    /// <param name="value">The value to project.</param>
+    /// <param name="maxItems">
+    /// Cap on the number of dictionary entries materialized. Has no effect for CLR-object or
+    /// dynamic-object projections, whose member sets are bounded by the type.
+    /// </param>
+    public static IReadOnlyList<KeyValuePair<string, object?>> ProjectCapped(
+        object value,
+        int maxItems
+    )
     {
-        var result = new List<KeyValuePair<string, object?>>();
+        if (TryProjectDynamicObjectLike(value, out var dynamicMembers))
+        {
+            return dynamicMembers;
+        }
 
+        if (value is IDictionary dict)
+        {
+            var result = new List<KeyValuePair<string, object?>>(Math.Min(maxItems, 64));
+            foreach (var entry in EnumerateDictionaryEntries(dict))
+            {
+                if (result.Count >= maxItems)
+                {
+                    break;
+                }
+
+                result.Add(entry);
+            }
+
+            return result;
+        }
+
+        return ProjectClrObject(value);
+    }
+
+    /// <summary>
+    /// Lazily enumerates the entries of a non-generic <see cref="IDictionary"/>, projecting each
+    /// key via <c>ToString()</c>. The enumerable is deferred — callers enumerate only as many
+    /// entries as needed.
+    /// </summary>
+    private static IEnumerable<KeyValuePair<string, object?>> EnumerateDictionaryEntries(
+        IDictionary dict
+    )
+    {
         foreach (DictionaryEntry entry in dict)
         {
             var key = entry.Key?.ToString() ?? "";
-            result.Add(new KeyValuePair<string, object?>(key, entry.Value));
+            yield return new KeyValuePair<string, object?>(key, entry.Value);
         }
-
-        return result;
     }
 
     private static IReadOnlyList<KeyValuePair<string, object?>> ProjectClrObject(object value)

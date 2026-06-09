@@ -272,16 +272,3 @@ declare const util: {
     toJsArray(value: unknown): any[];
 }
 
-/**
- * Outputs `value` to the REPL output pane (as a `log`-level entry) and returns it
- * unchanged, so it can be inserted anywhere in an expression chain without breaking it.
- *
- * ```ts
- * dump(someArray)          // prints the array, returns it
- * dump(obj).someProperty   // prints obj, then accesses .someProperty — type is preserved
- * ```
- *
- * The output format is the same as `util.inspect` (pretty-printed JSON).
- * Use `console.log` instead if you want unquoted strings or multiple arguments.
- */
-declare function dump<T>(value: T, opts?: { depth?: number; compact?: boolean }): T;

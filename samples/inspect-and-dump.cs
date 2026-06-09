@@ -1,8 +1,6 @@
-// util.inspect and dump
+// util.inspect
 //
 // util.inspect formats any value as a readable string (like Node.js util.inspect).
-// dump(value) prints the value to the console and returns it unchanged, so it can
-// be inserted anywhere in an expression chain without breaking it.
 #:project ../src/Duets.Jint/Duets.Jint.csproj
 
 using Duets;
@@ -32,15 +30,10 @@ session.Execute(
     console.log(util.inspect({ a: { b: { c: { d: 4 } } } }, { depth: 1 }));
     // {"a":"[Object]"}
 
-    // dump(value) — prints via console.log and returns value unchanged.
-    // Useful for inspecting intermediate results in an expression chain.
+    // To log an intermediate value in an expression chain, define a local tap helper:
+    const tap = (v) => { console.log(util.inspect(v)); return v; };
     const doubled = [1, 2, 3]
-        .map(x => dump(x) * 2);   // prints 1, 2, 3 as each element is processed
+        .map(x => tap(x) * 2);   // logs 1, 2, 3 as each element is processed
     console.log('doubled:', doubled);
-
-    // Because dump returns its argument, the type is preserved.
-    // dump(obj).someProperty works as expected.
-    const name = dump({ name: 'Alice' }).name;
-    console.log('name:', name);   // name: Alice
     """
 );

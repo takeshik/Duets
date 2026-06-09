@@ -18,10 +18,16 @@ namespace Duets.Pad.Rendering;
 /// A renderer may still fail after <see cref="CanRender" /> returned true. Such failures
 /// should be surfaced as exceptions and handled by the output dispatch layer; renderers
 /// should not signal failure by returning null.
+///
+/// The <paramref name="context" /> parameter carries the current nesting depth, the shared
+/// cycle-detection set, and the caller-configured <see cref="Rendering.DumpOptions" />.
+/// Renderers must recurse into nested values via <see cref="RenderContext.RenderChild" />
+/// rather than calling the pipeline directly, so that depth limiting and cycle detection remain
+/// consistent across renderer boundaries.
 /// </remarks>
 public interface IObjectRenderer
 {
     public bool CanRender(object value);
 
-    public IRenderNode Render(object value);
+    public IRenderNode Render(object value, RenderContext context);
 }

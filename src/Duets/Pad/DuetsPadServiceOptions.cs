@@ -55,6 +55,13 @@ public sealed class DuetsPadServiceOptions
     public int? TimelineEntryLimit { get; set; } = null;
 
     /// <summary>
+    /// Default <see cref="DumpOptions" /> applied to every DuetsPad browser session.
+    /// Individual <c>dump(value, opts?)</c> calls may supply a per-call override merged over
+    /// this value. Defaults to <see cref="DumpOptions.Default" />.
+    /// </summary>
+    public DumpOptions DumpOptions { get; set; } = DumpOptions.Default;
+
+    /// <summary>
     /// Object renderers applied to every DuetsPad browser session, consulted in last-wins order
     /// (a later renderer overrides an earlier one that can render the same value) before the
     /// built-in default renderer. Empty by default, preserving default rendering behavior.

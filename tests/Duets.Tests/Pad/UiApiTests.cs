@@ -5,7 +5,7 @@ namespace Duets.Tests.Pad;
 
 public sealed class UiApiTests
 {
-    private static UiApi CreateUiApi() => new(new ObjectRenderingPipeline([]));
+    private static UiApi CreateUiApi() => new(new ObjectRenderingPipeline([]), DumpOptions.Default);
 
     // ── Positive: RawHtml ──────────────────────────────────────────────────
 

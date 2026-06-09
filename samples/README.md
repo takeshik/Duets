@@ -20,5 +20,5 @@ dotnet run samples/<file>.cs
 | `extension-methods.cs` | Register and call CLR extension methods; convert CLR arrays to native JS arrays with `util.toJsArray()` |
 | `duetspad.cs` | DuetsPad browser debug pad (Editor / Canvas / Timeline / Immediate) served over HTTP |
 | `console.cs` | Route script `console.log/warn/error` output via the `ConsoleLogged` event |
-| `inspect-and-dump.cs` | Format values with `util.inspect`; use `dump()` as a non-breaking tap in expression chains |
+| `inspect-and-dump.cs` | Format values with `util.inspect`; use a local `tap` helper for non-breaking chain inspection |
 | `repl-special-vars.cs` | REPL conveniences: `$_` (last result), `$exception`, and `GetGlobalVariables` |

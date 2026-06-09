@@ -28,6 +28,29 @@ public sealed class DuetsPadSessionTests
         return new DuetsPadSession(Guid.NewGuid(), duetsSession, renderers);
     }
 
+    private static IReadOnlyList<Element> AssertScalarTableRows(IRenderNode result)
+    {
+        var table = Assert.IsType<Element>(result);
+        Assert.Equal("table", table.Tag);
+        Assert.Equal("duetspad-table", table.Attributes["class"]);
+        Assert.Equal(2, table.Children.Count);
+
+        var thead = Assert.IsType<Element>(table.Children[0]);
+        Assert.Equal("thead", thead.Tag);
+        Assert.Single(thead.Children);
+
+        var tbody = Assert.IsType<Element>(table.Children[1]);
+        Assert.Equal("tbody", tbody.Tag);
+        return [.. tbody.Children.Select(Assert.IsType<Element>)];
+    }
+
+    private static ITerminalRenderNode GetScalarCellValue(Element row)
+    {
+        var td = Assert.IsType<Element>(Assert.Single(row.Children));
+        Assert.Equal("td", td.Tag);
+        return Assert.Single(td.Children);
+    }
+
     /// <summary>
     /// An object renderer that blocks inside <see cref="Render"/> until released. Used to hold an
     /// eval open at a deterministic point (the render is driven synchronously from the eval thread
@@ -47,7 +70,7 @@ public sealed class DuetsPadSessionTests
 
         public bool CanRender(object value) => value is "block";
 
-        public IRenderNode Render(object value)
+        public IRenderNode Render(object value, RenderContext context)
         {
             this.Entered.Set();
             this._release.Wait();
@@ -114,6 +137,101 @@ public sealed class DuetsPadSessionTests
         await session.EvaluateAsync("""dump("second")""");
 
         Assert.Equal(2, session.Timeline.Count);
+    }
+
+    // ── dump per-call options override ────────────────────────────────────────
+
+    [Fact]
+    public async Task Session_DumpOptions_property_reflects_value_passed_to_constructor()
+    {
+        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var customOptions = new DumpOptions { MaxDepth = 7, MaxItems = 42 };
+        using var session = new DuetsPadSession(
+            Guid.NewGuid(),
+            duetsSession,
+            dumpOptions: customOptions
+        );
+
+        Assert.Equal(7, session.DumpOptions.MaxDepth);
+        Assert.Equal(42, session.DumpOptions.MaxItems);
+    }
+
+    [Fact]
+    public async Task Dump_per_call_maxDepth_override_truncates_nested_value()
+    {
+        // With maxDepth=1, a list-of-lists should be truncated at depth 1.
+        using var session = await CreatePadSessionAsync();
+
+        // Build a nested structure in JS: [[1, 2], [3, 4]]
+        // With maxDepth=1 the inner arrays are at depth 1 (>=1) and should be truncated to "[…]".
+        var result = await session.EvaluateAsync("dump([[1, 2], [3, 4]], { maxDepth: 1 })");
+
+        Assert.True(result.Ok);
+
+        var entry = Assert.Single(session.Timeline);
+        Assert.Equal("dump", entry.Reason);
+
+        // The outer array is rendered at depth 0; inner arrays at depth 1 should be "[…]".
+        var rows = AssertScalarTableRows(entry.Body);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(new Text("[…]"), GetScalarCellValue(rows[0]));
+        Assert.Equal(new Text("[…]"), GetScalarCellValue(rows[1]));
+    }
+
+    [Fact]
+    public async Task Dump_per_call_maxDepth_does_not_affect_subsequent_dump_call()
+    {
+        // The per-call override must not persist to the next dump call.
+        using var session = await CreatePadSessionAsync();
+
+        // First dump with maxDepth=1 — inner arrays truncated.
+        await session.EvaluateAsync("dump([[1, 2]], { maxDepth: 1 })");
+
+        // Second dump with no override — session default (MaxDepth=5) applies, inner array renders.
+        await session.EvaluateAsync("dump([[1, 2]])");
+
+        Assert.Equal(2, session.Timeline.Count);
+
+        var first = session.Timeline[0];
+        var second = session.Timeline[1];
+
+        var firstRows = AssertScalarTableRows(first.Body);
+        Assert.Equal(new Text("[…]"), GetScalarCellValue(Assert.Single(firstRows)));
+
+        var secondRows = AssertScalarTableRows(second.Body);
+        var secondInner = Assert.IsType<Element>(GetScalarCellValue(Assert.Single(secondRows)));
+        AssertScalarTableRows(secondInner);
+    }
+
+    [Fact]
+    public async Task Dump_per_call_negative_maxItems_falls_back_to_session_default_and_does_not_throw()
+    {
+        // A script-supplied negative maxItems must be silently ignored — dump must succeed and the
+        // session default MaxItems must be used instead of the invalid value.
+        using var session = await CreatePadSessionAsync();
+
+        // This would have thrown ArgumentOutOfRangeException before the fix.
+        var result = await session.EvaluateAsync("dump([1, 2, 3], { maxItems: -1 })");
+
+        Assert.True(result.Ok, $"dump threw: {result.Error}");
+        var entry = Assert.Single(session.Timeline);
+        Assert.Equal("dump", entry.Reason);
+
+        // All 3 items must be visible — the default MaxItems (1000) applies.
+        var rows = AssertScalarTableRows(entry.Body);
+        Assert.Equal(3, rows.Count);
+    }
+
+    [Fact]
+    public async Task Dump_per_call_negative_maxDepth_falls_back_to_session_default_and_does_not_throw()
+    {
+        // A script-supplied negative maxDepth must be silently ignored — dump must succeed.
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync("dump([1, 2, 3], { maxDepth: -1 })");
+
+        Assert.True(result.Ok, $"dump threw: {result.Error}");
+        Assert.Single(session.Timeline);
     }
 
     // -------------------------------------------------------------------------
@@ -204,7 +322,7 @@ public sealed class DuetsPadSessionTests
 
         public bool CanRender(object? value) => ReferenceEquals(value, this._sentinel);
 
-        public IRenderNode Render(object? value) =>
+        public IRenderNode Render(object value, RenderContext context) =>
             throw new InvalidOperationException("deliberate render failure");
     }
 
@@ -216,7 +334,7 @@ public sealed class DuetsPadSessionTests
         session.SetObjectRenderers([new ThrowingRenderer(sentinel)]);
 
         // Call the internal op directly with the sentinel CLR value.
-        var exception = Record.Exception(() => session.Dump(sentinel));
+        var exception = Record.Exception(() => session.Dump(sentinel, DumpOptions.Default));
 
         Assert.Null(exception);
         var entry = Assert.Single(session.Timeline);
@@ -249,19 +367,21 @@ public sealed class DuetsPadSessionTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Declarations_contain_canvas_and_ui_but_not_dump_redefinition()
+    public async Task Declarations_contain_canvas_ui_and_dump_with_duetspad_options()
     {
         using var session = await CreatePadSessionAsync();
 
         var declarations = session.DuetsSession.Declarations.GetDeclarations();
 
-        // There must be at least one declaration mentioning canvas and ui.
+        // There must be at least one declaration mentioning canvas, ui, and dump.
         var allContent = string.Join("\n", declarations.Select(d => d.Content));
         Assert.Contains("canvas", allContent, StringComparison.Ordinal);
         Assert.Contains("ui", allContent, StringComparison.Ordinal);
+        Assert.Contains("dump", allContent, StringComparison.Ordinal);
 
         // The per-session declaration file is the one that declares canvas (injected in the ctor).
-        // It must NOT contain a dump redeclaration (core ScriptEngineInit.d.ts already does).
+        // It must contain dump with DuetsPad-specific options (maxDepth/maxItems),
+        // not the old core options (depth/compact).
         var perSessionDecl = declarations
             .Where(d => d.FileName.StartsWith("decl-", StringComparison.Ordinal))
             .SingleOrDefault(d =>
@@ -269,17 +389,21 @@ public sealed class DuetsPadSessionTests
                 && d.Content.Contains("ui", StringComparison.Ordinal)
             );
         Assert.NotNull(perSessionDecl);
-        Assert.DoesNotContain(
-            "declare const dump",
-            perSessionDecl!.Content,
-            StringComparison.Ordinal
-        );
-        Assert.DoesNotContain(
-            "declare function dump",
-            perSessionDecl.Content,
-            StringComparison.Ordinal
-        );
-        Assert.DoesNotContain("declare var dump", perSessionDecl.Content, StringComparison.Ordinal);
+        Assert.Contains("declare function dump", perSessionDecl!.Content, StringComparison.Ordinal);
+        Assert.Contains("maxDepth", perSessionDecl.Content, StringComparison.Ordinal);
+        Assert.Contains("maxItems", perSessionDecl.Content, StringComparison.Ordinal);
+
+        // No declaration file other than the per-session one must declare dump.
+        // (Core ScriptEngineInit.d.ts no longer defines dump — DuetsPad owns it.)
+        var otherDeclarationsWithDump = declarations
+            .Where(d => d.FileName != perSessionDecl.FileName)
+            .Where(d =>
+                d.Content.Contains("declare function dump", StringComparison.Ordinal)
+                || d.Content.Contains("declare const dump", StringComparison.Ordinal)
+                || d.Content.Contains("declare var dump", StringComparison.Ordinal)
+            )
+            .ToList();
+        Assert.Empty(otherDeclarationsWithDump);
     }
 
     // -------------------------------------------------------------------------
