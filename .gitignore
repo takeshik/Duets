@@ -1,3 +1,20 @@
+# Claude Code workaround: its sandbox bind-mounts /dev/null over host dot-files
+# (.bashrc, .zshrc, .mcp.json, .claude/{agents,commands,hooks}, ...), scattering
+# junk into the repo root. Ignore all dot-prefixed entries by default, then
+# re-include only the ones this repository actually tracks.
+.*
+!.claude/
+!.codex/
+!.devcontainer/
+!.editorconfig
+!.gitattributes
+!.git-blame-ignore-revs
+!.github/
+!.gitignore
+
+# Agent scratch plans live under the tracked .claude/ directory; keep them out.
+.claude/plans/
+
 # General ignoring files
 *~
 *.swp
