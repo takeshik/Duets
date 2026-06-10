@@ -86,6 +86,13 @@ Use `scripts/format.cs` as the repository formatting entry point. It is okay to 
 Agent Stop hooks also run it automatically. Generated code must still follow the code style and rules defined in
 `.editorconfig`.
 
+Format/lint suggestions must be resolved, not merely observed. `scripts/format.cs` auto-applies only safe fixes; tools
+such as biome additionally *report* unsafe fixes (e.g. `useOptionalChain`) without applying them — deliberately, because
+they may change behavior and require judgment. The script is not changed to blanket-apply unsafe fixes; exercising that
+judgment is the agent's job. Every reported suggestion must be triaged to a decision before a session ends: review each
+one and either apply it (when it is behavior-preserving and correct) or reject it deliberately (suppress via config or an
+inline ignore, with a reason). Never leave a reported suggestion dangling as a mere observation.
+
 ## Testing
 
 ```bash
