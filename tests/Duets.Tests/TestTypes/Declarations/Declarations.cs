@@ -61,7 +61,9 @@ public class GenericBox<T>
     public T Value { get; set; } = default!;
 }
 
+#pragma warning disable CS9113 // Parameters are intentionally unused: this type exists only to expose a constructor signature for declaration-generation tests.
 public class ConstructorSample(string name, int count) { }
+#pragma warning restore CS9113
 
 public class TypeMappingSample
 {

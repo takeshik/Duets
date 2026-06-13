@@ -1,7 +1,7 @@
 // Server-side completions with TypeScriptService
 //
 // BabelTranspiler (the default) does not include a language service; completions
-// in the web REPL are handled client-side by Monaco. TypeScriptService runs the
+// in DuetsPad are handled client-side by Monaco. TypeScriptService runs the
 // full TypeScript compiler in-process and exposes GetCompletions() for programmatic
 // use — for example, to power completions in a custom editor or a CLI tool.
 #:project ../src/Duets.Jint/Duets.Jint.csproj

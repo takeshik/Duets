@@ -119,7 +119,7 @@ public class TypeScriptService : ITranspiler, IDisposable
     /// <summary>
     /// Injects the ES5 standard library into the language service so that JS built-in completions
     /// (Array, string, Math, Promise, etc.) are available alongside registered .NET types.
-    /// Optional: the Monaco-based web REPL runs its own TypeScript language service client-side
+    /// Optional: the DuetsPad browser client runs its own TypeScript language service client-side
     /// and does not require this. Call this when using <see cref="GetCompletions"/> directly.
     /// </summary>
     public async Task InjectStdLibAsync(bool forceDownload = false)

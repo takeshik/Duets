@@ -96,6 +96,7 @@ public static class AssetSources
     /// <summary>
     /// Creates an asset source from an arbitrary text delegate. The produced string is encoded as UTF-8.
     /// Useful for testing or custom scenarios.
+    /// Compatibility alias for <see cref="FromString"/>.
     /// </summary>
     public static IAssetSource From(Func<bool, Task<string>> factory) => FromString(factory);
 
