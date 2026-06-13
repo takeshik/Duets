@@ -105,6 +105,51 @@
     return el;
   }
 
+  function resolveTarget(root, path) {
+    let node = root;
+    if (!Array.isArray(path)) return null;
+    for (const segment of path) {
+      if (!node || !Number.isInteger(segment) || segment < 0) return null;
+      node = node.childNodes[segment] ?? null;
+    }
+    return node instanceof HTMLElement ? node : null;
+  }
+
+  async function invokeInteraction(handlerId) {
+    if (!handlerId) return;
+    try {
+      await fetch(
+        padUrl(
+          `sessions/${sessionId}/interactions/${encodeURIComponent(handlerId)}/invoke`,
+        ),
+        { method: "POST" },
+      );
+    } catch (err) {
+      console.error("[DuetsPad] interaction invoke failed", err);
+    }
+  }
+
+  function applyInteractions(root, interactions) {
+    if (!Array.isArray(interactions)) return;
+
+    for (const interaction of interactions) {
+      const target = resolveTarget(root, interaction.target);
+      if (!target) continue;
+
+      if (interaction.state !== "live") {
+        if ("disabled" in target) target.disabled = true;
+        target.classList.add("duetspad-interaction-stale");
+        continue;
+      }
+
+      if (interaction.event === "click") {
+        target.addEventListener("click", () => {
+          void invokeInteraction(interaction.handlerId);
+        });
+      }
+    }
+  }
+
   // ── Eval helper ───────────────────────────────────────────────────────────────
 
   async function evalCode(code, immediate) {
@@ -204,7 +249,9 @@
 
     const bodyEl = document.createElement("div");
     bodyEl.className = "timeline-body";
-    bodyEl.appendChild(projectNode(entry.body));
+    const body = projectNode(entry.body);
+    bodyEl.appendChild(body);
+    applyInteractions(body, entry.interactions);
 
     row.appendChild(reasonEl);
     row.appendChild(bodyEl);
@@ -295,7 +342,9 @@
       const content = document.getElementById("canvas-content");
       if (!content) return;
       content.textContent = "";
-      content.appendChild(projectNode(msg.state));
+      const body = projectNode(msg.state);
+      content.appendChild(body);
+      applyInteractions(body, msg.interactions);
     }
   }
 
