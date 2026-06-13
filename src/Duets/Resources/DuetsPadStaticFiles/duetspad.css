@@ -1,4 +1,4 @@
-/* ---- Fonts ---------------------------------------------------------------- */
+/* Fonts */
 :root {
     --common-font-ui:
         "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
@@ -18,7 +18,7 @@
     --common-data-size: 12px;
 }
 
-/* ---- Theme tokens ---------------------------------------------------------
+/* Theme tokens —
    Neutrals are keyed to --common-hue (231° = the #4558ce accent hue) at very low
    saturation, so backgrounds / borders / text are DERIVED FROM the brand accent
    — not chosen arbitrarily, and not the old purple shell. Re-tinting the whole
@@ -72,7 +72,7 @@
     --logo-pad: #15171d; /* hsl(231 14% 10%) */
 }
 
-/* ---- Plumb the accent-derived ramp INTO Tabler's own variables ------------
+/* Tabler variable overrides —
    Every Tabler component (.btn, .card, .form-control, .nav-tabs, .badge,
    .table, .status…) then picks up the same surfaces / borders / text and the
    #4558ce primary. This is Tabler's supported customization path — we FEED the
@@ -111,9 +111,7 @@
     --tblr-btn-active-border-color: var(--common-accent-strong);
 }
 
-/* ============================================================================
-   Base
-   ============================================================================ */
+/* Base */
 *,
 *::before,
 *::after {
@@ -162,9 +160,7 @@ body {
     background: transparent;
 }
 
-/* ============================================================================
-   Top bar (navbar)
-   ============================================================================ */
+/* Top bar (navbar) */
 .topbar {
     height: 48px;
     flex: 0 0 auto;
@@ -240,9 +236,7 @@ body {
     white-space: nowrap;
 }
 
-/* ============================================================================
-   Workspace + panes
-   ============================================================================ */
+/* Workspace + panes */
 .workspace {
     flex: 1 1 auto;
     min-height: 0;
@@ -316,7 +310,7 @@ body {
     font-size: 16px;
 }
 
-/* ---- Splitters ------------------------------------------------------------ */
+/* Splitters */
 .splitter {
     flex: 0 0 var(--common-gutter);
     background: var(--common-bg);
@@ -385,19 +379,15 @@ body {
     opacity: 0.5;
 }
 
-/* ============================================================================
-   Editor pane
-   ============================================================================ */
+/* Editor pane */
 #editor-host {
     flex: 1 1 0;
     min-height: 0;
     min-width: 0;
 }
 
-/* ============================================================================
-   Status line — global bottom bar (real #editor-status)
-   ============================================================================ */
-/* A direct child of .app, pinned to the very bottom of the shell. Belongs to no
+/* Status line — global bottom bar (real #editor-status) —
+   A direct child of .app, pinned to the very bottom of the shell. Belongs to no
    pane, so it survives even when every pane is hidden (emacs modeline). */
 .statusline {
     flex: 0 0 auto;
@@ -437,10 +427,8 @@ body {
     background: var(--common-err);
 }
 
-/* ============================================================================
-   Immediate — docked at the bottom of the Timeline pane
-   ============================================================================ */
-/* Follows the Timeline pane's show/hide (as it once followed the Editor). */
+/* Immediate — docked at the bottom of the Timeline pane.
+   Follows the Timeline pane's show/hide (as it once followed the Editor). */
 .immediate-console {
     flex: 0 0 auto;
     border-top: 1px solid var(--common-border);
@@ -500,9 +488,7 @@ html[data-bs-theme="light"] .immediate-console {
     line-height: 19px; /* match Monaco fontSize 13 line height */
 }
 
-/* ============================================================================
-   Canvas pane
-   ============================================================================ */
+/* Canvas pane */
 #canvas-content {
     flex: 1 1 0;
     min-height: 0;
@@ -510,9 +496,7 @@ html[data-bs-theme="light"] .immediate-console {
     padding: 14px 16px 20px;
 }
 
-/* ============================================================================
-   Timeline pane — append-only log with a left rail
-   ============================================================================ */
+/* Timeline pane — append-only log with a left rail */
 #timeline-content {
     flex: 1 1 0;
     min-height: 0;
@@ -585,9 +569,7 @@ html[data-bs-theme="light"] .immediate-console {
     word-break: break-word;
 }
 
-/* ============================================================================
-   Output renderers — REAL classes emitted by duetspad.js projectNode()
-   ============================================================================ */
+/* Output renderers — REAL classes emitted by duetspad.js projectNode() */
 .duetspad-table {
     border-collapse: separate;
     border-spacing: 0;
@@ -712,10 +694,8 @@ html[data-bs-theme="light"] .immediate-console {
     gap: 5px;
 }
 
-/* ============================================================================
-   View mode: Tabs — the bar is a Tabler .nav.nav-tabs; we only toggle its
-   visibility and give it the surface background + density.
-   ============================================================================ */
+/* View mode: Tabs — the bar is a Tabler .nav.nav-tabs; we only toggle its
+   visibility and give it the surface background + density. */
 .workspace-tabbar {
     display: none;
     flex: 0 0 auto;
@@ -735,9 +715,7 @@ html[data-bs-theme="light"] .immediate-console {
     font-size: 16px;
 }
 
-/* ============================================================================
-   Responsive — narrow viewports stack
-   ============================================================================ */
+/* Responsive — narrow viewports stack */
 @media (max-width: 720px) {
     .brand-tag {
         display: none;

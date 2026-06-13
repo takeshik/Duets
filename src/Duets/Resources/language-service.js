@@ -7,12 +7,12 @@ var $$service;
   var _files = {};
 
   $$host = {
-    // ── Logging (optional no-ops) ────────────────────────────────────────
+    // Logging (optional no-ops)
     log: (_) => {},
     trace: (_) => {},
     error: (_) => {},
 
-    // ── Compiler settings ────────────────────────────────────────────────
+    // Compiler settings
     getCompilationSettings: () => ({
       allowJs: true,
       checkJs: false,
@@ -21,7 +21,7 @@ var $$service;
       module: ts.ModuleKind.None,
     }),
 
-    // ── Source file registry ─────────────────────────────────────────────
+    // Source file registry
     getScriptFileNames: () => Object.keys(_files),
 
     // Version string must change when content changes so the language
@@ -36,7 +36,7 @@ var $$service;
       return ts.ScriptSnapshot.fromString(_files[fileName].content);
     },
 
-    // ── Path helpers ─────────────────────────────────────────────────────
+    // Path helpers
     getCurrentDirectory: () => "",
 
     // lib.es5.d.ts is injected by TypeScriptService after language service initialization.
@@ -46,7 +46,7 @@ var $$service;
 
     realpath: (path) => path,
 
-    // ── File system (required by ModuleResolutionHost) ───────────────────
+    // File system (required by ModuleResolutionHost)
     fileExists: (fileName) => Object.hasOwn(_files, fileName),
 
     readFile: (fileName) =>
@@ -56,7 +56,7 @@ var $$service;
 
     getDirectories: (_) => [],
 
-    // ── Helper used by C# code to register virtual files ─────────────────
+    // Helper used by C# code to register virtual files
     addFile: (fileName, content) => {
       if (Object.hasOwn(_files, fileName)) {
         _files[fileName].version++;

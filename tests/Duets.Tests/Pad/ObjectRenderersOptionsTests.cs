@@ -17,9 +17,7 @@ namespace Duets.Tests.Pad;
 /// </summary>
 public sealed class ObjectRenderersOptionsTests
 {
-    // -------------------------------------------------------------------------
     // Helper: sentinel renderer
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Renders a specific string value to a fixed text output; all other values are rejected.
@@ -32,16 +30,12 @@ public sealed class ObjectRenderersOptionsTests
             DisplayContent.Text(output);
     }
 
-    // -------------------------------------------------------------------------
     // Helper: create a real Jint-backed DuetsSession
-    // -------------------------------------------------------------------------
 
     private static Task<DuetsSession> CreateDuetsSessionAsync() =>
         DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
 
-    // -------------------------------------------------------------------------
     // Session-constructor-level tests
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Session_ctor_renderer_is_used_by_dump()
@@ -129,9 +123,7 @@ public sealed class ObjectRenderersOptionsTests
         Assert.Equal("ORIGINAL", body.Value);
     }
 
-    // -------------------------------------------------------------------------
     // Service-options-level tests (via DuetsPadServiceOptions.ObjectRenderers)
-    // -------------------------------------------------------------------------
 
     private static Task RunAsync(
         Action<DuetsPadServiceOptions>? extraConfigure,

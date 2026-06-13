@@ -81,9 +81,7 @@ public sealed class DuetsPadSessionTests
         }
     }
 
-    // -------------------------------------------------------------------------
     // dump()
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Dump_string_returns_ok_and_appends_timeline_entry()
@@ -142,7 +140,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal(2, session.Timeline.Count);
     }
 
-    // ── dump per-call options override ────────────────────────────────────────
+    // dump per-call options override
 
     [Fact]
     public async Task Session_DumpOptions_property_reflects_value_passed_to_constructor()
@@ -237,9 +235,7 @@ public sealed class DuetsPadSessionTests
         Assert.Single(session.Timeline);
     }
 
-    // -------------------------------------------------------------------------
     // console.log
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Console_log_appends_timeline_entry_with_console_reason()
@@ -276,9 +272,7 @@ public sealed class DuetsPadSessionTests
         Assert.DoesNotContain(session.Timeline, e => e.Reason == "evaluation");
     }
 
-    // -------------------------------------------------------------------------
     // canvas.add / canvas.set / canvas.clear
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Canvas_add_appends_one_child_to_canvas()
@@ -410,9 +404,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("handler-error", Assert.Single(session.Timeline).Reason);
     }
 
-    // -------------------------------------------------------------------------
     // Render failure: no exception escapes, output-error marker appended
-    // -------------------------------------------------------------------------
 
     private sealed class ThrowingRenderer(object sentinel) : IObjectRenderer
     {
@@ -460,9 +452,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("render-error", entry.Reason);
     }
 
-    // -------------------------------------------------------------------------
     // d.ts declarations
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Declarations_contain_canvas_ui_and_dump_with_duetspad_options()
@@ -504,9 +494,7 @@ public sealed class DuetsPadSessionTests
         Assert.Empty(otherDeclarationsWithDump);
     }
 
-    // -------------------------------------------------------------------------
     // EvaluateAsync appendResult — Immediate path
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task EvaluateAsync_appendResult_true_appends_evaluation_entry_to_timeline()
@@ -588,9 +576,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("3", evalBody.Value);
     }
 
-    // -------------------------------------------------------------------------
     // Dispose: completing subscriber channels
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Dispose_completes_canvas_subscriber_channel()
@@ -694,9 +680,7 @@ public sealed class DuetsPadSessionTests
         Assert.False(session.HasActiveSubscribers);
     }
 
-    // -------------------------------------------------------------------------
     // Activity tracking: Touch() / LastActivityUtc
-    // -------------------------------------------------------------------------
 
     private static async Task<DuetsPadSession> CreatePadSessionWithClockAsync(
         Func<DateTimeOffset> clock
@@ -781,9 +765,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal(t0, entry.Timestamp);
     }
 
-    // -------------------------------------------------------------------------
     // Concurrency: two EvaluateAsync calls must not cause DuetsSession concurrent-use exception
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Concurrent_evaluate_calls_do_not_throw_concurrent_use_exception()
@@ -798,9 +780,7 @@ public sealed class DuetsPadSessionTests
         Assert.All(results, r => Assert.True(r.Ok, $"Eval failed: {r.Error}"));
     }
 
-    // -------------------------------------------------------------------------
     // SSE subscriber: initial snapshot + update
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Canvas_subscriber_receives_canvas_snapshot_on_subscribe_and_canvas_replace_after_mutation()
@@ -851,9 +831,7 @@ public sealed class DuetsPadSessionTests
         Assert.NotNull(msg2.Entry);
     }
 
-    // -------------------------------------------------------------------------
     // Dispose / eval coordination
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Dispose_while_eval_in_flight_does_not_throw_concurrent_operation()
@@ -948,9 +926,7 @@ public sealed class DuetsPadSessionTests
         Assert.Null(ex);
     }
 
-    // -------------------------------------------------------------------------
     // Registration / disposal serialization (TOCTOU)
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Registration and Dispose's subscriber complete/clear are serialized under the same
@@ -1034,9 +1010,7 @@ public sealed class DuetsPadSessionTests
         }
     }
 
-    // -------------------------------------------------------------------------
     // Timeline quota / timeline.trim
-    // -------------------------------------------------------------------------
 
     private static async Task<DuetsPadSession> CreatePadSessionWithLimitAsync(int? limit)
     {

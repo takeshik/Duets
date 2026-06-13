@@ -8,9 +8,7 @@ namespace Duets.Tests.Pad.Protocol;
 
 public sealed class DuetsPadProtocolTests
 {
-    // -------------------------------------------------------------------------
     // Canvas events
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Canvas_snapshot_event_type_is_canvas_snapshot_and_carries_state()
@@ -36,9 +34,7 @@ public sealed class DuetsPadProtocolTests
         Assert.Empty(message.Interactions);
     }
 
-    // -------------------------------------------------------------------------
     // Timeline events
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Timeline_reset_event_has_type_reason_and_entries()
@@ -121,9 +117,7 @@ public sealed class DuetsPadProtocolTests
         Assert.Null(message.Marker);
     }
 
-    // -------------------------------------------------------------------------
     // Serializer: Canvas events
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Serializer_canvas_snapshot_emits_namespaced_type()
@@ -168,9 +162,7 @@ public sealed class DuetsPadProtocolTests
         Assert.Contains("\"state\":\"stale\"", json, StringComparison.Ordinal);
     }
 
-    // -------------------------------------------------------------------------
     // Serializer: Timeline events
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Serializer_timeline_reset_emits_type_reason_and_entries()

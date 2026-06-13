@@ -83,9 +83,7 @@ public sealed class TimelineStateTests
         Assert.Equal(TimelineState.Empty, state.Clear());
     }
 
-    // -------------------------------------------------------------------------
     // Trim
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Trim_removes_entries_below_boundary_and_preserves_NextId()

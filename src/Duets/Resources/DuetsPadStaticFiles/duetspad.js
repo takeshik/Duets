@@ -2,7 +2,7 @@
 // All URL construction is relative to document.baseURI so non-root mounts (e.g. /pad/) work.
 
 (() => {
-  // ── Protocol event-type constants ─────────────────────────────────────────────
+  // Protocol event-type constants
   // Single source of truth for SSE event-type discriminators.
   // The string values here are the only place they should appear in this file.
 
@@ -15,13 +15,13 @@
     timelineTrim: "timeline.trim",
   };
 
-  // ── URL helpers ──────────────────────────────────────────────────────────────
+  // URL helpers
 
   function padUrl(path) {
     return new URL(path, document.baseURI).href;
   }
 
-  // ── Session bootstrap ─────────────────────────────────────────────────────────
+  // Session bootstrap
   // Reads sessionId from sessionStorage; POSTs to /sessions to reuse a live session
   // or obtain a fresh one; stores the returned id back into sessionStorage.
 
@@ -47,7 +47,7 @@
     return sessionId;
   }
 
-  // ── Render-node projection ────────────────────────────────────────────────────
+  // Render-node projection
   // Security-critical: only rawHtml nodes use innerHTML; all other node kinds use
   // textContent or DOM APIs exclusively.
   //   text     → textContent only (never innerHTML)
@@ -150,7 +150,7 @@
     }
   }
 
-  // ── Eval helper ───────────────────────────────────────────────────────────────
+  // Eval helper
 
   async function evalCode(code, immediate) {
     let url = padUrl(`sessions/${sessionId}/eval`);
@@ -165,7 +165,7 @@
     return res.json();
   }
 
-  // ── Status display helpers ────────────────────────────────────────────────────
+  // Status display helpers
 
   function setEditorStatus(text, isError) {
     const el = document.getElementById("editor-status");
@@ -195,12 +195,12 @@
     el.title = connected ? "Session connected" : "Session disconnected";
   }
 
-  // ── Module-scoped editor reference ────────────────────────────────────────────
+  // Module-scoped editor reference
   // Assigned once Monaco has created the editor; null before that point.
 
   let activeEditor = null;
 
-  // ── Run current editor content ────────────────────────────────────────────────
+  // Run current editor content
 
   async function runCurrent() {
     if (!activeEditor) return;
@@ -219,7 +219,7 @@
     }
   }
 
-  // ── Timeline state ────────────────────────────────────────────────────────────
+  // Timeline state
   // Maps entry id (number) → <div class="timeline-entry"> node for O(1) replace.
 
   const timelineEntryMap = new Map();
@@ -332,7 +332,7 @@
     }
   }
 
-  // ── Canvas state ──────────────────────────────────────────────────────────────
+  // Canvas state
 
   function handleCanvasEvent(msg) {
     if (
@@ -348,7 +348,7 @@
     }
   }
 
-  // ── SSE helpers ───────────────────────────────────────────────────────────────
+  // SSE helpers
 
   function openSse(path, handler, { onOpen, onError } = {}) {
     const url = padUrl(path);
@@ -370,7 +370,7 @@
     return es;
   }
 
-  // ── Monaco setup ──────────────────────────────────────────────────────────────
+  // Monaco setup
 
   function setupMonaco(id) {
     require.config({ paths: { vs: window.DUETSPAD_MONACO_VS } });
@@ -488,7 +488,7 @@
         onError: () => setSessionStatus(false),
       });
 
-      // ── Immediate Monaco editor ───────────────────────────────────────────
+      // Immediate Monaco editor
       // Single-line REPL editor sharing the page-global TS completion env.
 
       const immediateEditor = monaco.editor.create(
@@ -523,7 +523,7 @@
         },
       );
 
-      // ── Immediate history (localStorage) ──────────────────────────────────
+      // Immediate history (localStorage)
       const HISTORY_KEY = "duetspad.immediate.history";
       const HISTORY_MAX = 100;
 
@@ -603,7 +603,7 @@
       // Show placeholder initially (editor starts empty).
       syncImmediatePlaceholder();
 
-      // ── Dynamic height for multi-line Immediate ────────────────────────────
+      // Dynamic height for multi-line Immediate
       const IMMEDIATE_MAX_HEIGHT = 200; // ~8 lines
       const immediateInputEl = document.getElementById("immediate-input");
 
@@ -619,7 +619,7 @@
       immediateEditor.onDidContentSizeChange(updateImmediateHeight);
       updateImmediateHeight();
 
-      // ── Scrollbar becomes visible only when content exceeds max height ─────
+      // Scrollbar becomes visible only when content exceeds max height
       // scrollbar config is already set to hidden; override when needed.
       immediateEditor.onDidContentSizeChange(() => {
         const overflow =
@@ -763,7 +763,7 @@
     });
   }
 
-  // ── Entry point ───────────────────────────────────────────────────────────────
+  // Entry point
 
   async function main() {
     try {
@@ -775,7 +775,7 @@
     }
   }
 
-  // ── Public API ────────────────────────────────────────────────────────────────
+  // Public API
   // Exposed before main() so duetspad-ui.js can reference it immediately after load.
 
   window.DuetsPad = {

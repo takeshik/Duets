@@ -1,9 +1,13 @@
 // ScriptEngine built-in definitions
 // Executed once on engine initialization before any user code runs.
 
-// Formats a value for display, similar to Node.js util.inspect.
-// opts.depth   — maximum nesting depth (default: 2)
-// opts.compact — single-line output when true (default: false)
+/**
+ * Formats a value for display, similar to Node.js util.inspect.
+ * @param {any} value - The value to format.
+ * @param {{ depth?: number, compact?: boolean }} [opts] - Formatting options.
+ *   opts.depth   — maximum nesting depth (default: 2)
+ *   opts.compact — single-line output when true (default: false)
+ */
 const inspect = (value, opts) => {
   var depth = opts && opts.depth !== undefined ? opts.depth : 2;
   var compact = opts && opts.compact !== undefined ? opts.compact : false;
@@ -72,7 +76,10 @@ const inspect = (value, opts) => {
   return result !== undefined ? result : String(value);
 };
 
-// util.inspect: returns a formatted string (use when you need the string itself).
+/**
+ * Utility object exposed as the `util` global.
+ * util.inspect returns a formatted string (use when you need the string itself).
+ */
 // biome-ignore lint/correctness/noUnusedVariables: Exposed as a script-engine global.
 var util = Object.freeze({
   inspect: (value, opts) => inspect(value, opts),

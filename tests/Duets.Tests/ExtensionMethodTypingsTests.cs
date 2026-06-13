@@ -31,9 +31,7 @@ public sealed class ExtensionMethodTypingsTests
         }
     }
 
-    // -------------------------------------------------------------------------
     // Runtime: MemberAccessor dispatch via ExtensionMethodRegistry
-    // -------------------------------------------------------------------------
 
     private static (TypeDeclarations declarations, IScriptEngine engine) CreateEngine()
     {
@@ -322,9 +320,7 @@ public sealed class ExtensionMethodTypingsTests
         Assert.Contains("): TResult;", decl);
     }
 
-    // -------------------------------------------------------------------------
     // TypeScript declaration generation
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void GenerateExtensionMethodsTs_emits_interface_augmentation_for_target_type()

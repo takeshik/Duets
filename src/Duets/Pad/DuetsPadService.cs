@@ -127,9 +127,7 @@ public sealed class DuetsPadService : IDisposable
         this._sessions.Clear();
     }
 
-    // -------------------------------------------------------------------------
     // Static asset handlers
-    // -------------------------------------------------------------------------
 
     private async Task HandleIndexAsync(HttpActionContext ctx)
     {
@@ -239,9 +237,7 @@ public sealed class DuetsPadService : IDisposable
         return sb.ToString();
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions
-    // -------------------------------------------------------------------------
 
     private async Task HandlePostSessionAsync(HttpActionContext ctx)
     {
@@ -298,9 +294,7 @@ public sealed class DuetsPadService : IDisposable
         );
     }
 
-    // -------------------------------------------------------------------------
     // DELETE /sessions/{sessionId}
-    // -------------------------------------------------------------------------
 
     private async Task HandleDeleteSessionAsync(HttpActionContext ctx)
     {
@@ -338,9 +332,7 @@ public sealed class DuetsPadService : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // Idle session cleanup
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Returns the <see cref="DuetsPadSession"/> identified by <paramref name="id"/>, or
@@ -391,9 +383,7 @@ public sealed class DuetsPadService : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions/{sessionId}/eval
-    // -------------------------------------------------------------------------
 
     private async Task HandleEvalAsync(HttpActionContext ctx)
     {
@@ -428,9 +418,7 @@ public sealed class DuetsPadService : IDisposable
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions/{sessionId}/interactions/{handlerId}/invoke
-    // -------------------------------------------------------------------------
 
     private async Task HandleInvokeInteractionAsync(HttpActionContext ctx)
     {
@@ -470,9 +458,7 @@ public sealed class DuetsPadService : IDisposable
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
     }
 
-    // -------------------------------------------------------------------------
     // GET /sessions/{sessionId}/canvas-events
-    // -------------------------------------------------------------------------
 
     private async Task HandleCanvasEventsAsync(HttpActionContext ctx)
     {
@@ -492,9 +478,7 @@ public sealed class DuetsPadService : IDisposable
         );
     }
 
-    // -------------------------------------------------------------------------
     // GET /sessions/{sessionId}/timeline-events
-    // -------------------------------------------------------------------------
 
     private async Task HandleTimelineEventsAsync(HttpActionContext ctx)
     {
@@ -514,9 +498,7 @@ public sealed class DuetsPadService : IDisposable
         );
     }
 
-    // -------------------------------------------------------------------------
     // GET /type-declaration-events?sessionId=...
-    // -------------------------------------------------------------------------
 
     private async Task HandleTypeDeclarationEventsAsync(HttpActionContext ctx)
     {
@@ -588,9 +570,7 @@ public sealed class DuetsPadService : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Resolves the <see cref="DuetsPadSession"/> for <paramref name="sessionId"/>.

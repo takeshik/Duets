@@ -221,9 +221,7 @@ internal sealed class DuetsPadSession : IDisposable
     internal DateTimeOffset LastActivityUtc =>
         new(Interlocked.Read(ref this._lastActivityTicks), TimeSpan.Zero);
 
-    // -------------------------------------------------------------------------
     // Activity tracking
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Records the current clock time as the most recent session activity.
@@ -234,10 +232,8 @@ internal sealed class DuetsPadSession : IDisposable
         Interlocked.Exchange(ref this._lastActivityTicks, this._clock().UtcTicks);
     }
 
-    // -------------------------------------------------------------------------
     // State setters — used by tests to inject known state before exercising
     // eval-driven paths. Not part of the normal eval lifecycle.
-    // -------------------------------------------------------------------------
 
     public void SetCanvas(CanvasState canvas)
     {
@@ -283,9 +279,7 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // SSE subscriber registration
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Registers a Canvas SSE subscriber. A <c>canvas.snapshot</c> event for the current
@@ -423,9 +417,7 @@ internal sealed class DuetsPadSession : IDisposable
         || !this._timelineSubscribers.IsEmpty
         || !this._typeDeclarationSubscribers.IsEmpty;
 
-    // -------------------------------------------------------------------------
     // Internal ops — called from the eval call stack; must not acquire _evalSemaphore
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Renders <paramref name="value"/> using the given <paramref name="options"/> and appends a
@@ -543,9 +535,7 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // Public eval entry
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Evaluates <paramref name="code"/> in the underlying session, serialized by the eval
@@ -713,9 +703,7 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // Dispose
-    // -------------------------------------------------------------------------
 
     public void Dispose()
     {
@@ -783,9 +771,7 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    // -------------------------------------------------------------------------
     // Private helpers
-    // -------------------------------------------------------------------------
 
     private void OnConsoleLogged(ScriptConsoleEntry entry)
     {

@@ -21,11 +21,9 @@ internal sealed class InteractionStore
     private readonly Dictionary<long, IReadOnlyList<CommittedInteraction>> _timelineInteractions =
     [];
 
-    // Committed interactions currently displayed on the canvas.
-
-    // -------------------------------------------------------------------------
     // Canvas interactions
-    // -------------------------------------------------------------------------
+
+    // Committed interactions currently displayed on the canvas.
 
     /// <summary>
     /// Returns the current canvas interactions.
@@ -73,9 +71,7 @@ internal sealed class InteractionStore
         this.CanvasInteractions = [];
     }
 
-    // -------------------------------------------------------------------------
     // Timeline interactions
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Returns the full map of committed Timeline interactions keyed by entry id.
@@ -130,9 +126,7 @@ internal sealed class InteractionStore
         this._timelineInteractions.Clear();
     }
 
-    // -------------------------------------------------------------------------
     // Handler lookup
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Attempts to find the handler registered under <paramref name="handlerId"/>.
@@ -140,9 +134,7 @@ internal sealed class InteractionStore
     public bool TryGetHandler(Guid handlerId, out Action? handler) =>
         this._registry.TryGet(handlerId, out handler);
 
-    // -------------------------------------------------------------------------
     // Teardown
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Clears all interactions (canvas and timeline) and unregisters all handlers.
@@ -155,9 +147,7 @@ internal sealed class InteractionStore
         this._timelineInteractions.Clear();
     }
 
-    // -------------------------------------------------------------------------
     // Private helpers
-    // -------------------------------------------------------------------------
 
     private IReadOnlyList<CommittedInteraction> Commit(
         PendingInteractions interactions,

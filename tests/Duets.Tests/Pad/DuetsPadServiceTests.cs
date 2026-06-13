@@ -16,9 +16,7 @@ namespace Duets.Tests.Pad;
 /// </summary>
 public sealed class DuetsPadServiceTests
 {
-    // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
 
     private static Task RunAsync(
         string root,
@@ -102,9 +100,7 @@ public sealed class DuetsPadServiceTests
         return payload.GetProperty("sessionId").GetString()!;
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Post_sessions_with_empty_body_returns_new_session_id()
@@ -177,9 +173,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // DELETE /sessions/{sessionId}
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Delete_existing_session_returns_ok_and_subsequent_eval_returns_unknown_error()
@@ -232,9 +226,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Idle timeout: RemoveIdleSessions with injected clock
-    // -------------------------------------------------------------------------
 
     private static DuetsPadService BuildServiceWithIdleTimeout(
         HttpServer server,
@@ -547,9 +539,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions/{sessionId}/eval — unknown session
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Eval_unknown_session_returns_error_and_does_not_create_session()
@@ -588,9 +578,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // POST /sessions/{sessionId}/eval — success and failure
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Eval_success_returns_ok_result_and_session_id()
@@ -636,9 +624,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Timeline SSE
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Timeline_first_event_is_timeline_reset_with_reason_initial_and_empty_entries()
@@ -813,9 +799,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Canvas SSE
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Canvas_first_event_is_canvas_snapshot_with_empty_root_children()
@@ -935,9 +919,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // SSE response headers
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Canvas_events_response_has_correct_headers()
@@ -998,9 +980,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Session isolation
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Session_isolation_timeline_dump_in_A_does_not_appear_in_B()
@@ -1118,9 +1098,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Non-root prefix
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Non_root_prefix_routes_work()
@@ -1145,9 +1123,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Static assets
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Static_index_html_returns_200()
@@ -1225,9 +1201,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // GET /duetspad-config.js
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task DuetsPadConfigJs_returns_200_with_javascript_content_type()
@@ -1268,9 +1242,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // Tabler Icons routes
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task TablerIconsCss_returns_200_with_css_content_type_and_rewritten_url()
@@ -1330,9 +1302,7 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    // -------------------------------------------------------------------------
     // RewriteTablerIconsCss unit tests
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void RewriteTablerIconsCss_rewrites_font_face_src_to_single_woff2_dropping_fallbacks()
@@ -1356,9 +1326,7 @@ public sealed class DuetsPadServiceTests
         Assert.DoesNotContain(".ttf", result, StringComparison.Ordinal);
     }
 
-    // -------------------------------------------------------------------------
     // Options validation (early failure on UseDuetsPad)
-    // -------------------------------------------------------------------------
 
     [Theory]
     [InlineData(0)]
