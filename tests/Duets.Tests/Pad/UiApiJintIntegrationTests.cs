@@ -22,14 +22,14 @@ public sealed class UiApiJintIntegrationTests
     public async Task Element_built_from_js_object_literal_and_array_marshals_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new ObjectRenderingPipeline([]), DumpOptions.Default);
+        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         // JS: ui.element('div', { id: 'x' }, [ui.text('hi')])
         var result = session.Evaluate("ui.element('div', { id: 'x' }, [ui.text('hi')])");
-        var node = Assert.IsAssignableFrom<IRenderNode>(result.ToObject());
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
 
-        var json = RenderNodeJsonSerializer.Serialize(node);
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("div", (string?)json["tag"]);
         Assert.Equal("x", (string?)json["attributes"]!["id"]);
@@ -42,13 +42,13 @@ public sealed class UiApiJintIntegrationTests
     public async Task Label_from_js_serializes_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new ObjectRenderingPipeline([]), DumpOptions.Default);
+        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         var result = session.Evaluate("ui.label('Hello')");
-        var node = Assert.IsAssignableFrom<IRenderNode>(result.ToObject());
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
 
-        var json = RenderNodeJsonSerializer.Serialize(node);
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("span", (string?)json["tag"]);
         Assert.Equal("duetspad-label", (string?)json["attributes"]!["class"]);
@@ -59,13 +59,13 @@ public sealed class UiApiJintIntegrationTests
     public async Task Table_from_js_serializes_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new ObjectRenderingPipeline([]), DumpOptions.Default);
+        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         var result = session.Evaluate("ui.table([{ a: 1, b: 2 }])");
-        var node = Assert.IsAssignableFrom<IRenderNode>(result.ToObject());
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
 
-        var json = RenderNodeJsonSerializer.Serialize(node);
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("table", (string?)json["tag"]);
         Assert.Equal("duetspad-table", (string?)json["attributes"]!["class"]);
@@ -90,9 +90,27 @@ public sealed class UiApiJintIntegrationTests
     public async Task Element_script_tag_from_js_throws()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new ObjectRenderingPipeline([]), DumpOptions.Default);
+        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         Assert.ThrowsAny<Exception>(() => session.Evaluate("ui.element('script')"));
+    }
+
+    [Fact]
+    public async Task Button_from_js_returns_button_content_with_click_interaction()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var result = session.Evaluate("ui.button('Run', () => {})");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("button", (string?)json["tag"]);
+        Assert.Equal("Run", (string?)json["children"]![0]!["value"]);
+
+        var interaction = Assert.Single(content.Interactions);
+        Assert.Equal(InteractionEvent.Click, interaction.Event);
     }
 }

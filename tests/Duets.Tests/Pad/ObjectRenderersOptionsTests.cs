@@ -28,7 +28,8 @@ public sealed class ObjectRenderersOptionsTests
     {
         public bool CanRender(object value) => value is string s && s == match;
 
-        public IRenderNode Render(object value, RenderContext context) => new Text(output);
+        public DisplayContent Render(object value, RenderContext context) =>
+            DisplayContent.Text(output);
     }
 
     // -------------------------------------------------------------------------

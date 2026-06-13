@@ -2,8 +2,11 @@ using System.Threading.Channels;
 using Duets;
 using Duets.Jint;
 using Duets.Pad;
+using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
+using Duets.Pad.State;
+using Duets.Pad.Timeline;
 using Jint;
 
 namespace Duets.Tests.Pad;
@@ -70,11 +73,11 @@ public sealed class DuetsPadSessionTests
 
         public bool CanRender(object value) => value is "block";
 
-        public IRenderNode Render(object value, RenderContext context)
+        public DisplayContent Render(object value, RenderContext context)
         {
             this.Entered.Set();
             this._release.Wait();
-            return new Text("blocked");
+            return DisplayContent.Text("blocked");
         }
     }
 
@@ -312,6 +315,99 @@ public sealed class DuetsPadSessionTests
         Assert.Empty(session.Canvas.Root.Children);
     }
 
+    [Fact]
+    public async Task Canvas_button_interaction_invokes_handler_and_appends_dump()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        session.AddCanvasSubscriber(channel.Writer);
+        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        var eval = await session.EvaluateAsync(
+            """canvas.add(ui.button("Run", () => dump("clicked")))"""
+        );
+
+        Assert.True(eval.Ok, eval.Error);
+        var replace = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(CanvasEventTypes.Replace, replace.Type);
+        var interaction = Assert.Single(replace.Interactions);
+        Assert.Equal([0], interaction.Target.Segments);
+        Assert.Equal(InteractionEvent.Click, interaction.Event);
+        Assert.Equal(InteractionState.Live, interaction.State);
+
+        var invoke = await session.InvokeInteractionAsync(interaction.HandlerId);
+
+        Assert.True(invoke.Ok, invoke.Error);
+        var entry = Assert.Single(session.Timeline);
+        Assert.Equal("dump", entry.Reason);
+        var body = Assert.IsType<Text>(entry.Body);
+        Assert.Equal("clicked", body.Value);
+    }
+
+    [Fact]
+    public async Task Cleared_canvas_button_interaction_returns_stale_and_appends_handler_error()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        session.AddCanvasSubscriber(channel.Writer);
+        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
+        Assert.True(eval.Ok, eval.Error);
+        var replace = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var handlerId = Assert.Single(replace.Interactions).HandlerId;
+
+        await session.EvaluateAsync("canvas.clear()");
+        var invoke = await session.InvokeInteractionAsync(handlerId);
+
+        Assert.False(invoke.Ok);
+        Assert.True(invoke.Stale);
+        var entry = Assert.Single(session.Timeline);
+        Assert.Equal("handler-error", entry.Reason);
+    }
+
+    [Fact]
+    public async Task SetCanvas_unregisters_previous_canvas_interactions()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
+        session.AddCanvasSubscriber(channel.Writer);
+        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
+        Assert.True(eval.Ok, eval.Error);
+        var replace = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var handlerId = Assert.Single(replace.Interactions).HandlerId;
+
+        session.SetCanvas(CanvasState.Empty);
+        var invoke = await session.InvokeInteractionAsync(handlerId);
+
+        Assert.False(invoke.Ok);
+        Assert.True(invoke.Stale);
+        Assert.Equal("handler-error", Assert.Single(session.Timeline).Reason);
+    }
+
+    [Fact]
+    public async Task SetTimeline_unregisters_previous_timeline_interactions()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
+        session.AddTimelineSubscriber(channel.Writer);
+        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+
+        var eval = await session.EvaluateAsync("""dump(ui.button("Run", () => {}))""");
+        Assert.True(eval.Ok, eval.Error);
+        var append = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var handlerId = Assert.Single(append.EntryInteractions!).HandlerId;
+
+        session.SetTimeline(TimelineState.Empty);
+        var invoke = await session.InvokeInteractionAsync(handlerId);
+
+        Assert.False(invoke.Ok);
+        Assert.True(invoke.Stale);
+        Assert.Equal("handler-error", Assert.Single(session.Timeline).Reason);
+    }
+
     // -------------------------------------------------------------------------
     // Render failure: no exception escapes, output-error marker appended
     // -------------------------------------------------------------------------
@@ -322,7 +418,7 @@ public sealed class DuetsPadSessionTests
 
         public bool CanRender(object? value) => ReferenceEquals(value, this._sentinel);
 
-        public IRenderNode Render(object value, RenderContext context) =>
+        public DisplayContent Render(object value, RenderContext context) =>
             throw new InvalidOperationException("deliberate render failure");
     }
 

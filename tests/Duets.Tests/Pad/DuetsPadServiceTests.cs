@@ -872,6 +872,69 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    [Fact]
+    public async Task Interaction_invoke_route_runs_canvas_button_handler()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                await using var canvasStream = await client.GetStreamAsync(
+                    prefix + $"sessions/{sessionId}/canvas-events"
+                );
+                using var canvasReader = new StreamReader(canvasStream);
+                var initialCanvas = await ReadNextSseDataAsync(canvasReader);
+                Assert.Equal(
+                    CanvasEventTypes.Snapshot,
+                    initialCanvas.GetProperty("type").GetString()
+                );
+
+                await using var timelineStream = await client.GetStreamAsync(
+                    prefix + $"sessions/{sessionId}/timeline-events"
+                );
+                using var timelineReader = new StreamReader(timelineStream);
+                var initialTimeline = await ReadNextSseDataAsync(timelineReader);
+                Assert.Equal(
+                    TimelineEventTypes.Reset,
+                    initialTimeline.GetProperty("type").GetString()
+                );
+
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent(
+                        """canvas.add(ui.button("Run", () => dump("clicked")))""",
+                        Encoding.UTF8,
+                        "text/plain"
+                    )
+                );
+                evalResponse.EnsureSuccessStatusCode();
+
+                var replace = await ReadNextSseDataAsync(canvasReader);
+                Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
+                var interaction = Assert.Single(
+                    replace.GetProperty("interactions").EnumerateArray()
+                );
+                var handlerId = interaction.GetProperty("handlerId").GetString();
+                Assert.False(string.IsNullOrWhiteSpace(handlerId));
+
+                using var invokeResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/interactions/{handlerId}/invoke",
+                    content: null
+                );
+                invokeResponse.EnsureSuccessStatusCode();
+                var invokePayload = await invokeResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(invokePayload.GetProperty("ok").GetBoolean());
+
+                var append = await ReadNextSseDataAsync(timelineReader);
+                Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
+                var entry = append.GetProperty("entry");
+                Assert.Equal("dump", entry.GetProperty("reason").GetString());
+                Assert.Equal("clicked", entry.GetProperty("body").GetProperty("value").GetString());
+            }
+        );
+    }
+
     // -------------------------------------------------------------------------
     // SSE response headers
     // -------------------------------------------------------------------------

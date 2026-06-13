@@ -103,14 +103,15 @@ public sealed class ObjectRenderingPipelineTests
     {
         public bool CanRender(object value) => true;
 
-        public IRenderNode Render(object value, RenderContext context) => node;
+        public DisplayContent Render(object value, RenderContext context) =>
+            DisplayContent.FromNode(node);
     }
 
     private sealed class NeverRenderer : IObjectRenderer
     {
         public bool CanRender(object value) => false;
 
-        public IRenderNode Render(object value, RenderContext context) =>
+        public DisplayContent Render(object value, RenderContext context) =>
             throw new InvalidOperationException("NeverRenderer.Render should not be called.");
     }
 }

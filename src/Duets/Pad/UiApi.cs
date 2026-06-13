@@ -7,12 +7,12 @@ namespace Duets.Pad;
 /// <summary>
 /// Host object bound to the <c>ui</c> global in script. Provides the structured display surface:
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
-/// <see cref="Stack"/>, and <see cref="Table"/>.
+/// <see cref="Stack"/>, <see cref="Button"/>, and <see cref="Table"/>.
 /// </summary>
-internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOptions)
+internal sealed class UiApi(DisplayRenderer renderer, DumpOptions dumpOptions)
 {
-    private readonly ObjectRenderingPipeline _pipeline =
-        pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+    private readonly DisplayRenderer _renderer =
+        renderer ?? throw new ArgumentNullException(nameof(renderer));
     private readonly DumpOptions _dumpOptions =
         dumpOptions ?? throw new ArgumentNullException(nameof(dumpOptions));
 
@@ -20,56 +20,52 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOp
     /// Returns a <see cref="Rendering.RawHtml"/> node. This is the only raw-HTML escape hatch.
     /// (JS: <c>ui.rawHtml</c>)
     /// </summary>
-    public IRenderNode RawHtml(string content) => new Rendering.RawHtml(content);
+    public DisplayContent RawHtml(string content) => DisplayContent.RawHtml(content);
 
     /// <summary>
     /// Builds a structured <see cref="Rendering.Element"/>.
     /// (JS: <c>ui.element</c>)
     /// </summary>
-    public IRenderNode Element(string tag, object? attributes = null, object? children = null)
+    public DisplayContent Element(string tag, object? attributes = null, object? children = null)
     {
         var elementAttributes = BuildAttributes(attributes);
         var elementChildren = this.BuildChildren(children);
-        return new Rendering.Element(tag, elementAttributes, elementChildren);
+        return DisplayContent.Element(tag, elementAttributes, elementChildren);
     }
 
     /// <summary>
     /// Returns a <see cref="Rendering.Text"/> node.
     /// (JS: <c>ui.text</c>)
     /// </summary>
-    public IRenderNode Text(string value) => new Rendering.Text(value);
+    public DisplayContent Text(string value) => DisplayContent.Text(value);
 
     /// <summary>
     /// Returns a <c>span.duetspad-label</c> element wrapping <paramref name="value"/>.
     /// (JS: <c>ui.label</c>)
     /// </summary>
-    public IRenderNode Label(string value) =>
-        new Rendering.Element(
-            "span",
-            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-label")),
-            new ElementChildren(new Rendering.Text(value))
-        );
+    public DisplayContent Label(string value) => DisplayContent.Label(value);
 
     /// <summary>
     /// Returns a <c>div.duetspad-stack</c> element containing the rendered <paramref name="children"/>.
     /// (JS: <c>ui.stack</c>)
     /// </summary>
-    public IRenderNode Stack(object? children = null)
+    public DisplayContent Stack(object? children = null)
     {
-        var elementChildren = this.BuildChildren(children);
-        return new Rendering.Element(
-            "div",
-            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-stack")),
-            elementChildren
-        );
+        return DisplayContent.Stack(this.BuildChildren(children));
     }
+
+    /// <summary>
+    /// Builds a button element with a click handler. (JS: <c>ui.button</c>)
+    /// </summary>
+    public DisplayContent Button(string label, Action handler, object? options = null) =>
+        DisplayContent.Button(label, handler, BuildButtonOptions(options));
 
     /// <summary>
     /// Builds a <c>table.duetspad-table</c> element from <paramref name="rows"/>.
     /// Columns default to the keys of the first row; pass <c>options.columns</c> to specify
     /// an explicit ordered list of string column names. (JS: <c>ui.table</c>)
     /// </summary>
-    public IRenderNode Table(object? rows, object? options = null)
+    public DisplayContent Table(object? rows, object? options = null)
     {
         if (rows is null or string || rows is not IEnumerable rowsEnumerable)
         {
@@ -103,7 +99,7 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOp
         return TableRenderBuilder.Build(
             columns,
             projectedRows,
-            v => this._pipeline.Render(v, this._dumpOptions)
+            v => this._renderer.Render(v, this._dumpOptions)
         );
     }
 
@@ -241,11 +237,50 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOp
         );
     }
 
-    private ElementChildren BuildChildren(object? children)
+    private static ButtonOptions? BuildButtonOptions(object? options)
+    {
+        if (options is null)
+        {
+            return null;
+        }
+
+        var dict =
+            options switch
+            {
+                IDictionary<string, object?> generic => generic,
+                IDictionary nonGeneric => ConvertNonGenericDictionary(nonGeneric),
+                _ => null,
+            } ?? throw new ArgumentException("options must be an object.", nameof(options));
+        var result = new ButtonOptions();
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<DisplayContent> BuildChildren(object? children)
     {
         if (children is null)
         {
-            return ElementChildren.Empty;
+            return [];
         }
 
         if (children is string)
@@ -258,12 +293,12 @@ internal sealed class UiApi(ObjectRenderingPipeline pipeline, DumpOptions dumpOp
 
         if (children is IEnumerable childrenEnumerable)
         {
-            var nodes = childrenEnumerable
-                .Cast<object?>()
-                .Select(v => this._pipeline.Render(v, this._dumpOptions))
-                .ToArray();
-
-            return [.. nodes];
+            return
+            [
+                .. childrenEnumerable
+                    .Cast<object?>()
+                    .Select(v => this._renderer.Render(v, this._dumpOptions)),
+            ];
         }
 
         throw new ArgumentException("children must be an array.", nameof(children));

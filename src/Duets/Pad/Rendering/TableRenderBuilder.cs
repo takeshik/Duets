@@ -26,17 +26,22 @@ internal static class TableRenderBuilder
     /// When <see langword="true"/>, a trailing truncation-indicator row is appended to
     /// <c>tbody</c>.
     /// </param>
-    public static Element Build(
+    public static DisplayContent Build(
         IReadOnlyList<string> columns,
         IReadOnlyList<IReadOnlyList<KeyValuePair<string, object?>>> rows,
-        Func<object?, ITerminalRenderNode> renderCell,
+        Func<object?, DisplayContent> renderCell,
         string? typeHeaderText = null,
         bool truncated = false
     )
     {
         var thead = BuildThead(columns, typeHeaderText);
-        var tbody = BuildTbody(columns, rows, renderCell, truncated);
-        return new Element("table", TableAttributes, new ElementChildren(thead, tbody));
+        var tbodyContent = BuildTbody(columns, rows, renderCell, truncated);
+        var body = new Element(
+            "table",
+            TableAttributes,
+            new ElementChildren(thead, tbodyContent.Body)
+        );
+        return new DisplayContent(body, tbodyContent.Interactions.PrependPath(1));
     }
 
     private static Element BuildThead(IReadOnlyList<string> columns, string? typeHeaderText)
@@ -83,18 +88,21 @@ internal static class TableRenderBuilder
         );
     }
 
-    private static Element BuildTbody(
+    private static DisplayContent BuildTbody(
         IReadOnlyList<string> columns,
         IReadOnlyList<IReadOnlyList<KeyValuePair<string, object?>>> rows,
-        Func<object?, ITerminalRenderNode> renderCell,
+        Func<object?, DisplayContent> renderCell,
         bool truncated
     )
     {
         var capacity = rows.Count + (truncated ? 1 : 0);
         var trNodes = new List<ITerminalRenderNode>(capacity);
+        var interactions = new List<PendingInteractions>();
         for (var i = 0; i < rows.Count; i++)
         {
-            trNodes.Add(BuildBodyRow(columns, rows[i], renderCell));
+            var row = BuildBodyRow(columns, rows[i], renderCell);
+            trNodes.Add(row.Body);
+            interactions.Add(row.Interactions.PrependPath(i));
         }
 
         if (truncated)
@@ -102,13 +110,16 @@ internal static class TableRenderBuilder
             trNodes.Add(BuildTruncationRow(columns.Count));
         }
 
-        return new Element("tbody", ElementAttributes.Empty, [.. trNodes]);
+        return new DisplayContent(
+            new Element("tbody", ElementAttributes.Empty, [.. trNodes]),
+            PendingInteractions.Merge(interactions)
+        );
     }
 
-    private static Element BuildBodyRow(
+    private static DisplayContent BuildBodyRow(
         IReadOnlyList<string> columns,
         IReadOnlyList<KeyValuePair<string, object?>> row,
-        Func<object?, ITerminalRenderNode> renderCell
+        Func<object?, DisplayContent> renderCell
     )
     {
         // Build a lookup for this row by key.
@@ -119,9 +130,10 @@ internal static class TableRenderBuilder
         }
 
         var tdNodes = new ITerminalRenderNode[columns.Count];
+        var interactions = new List<PendingInteractions>();
         for (var i = 0; i < columns.Count; i++)
         {
-            ITerminalRenderNode cellContent;
+            DisplayContent cellContent;
             if (lookup.TryGetValue(columns[i], out var cellValue))
             {
                 try
@@ -130,22 +142,26 @@ internal static class TableRenderBuilder
                 }
                 catch (Exception ex)
                 {
-                    cellContent = OutputError.Create(ex.Message);
+                    cellContent = DisplayContent.FromNode(OutputError.Create(ex.Message));
                 }
             }
             else
             {
-                cellContent = new Text("");
+                cellContent = DisplayContent.Text("");
             }
 
             tdNodes[i] = new Element(
                 "td",
                 ElementAttributes.Empty,
-                new ElementChildren(cellContent)
+                new ElementChildren(cellContent.Body)
             );
+            interactions.Add(cellContent.Interactions.PrependPath(i, 0));
         }
 
-        return new Element("tr", ElementAttributes.Empty, [.. tdNodes]);
+        return new DisplayContent(
+            new Element("tr", ElementAttributes.Empty, [.. tdNodes]),
+            PendingInteractions.Merge(interactions)
+        );
     }
 
     /// <summary>

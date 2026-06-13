@@ -1,7 +1,7 @@
 namespace Duets.Pad.Rendering;
 
 /// <summary>
-/// Renders CLR objects that do not implement <see cref="IRenderNode" /> into render nodes.
+/// Renders CLR objects that do not implement <see cref="IRenderNode" /> into display content.
 /// </summary>
 /// <remarks>
 /// Object renderers are consulted by a session-scoped registry. When more than one renderer
@@ -11,9 +11,9 @@ namespace Duets.Pad.Rendering;
 /// cheaply test applicability before invoking a renderer. Implementations may inspect the
 /// value's state, not only its CLR type.
 ///
-/// <see cref="Render" /> returns an <see cref="IRenderNode" />, not necessarily an
-/// <see cref="ITerminalRenderNode" />. The returned node is reduced by the render tree
-/// reduction boundary before it is appended to a Timeline entry or Canvas state.
+/// <see cref="Render" /> returns <see cref="DisplayContent" />. The returned body's render node
+/// is reduced by the render tree reduction boundary before it is appended to a Timeline entry or
+/// Canvas state; any pending interactions are preserved as sidecar state.
 ///
 /// A renderer may still fail after <see cref="CanRender" /> returned true. Such failures
 /// should be surfaced as exceptions and handled by the output dispatch layer; renderers
@@ -29,5 +29,5 @@ public interface IObjectRenderer
 {
     public bool CanRender(object value);
 
-    public IRenderNode Render(object value, RenderContext context);
+    public DisplayContent Render(object value, RenderContext context);
 }

@@ -1,3 +1,4 @@
+using Duets.Pad.Interactions;
 using Duets.Pad.Timeline;
 
 namespace Duets.Pad.Protocol;
@@ -12,6 +13,8 @@ internal sealed record TimelineEventMessage
         TimelineState? state,
         string? reason,
         TimelineEntry? entry,
+        IReadOnlyList<CommittedInteraction>? entryInteractions,
+        IReadOnlyDictionary<long, IReadOnlyList<CommittedInteraction>>? stateInteractions,
         long? removeBeforeId,
         TimelineEntry? marker
     )
@@ -22,6 +25,8 @@ internal sealed record TimelineEventMessage
         this.State = state;
         this.Reason = reason;
         this.Entry = entry;
+        this.EntryInteractions = entryInteractions;
+        this.StateInteractions = stateInteractions;
         this.RemoveBeforeId = removeBeforeId;
         this.Marker = marker;
     }
@@ -34,11 +39,22 @@ internal sealed record TimelineEventMessage
 
     public TimelineEntry? Entry { get; }
 
+    public IReadOnlyList<CommittedInteraction>? EntryInteractions { get; }
+
+    public IReadOnlyDictionary<
+        long,
+        IReadOnlyList<CommittedInteraction>
+    >? StateInteractions { get; }
+
     public long? RemoveBeforeId { get; }
 
     public TimelineEntry? Marker { get; }
 
-    public static TimelineEventMessage Reset(TimelineState state, string reason) =>
+    public static TimelineEventMessage Reset(
+        TimelineState state,
+        string reason,
+        IReadOnlyDictionary<long, IReadOnlyList<CommittedInteraction>> interactions
+    ) =>
         new(
             TimelineEventTypes.Reset,
             state ?? throw new ArgumentNullException(nameof(state)),
@@ -46,26 +62,38 @@ internal sealed record TimelineEventMessage
                 ? reason
                 : throw new ArgumentException("Reset reason cannot be empty.", nameof(reason)),
             entry: null,
+            entryInteractions: null,
+            stateInteractions: SnapshotInteractions(interactions),
             removeBeforeId: null,
             marker: null
         );
 
-    public static TimelineEventMessage Append(TimelineEntry entry) =>
+    public static TimelineEventMessage Append(
+        TimelineEntry entry,
+        IReadOnlyList<CommittedInteraction> interactions
+    ) =>
         new(
             TimelineEventTypes.Append,
             state: null,
             reason: null,
             entry ?? throw new ArgumentNullException(nameof(entry)),
+            interactions ?? throw new ArgumentNullException(nameof(interactions)),
+            stateInteractions: null,
             removeBeforeId: null,
             marker: null
         );
 
-    public static TimelineEventMessage Update(TimelineEntry entry) =>
+    public static TimelineEventMessage Update(
+        TimelineEntry entry,
+        IReadOnlyList<CommittedInteraction> interactions
+    ) =>
         new(
             TimelineEventTypes.Update,
             state: null,
             reason: null,
             entry ?? throw new ArgumentNullException(nameof(entry)),
+            interactions ?? throw new ArgumentNullException(nameof(interactions)),
+            stateInteractions: null,
             removeBeforeId: null,
             marker: null
         );
@@ -76,7 +104,27 @@ internal sealed record TimelineEventMessage
             state: null,
             reason: null,
             entry: null,
+            entryInteractions: null,
+            stateInteractions: null,
             removeBeforeId,
             marker
         );
+
+    private static IReadOnlyDictionary<
+        long,
+        IReadOnlyList<CommittedInteraction>
+    > SnapshotInteractions(
+        IReadOnlyDictionary<long, IReadOnlyList<CommittedInteraction>> interactions
+    )
+    {
+        if (interactions is null)
+        {
+            throw new ArgumentNullException(nameof(interactions));
+        }
+
+        return interactions.ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<CommittedInteraction>)[.. kv.Value]
+        );
+    }
 }

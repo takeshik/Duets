@@ -21,13 +21,13 @@ namespace Duets.Pad.Rendering;
 public sealed class RenderContext
 {
     private readonly HashSet<object> _visited;
-    private readonly Func<object?, RenderContext, ITerminalRenderNode> _dispatch;
+    private readonly Func<object?, RenderContext, DisplayContent> _dispatch;
 
     internal RenderContext(
         DumpOptions options,
         int depth,
         HashSet<object> visited,
-        Func<object?, RenderContext, ITerminalRenderNode> dispatch
+        Func<object?, RenderContext, DisplayContent> dispatch
     )
     {
         this.Options = options;
@@ -46,7 +46,7 @@ public sealed class RenderContext
     /// Renders a nested value at <c>Depth + 1</c> through the central dispatch, reusing the
     /// same cycle-detection set and the same <see cref="Options"/>.
     /// </summary>
-    public ITerminalRenderNode RenderChild(object? value)
+    public DisplayContent RenderChild(object? value)
     {
         var child = new RenderContext(this.Options, this.Depth + 1, this._visited, this._dispatch);
         return this._dispatch(value, child);
@@ -66,7 +66,7 @@ public sealed class RenderContext
     /// </summary>
     internal static RenderContext CreateRoot(
         DumpOptions options,
-        Func<object?, RenderContext, ITerminalRenderNode> dispatch
+        Func<object?, RenderContext, DisplayContent> dispatch
     ) =>
         new(
             options,

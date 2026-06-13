@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
 using Duets.Pad.State;
@@ -98,7 +99,11 @@ internal sealed class DuetsPadSession : IDisposable
         ChannelWriter<TypeDeclaration?>
     > _typeDeclarationSubscribers = new();
 
-    private ObjectRenderingPipeline _pipeline;
+    private DisplayRenderer _renderer;
+    private readonly InteractionRegistry _interactionRegistry = new();
+    private IReadOnlyList<CommittedInteraction> _canvasInteractions = [];
+    private readonly Dictionary<long, IReadOnlyList<CommittedInteraction>> _timelineInteractions =
+    [];
 
     private readonly int? _timelineEntryLimit;
 
@@ -125,7 +130,7 @@ internal sealed class DuetsPadSession : IDisposable
             );
 
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
-        this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
+        this._renderer = new DisplayRenderer(this.ObjectRenderers);
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
         // Subscribe to console output — runs synchronously on the eval thread.
@@ -144,7 +149,7 @@ internal sealed class DuetsPadSession : IDisposable
 
         // Bind canvas and ui globals.
         this.DuetsSession.SetValue("canvas", new CanvasApi(this));
-        this.DuetsSession.SetValue("ui", new UiApi(this._pipeline, this.DumpOptions));
+        this.DuetsSession.SetValue("ui", new UiApi(this._renderer, this.DumpOptions));
 
         // Register per-session d.ts declarations for canvas, ui, and dump.
         this.DuetsSession.Declarations.RegisterDeclaration(
@@ -170,6 +175,8 @@ internal sealed class DuetsPadSession : IDisposable
                 label(value: string): any;
                 /** Returns a <div class="duetspad-stack"> containing rendered children. */
                 stack(children?: any[]): any;
+                /** Returns a button with a click handler. */
+                button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
             };
@@ -234,12 +241,36 @@ internal sealed class DuetsPadSession : IDisposable
 
     public void SetCanvas(CanvasState canvas)
     {
-        this.Canvas = canvas ?? throw new ArgumentNullException(nameof(canvas));
+        if (canvas is null)
+        {
+            throw new ArgumentNullException(nameof(canvas));
+        }
+
+        lock (this._stateLock)
+        {
+            this.Unregister(this._canvasInteractions);
+            this.Canvas = canvas;
+            this._canvasInteractions = [];
+        }
     }
 
     public void SetTimeline(TimelineState timeline)
     {
-        this.Timeline = timeline ?? throw new ArgumentNullException(nameof(timeline));
+        if (timeline is null)
+        {
+            throw new ArgumentNullException(nameof(timeline));
+        }
+
+        lock (this._stateLock)
+        {
+            foreach (var interactions in this._timelineInteractions.Values)
+            {
+                this.Unregister(interactions);
+            }
+
+            this.Timeline = timeline;
+            this._timelineInteractions.Clear();
+        }
     }
 
     public void SetObjectRenderers(IReadOnlyList<IObjectRenderer> objectRenderers)
@@ -252,7 +283,7 @@ internal sealed class DuetsPadSession : IDisposable
         this.ObjectRenderers = [.. objectRenderers];
 
         // Rebuild the pipeline so subsequent Dump/CanvasAdd/CanvasSet calls pick up the change.
-        this._pipeline = new ObjectRenderingPipeline(this.ObjectRenderers);
+        this._renderer = new DisplayRenderer(this.ObjectRenderers);
     }
 
     // -------------------------------------------------------------------------
@@ -289,7 +320,7 @@ internal sealed class DuetsPadSession : IDisposable
             }
 
             this._canvasSubscribers[key] = writer;
-            writer.TryWrite(CanvasEventMessage.Snapshot(this.Canvas));
+            writer.TryWrite(CanvasEventMessage.Snapshot(this.Canvas, this._canvasInteractions));
         }
 
         return key;
@@ -328,7 +359,9 @@ internal sealed class DuetsPadSession : IDisposable
             }
 
             this._timelineSubscribers[key] = writer;
-            writer.TryWrite(TimelineEventMessage.Reset(this.Timeline, "initial"));
+            writer.TryWrite(
+                TimelineEventMessage.Reset(this.Timeline, "initial", this._timelineInteractions)
+            );
         }
 
         return key;
@@ -400,19 +433,21 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            ITerminalRenderNode body;
+            DisplayContent content;
             try
             {
-                body = this._pipeline.Render(value, options);
+                content = this._renderer.Render(value, options);
             }
             catch (Exception ex)
             {
-                body = OutputError.Create($"Render error: {ex.Message}");
-                this.AppendTimelineEntry("render-error", body);
+                this.AppendTimelineEntry(
+                    "render-error",
+                    DisplayContent.FromNode(OutputError.Create($"Render error: {ex.Message}"))
+                );
                 return;
             }
 
-            this.AppendTimelineEntry("dump", body);
+            this.AppendTimelineEntry("dump", content);
         }
         catch
         {
@@ -428,21 +463,27 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            ITerminalRenderNode node;
+            DisplayContent content;
             try
             {
-                node = this._pipeline.Render(value, this.DumpOptions);
+                content = this._renderer.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
                 var errorBody = OutputError.Create($"Render error: {ex.Message}");
-                this.AppendTimelineEntry("render-error", errorBody);
+                this.AppendTimelineEntry("render-error", DisplayContent.FromNode(errorBody));
                 return;
             }
 
             lock (this._stateLock)
             {
-                this.Canvas = this.Canvas.Append(node);
+                var childIndex = this.Canvas.Root.Children.Count;
+                this.Canvas = this.Canvas.Append(content.Body);
+                this._canvasInteractions =
+                [
+                    .. this._canvasInteractions,
+                    .. this.CommitInteractions(content.Interactions, childIndex),
+                ];
                 this.BroadcastCanvas();
             }
         }
@@ -460,21 +501,26 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            ITerminalRenderNode node;
+            DisplayContent content;
             try
             {
-                node = this._pipeline.Render(value, this.DumpOptions);
+                content = this._renderer.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
                 var errorBody = OutputError.Create($"Render error: {ex.Message}");
-                this.AppendTimelineEntry("render-error", errorBody);
+                this.AppendTimelineEntry("render-error", DisplayContent.FromNode(errorBody));
                 return;
             }
 
             lock (this._stateLock)
             {
-                this.Canvas = this.Canvas.Set(new ElementChildren(node));
+                this.Unregister(this._canvasInteractions);
+                this.Canvas = this.Canvas.Set(new ElementChildren(content.Body));
+                this._canvasInteractions = this.CommitInteractions(
+                    content.Interactions,
+                    childIndex: 0
+                );
                 this.BroadcastCanvas();
             }
         }
@@ -492,6 +538,8 @@ internal sealed class DuetsPadSession : IDisposable
             lock (this._stateLock)
             {
                 this.Canvas = CanvasState.Empty;
+                this.Unregister(this._canvasInteractions);
+                this._canvasInteractions = [];
                 this.BroadcastCanvas();
             }
         }
@@ -573,6 +621,73 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
+    internal async Task<InteractionInvokeResult> InvokeInteractionAsync(Guid handlerId)
+    {
+        this.Touch();
+
+        if (handlerId == Guid.Empty)
+        {
+            return InteractionInvokeResult.StaleHandler("Interaction handler id cannot be empty.");
+        }
+
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return InteractionInvokeResult.StaleHandler("Session has been disposed.");
+        }
+
+        try
+        {
+            await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return InteractionInvokeResult.StaleHandler("Session has been disposed.");
+        }
+
+        try
+        {
+            if (Volatile.Read(ref this._disposed) == 1)
+            {
+                return InteractionInvokeResult.StaleHandler("Session has been disposed.");
+            }
+
+            Action? handler;
+            lock (this._stateLock)
+            {
+                this._interactionRegistry.TryGet(handlerId, out handler);
+            }
+
+            if (handler is null)
+            {
+                const string error = "Interaction handler is no longer available.";
+                this.AppendTimelineEntry(
+                    "handler-error",
+                    DisplayContent.FromNode(OutputError.Create(error))
+                );
+                return InteractionInvokeResult.StaleHandler(error);
+            }
+
+            try
+            {
+                handler();
+                return InteractionInvokeResult.Success;
+            }
+            catch (Exception ex)
+            {
+                var error = $"Handler error: {ex.Message}";
+                this.AppendTimelineEntry(
+                    "handler-error",
+                    DisplayContent.FromNode(OutputError.Create(error))
+                );
+                return InteractionInvokeResult.Failed(error);
+            }
+        }
+        finally
+        {
+            this._evalSemaphore.Release();
+        }
+    }
+
     /// <summary>
     /// Renders <paramref name="value"/> and appends a Timeline entry with reason
     /// <c>"evaluation"</c>. On render failure, appends an output-error marker instead.
@@ -582,21 +697,21 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            ITerminalRenderNode body;
+            DisplayContent content;
             try
             {
-                body = this._pipeline.Render(value, this.DumpOptions);
+                content = this._renderer.Render(value, this.DumpOptions);
             }
             catch (Exception ex)
             {
                 this.AppendTimelineEntry(
                     "render-error",
-                    OutputError.Create($"Render error: {ex.Message}")
+                    DisplayContent.FromNode(OutputError.Create($"Render error: {ex.Message}"))
                 );
                 return;
             }
 
-            this.AppendTimelineEntry("evaluation", body);
+            this.AppendTimelineEntry("evaluation", content);
         }
         catch
         {
@@ -661,6 +776,10 @@ internal sealed class DuetsPadSession : IDisposable
                 }
 
                 this._typeDeclarationSubscribers.Clear();
+
+                this._interactionRegistry.Clear();
+                this._canvasInteractions = [];
+                this._timelineInteractions.Clear();
             }
 
             this.DuetsSession.Dispose();
@@ -807,7 +926,7 @@ internal sealed class DuetsPadSession : IDisposable
                 ),
                 new ElementChildren(new Text(entry.Text))
             );
-            this.AppendTimelineEntry("console", body);
+            this.AppendTimelineEntry("console", DisplayContent.FromNode(body));
         }
         catch
         {
@@ -815,22 +934,75 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
+    private IReadOnlyList<CommittedInteraction> CommitInteractions(
+        PendingInteractions interactions,
+        int? childIndex = null
+    )
+    {
+        if (interactions.Count == 0)
+        {
+            return [];
+        }
+
+        var committed = new List<CommittedInteraction>(interactions.Count);
+        foreach (var interaction in interactions)
+        {
+            var target = childIndex is int index
+                ? interaction.Target.Prepend(index)
+                : interaction.Target;
+            var handlerId = this._interactionRegistry.Register(interaction.Handler);
+            committed.Add(
+                new CommittedInteraction(
+                    target,
+                    interaction.Event,
+                    handlerId,
+                    InteractionState.Live
+                )
+            );
+        }
+
+        return committed;
+    }
+
+    private void Unregister(IEnumerable<CommittedInteraction> interactions)
+    {
+        this._interactionRegistry.Unregister(interactions.Select(i => i.HandlerId));
+    }
+
     /// <summary>
     /// Appends a Timeline entry and enqueues a timeline append event.
     /// Acquires <c>_stateLock</c> so enqueue happens in the same critical section as the
     /// state update, preserving ordering for late-joining subscribers.
     /// </summary>
-    private void AppendTimelineEntry(string reason, ITerminalRenderNode body)
+    private void AppendTimelineEntry(string reason, DisplayContent content)
     {
         lock (this._stateLock)
         {
-            this.Timeline = this.Timeline.Append(reason, body, this._clock());
+            this.Timeline = this.Timeline.Append(reason, content.Body, this._clock());
             var entry = this.Timeline[^1];
-            this.BroadcastTimeline(TimelineEventMessage.Append(entry));
+            var interactions = this.CommitInteractions(content.Interactions);
+            if (interactions.Count > 0)
+            {
+                this._timelineInteractions[entry.Id] = interactions;
+            }
+
+            this.BroadcastTimeline(TimelineEventMessage.Append(entry, interactions));
 
             if (this._timelineEntryLimit is int max && this.Timeline.Count > max)
             {
                 var removeBeforeId = this.Timeline[^max].Id;
+                var removedIds = this
+                    .Timeline.Where(e => e.Id < removeBeforeId)
+                    .Select(e => e.Id)
+                    .ToArray();
+                foreach (var removedId in removedIds)
+                {
+                    if (this._timelineInteractions.Remove(removedId, out var removedInteractions))
+                    {
+                        this.Unregister(removedInteractions);
+                    }
+                }
+
                 this.Timeline = this.Timeline.Trim(removeBeforeId);
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
@@ -843,7 +1015,7 @@ internal sealed class DuetsPadSession : IDisposable
     /// </summary>
     private void BroadcastCanvas()
     {
-        var msg = CanvasEventMessage.Replace(this.Canvas);
+        var msg = CanvasEventMessage.Replace(this.Canvas, this._canvasInteractions);
         foreach (var (_, writer) in this._canvasSubscribers)
         {
             writer.TryWrite(msg);

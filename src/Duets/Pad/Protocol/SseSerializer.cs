@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using Duets.Pad.Interactions;
+using Duets.Pad.Rendering;
 using Duets.Pad.State;
 using Duets.Pad.Timeline;
 
@@ -27,6 +29,7 @@ internal static class SseSerializer
         {
             ["type"] = m.Type,
             ["state"] = _canvasSerializer.Serialize(m.State),
+            ["interactions"] = SerializeInteractions(m.Interactions),
         }.ToJsonString();
     }
 
@@ -48,10 +51,16 @@ internal static class SseSerializer
 
         return m.Type switch
         {
-            TimelineEventTypes.Reset => SerializeTimelineReset(m.Type, m.State!, m.Reason!),
+            TimelineEventTypes.Reset => SerializeTimelineReset(
+                m.Type,
+                m.State!,
+                m.Reason!,
+                m.StateInteractions!
+            ),
             TimelineEventTypes.Append or TimelineEventTypes.Update => SerializeTimelineEntryEvent(
                 m.Type,
-                m.Entry!
+                m.Entry!,
+                m.EntryInteractions!
             ),
             TimelineEventTypes.Trim => SerializeTimelineTrim(
                 m.Type,
@@ -64,12 +73,18 @@ internal static class SseSerializer
         };
     }
 
-    private static string SerializeTimelineReset(string type, TimelineState state, string reason)
+    private static string SerializeTimelineReset(
+        string type,
+        TimelineState state,
+        string reason,
+        IReadOnlyDictionary<long, IReadOnlyList<CommittedInteraction>> interactions
+    )
     {
         var entries = new JsonArray();
         foreach (var entry in state)
         {
-            entries.Add(SerializeEntry(entry));
+            interactions.TryGetValue(entry.Id, out var entryInteractions);
+            entries.Add(SerializeEntry(entry, entryInteractions ?? []));
         }
 
         return new JsonObject
@@ -80,9 +95,17 @@ internal static class SseSerializer
         }.ToJsonString();
     }
 
-    private static string SerializeTimelineEntryEvent(string type, TimelineEntry entry)
+    private static string SerializeTimelineEntryEvent(
+        string type,
+        TimelineEntry entry,
+        IReadOnlyList<CommittedInteraction> interactions
+    )
     {
-        return new JsonObject { ["type"] = type, ["entry"] = SerializeEntry(entry) }.ToJsonString();
+        return new JsonObject
+        {
+            ["type"] = type,
+            ["entry"] = SerializeEntry(entry, interactions),
+        }.ToJsonString();
     }
 
     private static string SerializeTimelineTrim(
@@ -95,18 +118,59 @@ internal static class SseSerializer
         {
             ["type"] = type,
             ["removeBeforeId"] = removeBeforeId,
-            ["marker"] = marker is not null ? SerializeEntry(marker) : null,
+            ["marker"] = marker is not null ? SerializeEntry(marker, []) : null,
         }.ToJsonString();
     }
 
-    private static JsonObject SerializeEntry(TimelineEntry entry)
+    private static JsonObject SerializeEntry(
+        TimelineEntry entry,
+        IReadOnlyList<CommittedInteraction> interactions
+    )
     {
         return new JsonObject
         {
             ["id"] = entry.Id,
             ["reason"] = entry.Reason,
             ["body"] = Rendering.RenderNodeJsonSerializer.Serialize(entry.Body),
+            ["interactions"] = SerializeInteractions(interactions),
             ["timestamp"] = entry.Timestamp.ToString("O"),
         };
     }
+
+    private static JsonArray SerializeInteractions(IReadOnlyList<CommittedInteraction> interactions)
+    {
+        var array = new JsonArray();
+        foreach (var interaction in interactions)
+        {
+            array.Add(
+                new JsonObject
+                {
+                    ["target"] = SerializePath(interaction.Target),
+                    ["event"] = SerializeEvent(interaction.Event),
+                    ["handlerId"] = interaction.HandlerId.ToString(),
+                    ["state"] = interaction.State == InteractionState.Live ? "live" : "stale",
+                }
+            );
+        }
+
+        return array;
+    }
+
+    private static JsonArray SerializePath(DisplayPath path)
+    {
+        var array = new JsonArray();
+        foreach (var segment in path.Segments)
+        {
+            array.Add(segment);
+        }
+
+        return array;
+    }
+
+    private static string SerializeEvent(InteractionEvent value) =>
+        value switch
+        {
+            InteractionEvent.Click => "click",
+            _ => throw new InvalidOperationException($"Unrecognised interaction event '{value}'."),
+        };
 }

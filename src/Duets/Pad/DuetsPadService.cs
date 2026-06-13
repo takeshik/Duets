@@ -85,6 +85,10 @@ public sealed class DuetsPadService : IDisposable
                         .MapPost("/sessions", this.HandlePostSessionAsync)
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
+                        .MapPost(
+                            "/sessions/{sessionId}/interactions/{handlerId}/invoke",
+                            this.HandleInvokeInteractionAsync
+                        )
                         .MapGet("/sessions/{sessionId}/canvas-events", this.HandleCanvasEventsAsync)
                         .MapGet(
                             "/sessions/{sessionId}/timeline-events",
@@ -432,6 +436,60 @@ public sealed class DuetsPadService : IDisposable
                 ["error"] = result.Error,
                 ["sessionId"] = id.ToString(),
             };
+
+        await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /sessions/{sessionId}/interactions/{handlerId}/invoke
+    // -------------------------------------------------------------------------
+
+    private async Task HandleInvokeInteractionAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+        var handlerId = ctx.Args["handlerId"];
+
+        if (
+            !Guid.TryParse(sessionId, out var id)
+            || !this._sessions.TryGetValue(id, out var session)
+        )
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Unknown session.",
+                    ["sessionId"] = sessionId,
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        if (!Guid.TryParse(handlerId, out var parsedHandlerId))
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Invalid interaction handler id.",
+                    ["sessionId"] = id.ToString(),
+                    ["handlerId"] = handlerId,
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        var result = await session.InvokeInteractionAsync(parsedHandlerId);
+        var response = new JsonObject
+        {
+            ["ok"] = result.Ok,
+            ["error"] = result.Error,
+            ["stale"] = result.Stale,
+            ["sessionId"] = id.ToString(),
+            ["handlerId"] = parsedHandlerId.ToString(),
+        };
 
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
     }

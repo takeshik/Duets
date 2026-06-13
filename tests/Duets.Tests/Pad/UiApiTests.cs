@@ -5,7 +5,7 @@ namespace Duets.Tests.Pad;
 
 public sealed class UiApiTests
 {
-    private static UiApi CreateUiApi() => new(new ObjectRenderingPipeline([]), DumpOptions.Default);
+    private static UiApi CreateUiApi() => new(new DisplayRenderer([]), DumpOptions.Default);
 
     // ── Positive: RawHtml ──────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ public sealed class UiApiTests
 
         var result = ui.RawHtml("<strong>hello</strong>");
 
-        var node = Assert.IsType<RawHtml>(result);
+        var node = Assert.IsType<RawHtml>(result.Body);
         Assert.Equal("<strong>hello</strong>", node.Content);
     }
 
@@ -29,7 +29,7 @@ public sealed class UiApiTests
 
         var result = ui.Text("hello");
 
-        var node = Assert.IsType<Duets.Pad.Rendering.Text>(result);
+        var node = Assert.IsType<Duets.Pad.Rendering.Text>(result.Body);
         Assert.Equal("hello", node.Value);
     }
 
@@ -42,7 +42,7 @@ public sealed class UiApiTests
 
         var result = ui.Label("my label");
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("span", (string?)json["tag"]);
         Assert.Equal("duetspad-label", (string?)json["attributes"]!["class"]);
@@ -60,7 +60,7 @@ public sealed class UiApiTests
 
         var result = ui.Stack();
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("div", (string?)json["tag"]);
         Assert.Equal("duetspad-stack", (string?)json["attributes"]!["class"]);
@@ -75,10 +75,47 @@ public sealed class UiApiTests
 
         var result = ui.Stack(children);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal(2, json["children"]!.AsArray().Count);
         Assert.Equal("hello", (string?)json["children"]![0]!["value"]);
         Assert.Equal("world", (string?)json["children"]![1]!["value"]);
+    }
+
+    [Fact]
+    public void Button_returns_button_body_and_pending_click_interaction()
+    {
+        var ui = CreateUiApi();
+        var clicked = false;
+
+        var result = ui.Button("Run", () => clicked = true);
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("button", (string?)json["tag"]);
+        Assert.Equal("button", (string?)json["attributes"]!["type"]);
+        Assert.Equal("Run", (string?)json["children"]![0]!["value"]);
+
+        var interaction = Assert.Single(result.Interactions);
+        Assert.Equal(InteractionEvent.Click, interaction.Event);
+
+        interaction.Handler();
+        Assert.True(clicked);
+    }
+
+    [Fact]
+    public void Disabled_button_returns_button_body_without_pending_interaction()
+    {
+        var ui = CreateUiApi();
+
+        var result = ui.Button(
+            "Run",
+            () => throw new InvalidOperationException("must not be registered"),
+            new Dictionary<string, object?> { ["disabled"] = true }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("button", (string?)json["tag"]);
+        Assert.True(json["attributes"]!.AsObject().ContainsKey("disabled"));
+        Assert.Empty(result.Interactions);
     }
 
     // ── Positive: Element ─────────────────────────────────────────────────
@@ -92,7 +129,7 @@ public sealed class UiApiTests
 
         var result = ui.Element("div", attrs, new object?[] { childText });
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("div", (string?)json["tag"]);
         Assert.Equal("x", (string?)json["attributes"]!["id"]);
@@ -109,7 +146,7 @@ public sealed class UiApiTests
 
         var result = ui.Element("div", null, null);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("element", (string?)json["kind"]);
         Assert.Equal("div", (string?)json["tag"]);
         Assert.Empty(json["attributes"]!.AsObject());
@@ -124,7 +161,7 @@ public sealed class UiApiTests
 
         var result = ui.Element("div", attrs);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.True(json["attributes"]!.AsObject().ContainsKey("hidden"));
         Assert.Null(json["attributes"]!["hidden"]);
     }
@@ -136,7 +173,7 @@ public sealed class UiApiTests
 
         var result = ui.Element("x-debug-panel");
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("x-debug-panel", (string?)json["tag"]);
     }
 
@@ -153,7 +190,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(rows);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("table", (string?)json["tag"]);
         Assert.Equal("duetspad-table", (string?)json["attributes"]!["class"]);
 
@@ -184,7 +221,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(Array.Empty<object?>());
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("table", (string?)json["tag"]);
         var children = json["children"]!.AsArray();
         Assert.Equal(2, children.Count);
@@ -209,7 +246,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(rows, options);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         var headerRow = json["children"]![0]!["children"]![0];
         var headers = headerRow!["children"]!.AsArray();
         Assert.Equal(2, headers.Count);
@@ -226,7 +263,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(rows, options);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         var bodyRow = json["children"]![1]!["children"]![0];
         var cells = bodyRow!["children"]!.AsArray();
         Assert.Equal(2, cells.Count);
@@ -244,7 +281,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(rows);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("table", (string?)json["tag"]);
         Assert.Equal("duetspad-table", (string?)json["attributes"]!["class"]);
 
@@ -272,7 +309,7 @@ public sealed class UiApiTests
 
         var result = ui.Table(rows, options);
 
-        var json = RenderNodeJsonSerializer.Serialize(result);
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
         var headerRow = json["children"]![0]!["children"]![0];
         var headers = headerRow!["children"]!.AsArray();
         Assert.Equal(2, headers.Count);

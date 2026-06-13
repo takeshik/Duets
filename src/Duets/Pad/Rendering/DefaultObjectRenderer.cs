@@ -11,56 +11,57 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
     public bool CanRender(object value) => true;
 
-    public IRenderNode Render(object value, RenderContext context) => RenderValue(value, context);
+    public DisplayContent Render(object value, RenderContext context) =>
+        RenderValue(value, context);
 
-    private static ITerminalRenderNode RenderValue(object value, RenderContext context)
+    private static DisplayContent RenderValue(object value, RenderContext context)
     {
         switch (value)
         {
             case Enum e:
-                return new Text(e.ToString());
+                return DisplayContent.Text(e.ToString());
 
             case string s:
-                return new Text(s);
+                return DisplayContent.Text(s);
 
             case bool b:
-                return new Text(b ? "true" : "false");
+                return DisplayContent.Text(b ? "true" : "false");
 
             case char c:
-                return new Text(c.ToString());
+                return DisplayContent.Text(c.ToString());
 
             case byte n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case sbyte n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case short n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case ushort n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case int n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case uint n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case long n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case ulong n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case float n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case double n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
 
             case decimal n:
-                return new Text(n.ToString(CultureInfo.InvariantCulture));
+                return DisplayContent.Text(n.ToString(CultureInfo.InvariantCulture));
         }
 
         // 1. Dynamic JS-object shape (e.g. ExpandoObject, the shape Jint marshals JS object
@@ -201,7 +202,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             ? $"{typeName} (showing first {maxItems})"
             : $"{typeName} ({exactOrKnownCount} items)";
 
-    private static Element RenderMap(
+    private static DisplayContent RenderMap(
         object mapValue,
         IEnumerable<KeyValuePair<string, object?>> entriesSource,
         int? cheapCount,
@@ -260,9 +261,11 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         var thead = new Element("thead", ElementAttributes.Empty, [.. theadChildren]);
 
         var rows = new List<ITerminalRenderNode>(visibleEntries.Count + (truncated ? 1 : 0));
-        foreach (var entry in visibleEntries)
+        var interactions = new List<PendingInteractions>();
+        for (var rowIndex = 0; rowIndex < visibleEntries.Count; rowIndex++)
         {
-            var valueNode = context.RenderChild(entry.Value);
+            var entry = visibleEntries[rowIndex];
+            var valueContent = context.RenderChild(entry.Value);
 
             rows.Add(
                 new Element(
@@ -274,10 +277,15 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
                             ElementAttributes.Empty,
                             new ElementChildren(new Text(entry.Key))
                         ),
-                        new Element("td", ElementAttributes.Empty, new ElementChildren(valueNode))
+                        new Element(
+                            "td",
+                            ElementAttributes.Empty,
+                            new ElementChildren(valueContent.Body)
+                        )
                     )
                 )
             );
+            interactions.Add(valueContent.Interactions.PrependPath(1, rowIndex, 1, 0));
         }
 
         if (truncated)
@@ -287,14 +295,17 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
 
-        return new Element(
-            "table",
-            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-map")),
-            new ElementChildren(thead, tbody)
+        return new DisplayContent(
+            new Element(
+                "table",
+                new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-map")),
+                new ElementChildren(thead, tbody)
+            ),
+            PendingInteractions.Merge(interactions)
         );
     }
 
-    private static Element RenderEnumerable(IEnumerable enumerable, RenderContext context)
+    private static DisplayContent RenderEnumerable(IEnumerable enumerable, RenderContext context)
     {
         var maxItems = context.Options.MaxItems;
 
@@ -315,7 +326,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         return RenderScalarTable(enumerable, items, cheapCount, truncated, context);
     }
 
-    private static Element RenderTabular(
+    private static DisplayContent RenderTabular(
         IEnumerable source,
         List<object?> items,
         int? cheapCount,
@@ -370,7 +381,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         );
     }
 
-    private static Element RenderScalarTable(
+    private static DisplayContent RenderScalarTable(
         IEnumerable source,
         List<object?> items,
         int? cheapCount,
@@ -405,8 +416,10 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         );
 
         var rows = new List<ITerminalRenderNode>(items.Count + (truncated ? 1 : 0));
-        foreach (var item in items)
+        var interactions = new List<PendingInteractions>();
+        for (var rowIndex = 0; rowIndex < items.Count; rowIndex++)
         {
+            var itemContent = context.RenderChild(items[rowIndex]);
             rows.Add(
                 new Element(
                     "tr",
@@ -415,11 +428,12 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
                         new Element(
                             "td",
                             ElementAttributes.Empty,
-                            new ElementChildren(context.RenderChild(item))
+                            new ElementChildren(itemContent.Body)
                         )
                     )
                 )
             );
+            interactions.Add(itemContent.Interactions.PrependPath(1, rowIndex, 0, 0));
         }
 
         if (truncated)
@@ -429,10 +443,13 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
 
-        return new Element(
-            "table",
-            new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-table")),
-            new ElementChildren(thead, tbody)
+        return new DisplayContent(
+            new Element(
+                "table",
+                new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-table")),
+                new ElementChildren(thead, tbody)
+            ),
+            PendingInteractions.Merge(interactions)
         );
     }
 
@@ -473,7 +490,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     /// <see langword="false" /> (ordinary CLR objects), a zero-member value falls back to
     /// <c>ToString()</c>.
     /// </param>
-    private static ITerminalRenderNode RenderNamedMemberObject(
+    private static DisplayContent RenderNamedMemberObject(
         object value,
         IReadOnlyList<KeyValuePair<string, object?>> members,
         bool showTypeHeader,
@@ -485,20 +502,23 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         // table is explicitly allowed (dynamic/JS objects).
         if (members.Count == 0 && !allowEmptyTable)
         {
-            return new Text(value.ToString() ?? "");
+            return DisplayContent.Text(value.ToString() ?? "");
         }
 
         var rows = new List<ITerminalRenderNode>(members.Count);
-        foreach (var member in members)
+        var interactions = new List<PendingInteractions>();
+        for (var rowIndex = 0; rowIndex < members.Count; rowIndex++)
         {
-            var valueNode = member.Value is ITerminalRenderNode markerNode
-                ? markerNode
+            var member = members[rowIndex];
+            var valueContent = member.Value is ITerminalRenderNode markerNode
+                ? DisplayContent.FromNode(markerNode)
                 : context.RenderChild(member.Value);
 
             // RecordProjector may already return a Text("[error]") marker as the value if the
             // getter threw; render it as-is rather than recursing again.
 
-            rows.Add(BuildMemberRow(member.Key, valueNode));
+            rows.Add(BuildMemberRow(member.Key, valueContent.Body));
+            interactions.Add(valueContent.Interactions);
         }
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
@@ -576,10 +596,19 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             tableChildren = new ElementChildren(tbody);
         }
 
-        return new Element(
+        var body = new Element(
             "table",
             new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-object")),
             tableChildren
+        );
+        var tbodyIndex = showTypeHeader ? 1 : 0;
+        return new DisplayContent(
+            body,
+            PendingInteractions.Merge(
+                interactions.Select(
+                    (items, rowIndex) => items.PrependPath(tbodyIndex, rowIndex, 1, 0)
+                )
+            )
         );
     }
 
