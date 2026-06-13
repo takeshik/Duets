@@ -32,6 +32,8 @@ internal sealed class SandboxContext : IAsyncDisposable
     private DuetsSession _session;
     private HttpServer? _webServer;
     private DuetsPadService? _padService;
+    private DuetsPadProtocolClient? _padProtocolClient;
+    private Uri? _webServerBaseUri;
     private CancellationTokenSource? _webServerCts;
     private Task? _webServerTask;
 
@@ -41,6 +43,25 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     public bool IsServerRunning =>
         this._webServer != null && this._webServerTask is { IsCompleted: false };
+
+    public string WebServerState =>
+        this._webServerTask switch
+        {
+            null => "stopped",
+            { IsCanceled: true } => "canceled",
+            { IsFaulted: true } => "faulted",
+            { IsCompleted: true } => "stopped",
+            _ => "running",
+        };
+
+    public string? WebServerError =>
+        this._webServerTask is { IsFaulted: true } task
+            ? task.Exception?.GetBaseException().Message
+            : null;
+
+    public DuetsPadProtocolClient PadProtocolClient =>
+        this._padProtocolClient
+        ?? throw new InvalidOperationException("The DuetsPad server is not running.");
 
     internal static async Task<SandboxContext> CreateAsync(
         Func<TypeDeclarations, Task<TypeScriptService>>? tsFactory = null,
@@ -172,16 +193,21 @@ internal sealed class SandboxContext : IAsyncDisposable
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
         {
+            this._padProtocolClient?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            this._padProtocolClient = null;
+
             this._padService?.Dispose();
             this._padService = null;
             this._webServer.Dispose();
             this._webServer = null;
+            this._webServerBaseUri = null;
             this._webServerCts = null;
             this._webServerTask = null;
         }
 
+        this._webServerBaseUri = new Uri($"http://127.0.0.1:{port}/");
         this._webServerCts = new CancellationTokenSource();
-        this._webServer = new HttpServer($"http://127.0.0.1:{port}/");
+        this._webServer = new HttpServer(this._webServerBaseUri.ToString());
         this._padService = this
             ._webServer.UseContentTypeDetection()
             .UseDuetsPad(configure: opts =>
@@ -193,6 +219,7 @@ internal sealed class SandboxContext : IAsyncDisposable
                         announce: false
                     )
             );
+        this._padProtocolClient = new DuetsPadProtocolClient(this._webServerBaseUri);
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
         Console.Error.WriteLine($"DuetsPad server started at http://127.0.0.1:{port}/");
     }
@@ -203,6 +230,15 @@ internal sealed class SandboxContext : IAsyncDisposable
         {
             return;
         }
+
+        if (this._padProtocolClient is not null)
+        {
+            await this._padProtocolClient.DisposeAsync();
+            this._padProtocolClient = null;
+        }
+
+        this._padService?.Dispose();
+        this._padService = null;
 
         await this._webServerCts!.CancelAsync();
         try
@@ -215,10 +251,9 @@ internal sealed class SandboxContext : IAsyncDisposable
             // fault the task may have accumulated before Stop() was called.
         }
 
-        this._padService?.Dispose();
-        this._padService = null;
         this._webServer.Dispose();
         this._webServer = null;
+        this._webServerBaseUri = null;
         this._webServerCts = null;
         this._webServerTask = null;
         await Console.Error.WriteLineAsync("Web server stopped.");
@@ -238,6 +273,11 @@ internal sealed class SandboxContext : IAsyncDisposable
                 await this._webServerTask;
             }
             catch (OperationCanceledException) { }
+        }
+
+        if (this._padProtocolClient is not null)
+        {
+            await this._padProtocolClient.DisposeAsync();
         }
 
         this._padService?.Dispose();

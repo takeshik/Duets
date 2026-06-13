@@ -24,6 +24,14 @@ internal sealed class BatchRunner(SandboxContext session)
         | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |
+        | `pad-session-create` | | `sessionId` (string) | POST `/sessions`; returns the DuetsPad session payload |
+        | `pad-session-delete` | `sessionId` | | DELETE `/sessions/{sessionId}` |
+        | `pad-eval` | `sessionId`, `code` | `source` (string) | POST `/sessions/{sessionId}/eval` |
+        | `pad-interaction-invoke` | `sessionId`, `handlerId` | | POST an interaction handler invocation |
+        | `pad-sse-open` | `streamId`, `sessionId`, `stream` | | Open a DuetsPad SSE stream. `stream` is `canvas`, `timeline`, or `type-declarations` |
+        | `pad-sse-read` | `streamId` | `maxRecords` (int, default: 1), `timeoutMs` (int, default: 1000), `includeComments` (bool, default: false) | Read SSE data records from an open stream |
+        | `pad-sse-close` | `streamId` | | Close an open SSE stream |
+        | `pad-sse-list` | | | List open SSE streams |
         | `set-transpiler` | `transpiler` | | Switch transpiler (`typescript` or `babel`); returns `transpiler` (description string) |
         | `reset` | | | Reset all engines and clear script state |
         | `help` | | | Returns this document as `content` (Markdown string) |
@@ -61,6 +69,12 @@ internal sealed class BatchRunner(SandboxContext session)
         {"op":"types"}
         {"op":"types-dump"}
         {"op":"server-start","port":17375}
+        {"op":"pad-session-create"}
+        {"op":"pad-sse-open","streamId":"canvas","sessionId":"...","stream":"canvas"}
+        {"op":"pad-sse-read","streamId":"canvas","maxRecords":1,"timeoutMs":1000}
+        {"op":"pad-eval","sessionId":"...","code":"canvas.add(ui.button('hello', () => dump(Date())))"}
+        {"op":"pad-interaction-invoke","sessionId":"...","handlerId":"..."}
+        {"op":"pad-sse-close","streamId":"canvas"}
         {"op":"server-stop"}
         {"op":"server-status"}
         {"op":"reset"}
@@ -105,7 +119,51 @@ internal sealed class BatchRunner(SandboxContext session)
                     "register" => this.Register(cmd.GetProperty("type").GetString()!),
                     "server-start" => await this.ServerStartAsync(cmd),
                     "server-stop" => await this.ServerStopAsync(),
-                    "server-status" => new { ok = true, running = session.IsServerRunning },
+                    "server-status" => new
+                    {
+                        ok = true,
+                        running = session.IsServerRunning,
+                        state = session.WebServerState,
+                        error = session.WebServerError,
+                    },
+                    "pad-session-create" => await session.PadProtocolClient.CreateSessionAsync(
+                        cmd.TryGetProperty("sessionId", out var sessionIdEl)
+                            ? sessionIdEl.GetString()
+                            : null
+                    ),
+                    "pad-session-delete" => await session.PadProtocolClient.DeleteSessionAsync(
+                        cmd.GetProperty("sessionId").GetString()!
+                    ),
+                    "pad-eval" => await session.PadProtocolClient.EvaluateAsync(
+                        cmd.GetProperty("sessionId").GetString()!,
+                        cmd.GetProperty("code").GetString()!,
+                        cmd.TryGetProperty("source", out var sourceEl) ? sourceEl.GetString() : null
+                    ),
+                    "pad-interaction-invoke" =>
+                        await session.PadProtocolClient.InvokeInteractionAsync(
+                            cmd.GetProperty("sessionId").GetString()!,
+                            cmd.GetProperty("handlerId").GetString()!
+                        ),
+                    "pad-sse-open" => await session.PadProtocolClient.OpenSseAsync(
+                        cmd.GetProperty("streamId").GetString()!,
+                        cmd.GetProperty("sessionId").GetString()!,
+                        cmd.GetProperty("stream").GetString()!
+                    ),
+                    "pad-sse-read" => await session.PadProtocolClient.ReadSseAsync(
+                        cmd.GetProperty("streamId").GetString()!,
+                        cmd.TryGetProperty("maxRecords", out var maxRecordsEl)
+                            ? maxRecordsEl.GetInt32()
+                            : 1,
+                        cmd.TryGetProperty("timeoutMs", out var timeoutMsEl)
+                            ? timeoutMsEl.GetInt32()
+                            : 1000,
+                        cmd.TryGetProperty("includeComments", out var includeCommentsEl)
+                            && includeCommentsEl.GetBoolean()
+                    ),
+                    "pad-sse-close" => session.PadProtocolClient.CloseSse(
+                        cmd.GetProperty("streamId").GetString()!
+                    ),
+                    "pad-sse-list" => session.PadProtocolClient.ListSseStreams(),
                     "types" => new
                     {
                         ok = true,
@@ -204,7 +262,17 @@ internal sealed class BatchRunner(SandboxContext session)
 
         var port = cmd.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 17375;
         session.StartWebServer(port);
-        await Task.CompletedTask;
+        await Task.Delay(100);
+        if (!session.IsServerRunning)
+        {
+            return new
+            {
+                ok = false,
+                state = session.WebServerState,
+                error = session.WebServerError ?? "Server stopped during startup.",
+            };
+        }
+
         return new { ok = true, url = $"http://127.0.0.1:{port}/" };
     }
 
