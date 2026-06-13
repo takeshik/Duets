@@ -13,6 +13,9 @@ public sealed class StaticFileMiddleware(
     StaticFileOptions? options = null
 ) : IMiddleware
 {
+    /// <summary>Initialises the middleware with the given file provider and options, rooted at <c>"/"</c>.</summary>
+    /// <param name="fileProvider">Source of file bytes for static requests.</param>
+    /// <param name="options">Options controlling content-type, SPA fallback, ETag, and cache headers.</param>
     public StaticFileMiddleware(IFileProvider fileProvider, StaticFileOptions options)
         : this(fileProvider, "/", options) { }
 
@@ -22,6 +25,11 @@ public sealed class StaticFileMiddleware(
         StringComparer.Ordinal
     );
 
+    /// <summary>
+    /// Serves the file matching the request path from the underlying <see cref="IFileProvider"/>,
+    /// applying ETag, Cache-Control, and SPA-fallback logic as configured.
+    /// Calls <paramref name="next"/> when the path is outside the root or no file is found.
+    /// </summary>
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
         if (string.IsNullOrWhiteSpace(this._options.DefaultDocument))

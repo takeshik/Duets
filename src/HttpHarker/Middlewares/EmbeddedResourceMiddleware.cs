@@ -19,6 +19,7 @@ public sealed class EmbeddedResourceMiddleware(
         options
     );
 
+    /// <inheritdoc cref="StaticFileMiddleware.InvokeAsync"/>
     public Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
         return this._inner.InvokeAsync(context, next);

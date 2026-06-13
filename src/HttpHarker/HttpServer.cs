@@ -18,8 +18,18 @@ public class HttpServer(string prefix) : IDisposable
 
     private CancellationTokenSource? _cts;
 
+    /// <summary>Indicates whether the server is currently listening for requests.</summary>
     public bool IsRunning { get; private set; }
 
+    /// <summary>
+    /// Appends a raw middleware delegate to the pipeline.
+    /// </summary>
+    /// <param name="middleware">
+    /// A delegate that receives the listener context and a <c>next</c> continuation.
+    /// Call <c>next()</c> to pass control to the following middleware; omit it to short-circuit the pipeline.
+    /// </param>
+    /// <returns>This instance, for fluent chaining.</returns>
+    /// <exception cref="InvalidOperationException">The server is already running.</exception>
     public HttpServer Use(Func<HttpListenerContext, Func<Task>, Task> middleware)
     {
         if (this.IsRunning)
@@ -33,11 +43,23 @@ public class HttpServer(string prefix) : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Appends an <see cref="IMiddleware"/> to the pipeline.
+    /// </summary>
+    /// <param name="middleware">The middleware component to add.</param>
+    /// <returns>This instance, for fluent chaining.</returns>
+    /// <exception cref="InvalidOperationException">The server is already running.</exception>
     public HttpServer Use(IMiddleware middleware)
     {
         return this.Use(middleware.InvokeAsync);
     }
 
+    /// <summary>
+    /// Starts the server in the background using <paramref name="workersCount"/> concurrent worker loops.
+    /// Returns immediately; use <see cref="Stop"/> to halt.
+    /// </summary>
+    /// <param name="workersCount">Number of concurrent workers polling for incoming connections.</param>
+    /// <exception cref="InvalidOperationException">The server is already running.</exception>
     public void Start(int workersCount = 8)
     {
         if (this.IsRunning)
@@ -49,6 +71,7 @@ public class HttpServer(string prefix) : IDisposable
         this.RunAsync(workersCount, this._cts.Token).Forget();
     }
 
+    /// <summary>Signals the background workers started by <see cref="Start"/> to stop and releases the cancellation token source.</summary>
     public void Stop()
     {
         var cts = Interlocked.Exchange(ref this._cts, null);
@@ -56,6 +79,12 @@ public class HttpServer(string prefix) : IDisposable
         cts?.Dispose();
     }
 
+    /// <summary>
+    /// Starts listening and runs the request loop until <paramref name="cancellationToken"/> is cancelled.
+    /// Unlike <see cref="Start"/>, this method does not return until the server has stopped.
+    /// </summary>
+    /// <param name="workersCount">Number of concurrent workers polling for incoming connections.</param>
+    /// <param name="cancellationToken">Token that stops the server when cancelled.</param>
     public async Task RunAsync(int workersCount = 8, CancellationToken cancellationToken = default)
     {
         try
@@ -130,6 +159,7 @@ public class HttpServer(string prefix) : IDisposable
         }
     }
 
+    /// <summary>Stops the server and releases the underlying <see cref="System.Net.HttpListener"/>.</summary>
     public void Dispose()
     {
         this.Stop();

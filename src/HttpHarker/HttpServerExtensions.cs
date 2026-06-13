@@ -10,6 +10,11 @@ public static class HttpServerExtensions
 {
     extension(HttpServer server)
     {
+        /// <summary>Adds a <see cref="StaticFileMiddleware"/> backed by <paramref name="fileProvider"/> to the pipeline.</summary>
+        /// <param name="fileProvider">Source of file bytes for static requests.</param>
+        /// <param name="root">URL path prefix under which static files are served.</param>
+        /// <param name="configure">Optional callback to configure <see cref="StaticFileOptions"/>.</param>
+        /// <returns>This server instance, for fluent chaining.</returns>
         public HttpServer UseStaticFiles(
             IFileProvider fileProvider,
             string root = "/",
@@ -21,6 +26,11 @@ public static class HttpServerExtensions
             return server.Use(new StaticFileMiddleware(fileProvider, root, options));
         }
 
+        /// <summary>Adds a <see cref="ZipArchiveMiddleware"/> that serves files from a zip stream to the pipeline.</summary>
+        /// <param name="zipStream">A readable stream containing a zip archive; read once at registration time.</param>
+        /// <param name="root">URL path prefix under which the archive entries are served.</param>
+        /// <param name="configure">Optional callback to configure <see cref="StaticFileOptions"/>.</param>
+        /// <returns>This server instance, for fluent chaining.</returns>
         public HttpServer UseZipArchive(
             Stream zipStream,
             string root = "/",
@@ -32,6 +42,17 @@ public static class HttpServerExtensions
             return server.Use(new ZipArchiveMiddleware(zipStream, root, options));
         }
 
+        /// <summary>
+        /// Loads a zip archive from an embedded assembly resource and adds a <see cref="ZipArchiveMiddleware"/> to the pipeline.
+        /// </summary>
+        /// <param name="assembly">The assembly that contains the embedded zip resource.</param>
+        /// <param name="resourceName">The fully-qualified manifest resource name of the zip file.</param>
+        /// <param name="root">URL path prefix under which the archive entries are served.</param>
+        /// <param name="configure">Optional callback to configure <see cref="StaticFileOptions"/>.</param>
+        /// <returns>This server instance, for fluent chaining.</returns>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="resourceName"/> does not match any manifest resource in <paramref name="assembly"/>.
+        /// </exception>
         public HttpServer UseZipArchive(
             Assembly assembly,
             string resourceName,
@@ -73,6 +94,14 @@ public static class HttpServerExtensions
             return server.Use(new ErrorPagesMiddleware(configure));
         }
 
+        /// <summary>
+        /// Adds middleware that sets the response <c>Content-Type</c> header from the request URL
+        /// before passing control to the next component.
+        /// </summary>
+        /// <param name="contentTypeProvider">
+        /// Provider used to resolve the content type; defaults to <see cref="ContentTypeProvider.CreateDefault"/> when <c>null</c>.
+        /// </param>
+        /// <returns>This server instance, for fluent chaining.</returns>
         public HttpServer UseContentTypeDetection(ContentTypeProvider? contentTypeProvider = null)
         {
             var provider = contentTypeProvider ?? ContentTypeProvider.CreateDefault();
@@ -86,6 +115,12 @@ public static class HttpServerExtensions
             return server;
         }
 
+        /// <summary>Adds an <see cref="EmbeddedResourceMiddleware"/> that serves assembly manifest resources as static files.</summary>
+        /// <param name="assembly">The assembly whose embedded resources are served.</param>
+        /// <param name="resourcePrefix">The dot-delimited namespace prefix that all served resources share.</param>
+        /// <param name="root">URL path prefix under which the resources are served.</param>
+        /// <param name="configure">Optional callback to configure <see cref="StaticFileOptions"/>.</param>
+        /// <returns>This server instance, for fluent chaining.</returns>
         public HttpServer UseEmbeddedResources(
             Assembly assembly,
             string resourcePrefix,

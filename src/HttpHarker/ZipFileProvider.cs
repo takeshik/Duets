@@ -8,6 +8,11 @@ namespace HttpHarker;
 /// </summary>
 public sealed class ZipFileProvider : IFileProvider
 {
+    /// <summary>
+    /// Initialises the provider by reading <paramref name="zipStream"/> into memory and building an
+    /// entry-name index for fast case-insensitive lookups.
+    /// </summary>
+    /// <param name="zipStream">A readable stream containing the zip archive; consumed synchronously and may be disposed after the constructor returns.</param>
     public ZipFileProvider(Stream zipStream)
     {
         using var ms = new MemoryStream();
@@ -37,6 +42,15 @@ public sealed class ZipFileProvider : IFileProvider
     private readonly byte[] _zipBytes;
     private readonly IReadOnlyDictionary<string, string> _entryMap;
 
+    /// <summary>
+    /// Returns the decompressed bytes of the zip entry matching <paramref name="relativePath"/>,
+    /// or <c>null</c> if no such entry exists.
+    /// </summary>
+    /// <param name="relativePath">
+    /// A forward-slash-delimited path relative to the archive root (e.g. <c>"assets/app.js"</c>);
+    /// matched case-insensitively against the normalised entry names built at construction time.
+    /// </param>
+    /// <returns>Decompressed entry bytes, or <c>null</c> if not found.</returns>
     public byte[]? GetFileContent(string relativePath)
     {
         if (!this._entryMap.TryGetValue(relativePath, out var entryName))

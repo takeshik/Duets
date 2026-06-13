@@ -12,6 +12,10 @@ public sealed record HttpActionContext(
     IReadOnlyDictionary<string, string> Args
 )
 {
+    /// <summary>
+    /// Copies the headers and body of <paramref name="content"/> to the response, then closes it.
+    /// </summary>
+    /// <param name="content">The HTTP content whose headers and body are written to the response.</param>
     public async Task CloseAsync(HttpContent content)
     {
         if (content.Headers.ContentType is { } ct)
@@ -43,6 +47,12 @@ public sealed record HttpActionContext(
         this.Response.Close();
     }
 
+    /// <summary>
+    /// Sends <paramref name="body"/> as a UTF-8 response with the given content type, then closes the response.
+    /// </summary>
+    /// <param name="contentType">The media type (e.g. <c>"text/html"</c>); parameters such as charset are stripped
+    /// because they are supplied automatically via <see cref="System.Text.Encoding.UTF8"/>.</param>
+    /// <param name="body">The response body text.</param>
     public Task CloseAsync(string contentType, string body)
     {
         // StringContent only accepts the media type without parameters; charset is provided via Encoding.
@@ -50,6 +60,10 @@ public sealed record HttpActionContext(
         return this.CloseAsync(new StringContent(body, Encoding.UTF8, mediaType));
     }
 
+    /// <summary>
+    /// Sends <paramref name="body"/> as raw UTF-8 bytes without setting a content type, then closes the response.
+    /// </summary>
+    /// <param name="body">The response body text.</param>
     public async Task CloseAsync(string body)
     {
         var bytes = Encoding.UTF8.GetBytes(body);

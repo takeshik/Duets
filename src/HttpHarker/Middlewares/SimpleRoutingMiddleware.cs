@@ -14,6 +14,11 @@ namespace HttpHarker.Middlewares;
 /// </remarks>
 public sealed class SimpleRoutingMiddleware : IMiddleware
 {
+    /// <summary>
+    /// Initialises the middleware with the given URL root and optionally-configured routes.
+    /// </summary>
+    /// <param name="root">URL path prefix; requests outside this root are forwarded to <c>next()</c>.</param>
+    /// <param name="configure">Callback that receives a <see cref="Builder"/> to register routes.</param>
     public SimpleRoutingMiddleware(string root, Action<Builder>? configure = null)
     {
         this._prefix = root.TrimEnd('/');
@@ -25,6 +30,10 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
     private readonly string _prefix;
     private readonly SortedSet<Route> _routes;
 
+    /// <summary>
+    /// Attempts to match the incoming request against registered routes and dispatches to the first match,
+    /// or calls <paramref name="next"/> if no route matches.
+    /// </summary>
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
         var method = new HttpMethod(context.Request.HttpMethod);
@@ -75,6 +84,7 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         return path[prefix.Length..];
     }
 
+    /// <summary>Fluent builder for registering routes on <see cref="SimpleRoutingMiddleware"/>.</summary>
     public sealed class Builder
     {
         internal List<(
@@ -83,6 +93,14 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
             Func<HttpActionContext, Task> Handler
         )> Routes { get; } = [];
 
+        /// <summary>Registers a route for <paramref name="method"/> and the given path template.</summary>
+        /// <param name="method">The HTTP method this route matches.</param>
+        /// <param name="template">
+        /// The path template; segments may be literals, parameters (<c>{name}</c>), or a trailing
+        /// catch-all (<c>{*name}</c>).
+        /// </param>
+        /// <param name="handler">The async delegate invoked when the route matches.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder Map(
             HttpMethod method,
             string template,
@@ -93,29 +111,56 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
             return this;
         }
 
+        /// <summary>Registers a GET route. Equivalent to <c>Map(HttpMethod.Get, …)</c>.</summary>
+        /// <param name="template">The path template.</param>
+        /// <param name="handler">The async delegate invoked when the route matches.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder MapGet(string template, Func<HttpActionContext, Task> handler)
         {
             return this.Map(HttpMethod.Get, template, handler);
         }
 
+        /// <summary>Registers a POST route. Equivalent to <c>Map(HttpMethod.Post, …)</c>.</summary>
+        /// <param name="template">The path template.</param>
+        /// <param name="handler">The async delegate invoked when the route matches.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder MapPost(string template, Func<HttpActionContext, Task> handler)
         {
             return this.Map(HttpMethod.Post, template, handler);
         }
 
+        /// <summary>Registers a PUT route. Equivalent to <c>Map(HttpMethod.Put, …)</c>.</summary>
+        /// <param name="template">The path template.</param>
+        /// <param name="handler">The async delegate invoked when the route matches.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder MapPut(string template, Func<HttpActionContext, Task> handler)
         {
             return this.Map(HttpMethod.Put, template, handler);
         }
 
+        /// <summary>Registers a DELETE route. Equivalent to <c>Map(HttpMethod.Delete, …)</c>.</summary>
+        /// <param name="template">The path template.</param>
+        /// <param name="handler">The async delegate invoked when the route matches.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder MapDelete(string template, Func<HttpActionContext, Task> handler)
         {
             return this.Map(HttpMethod.Delete, template, handler);
         }
     }
 
+    /// <summary>
+    /// An immutable, parsed representation of a single route entry, including its method, template,
+    /// handler, and sort priority.
+    /// </summary>
     public sealed class Route : IComparable<Route>
     {
+        /// <summary>
+        /// Parses <paramref name="template"/> and creates a route entry.
+        /// </summary>
+        /// <param name="method">The HTTP method this route matches.</param>
+        /// <param name="template">The path template; validated eagerly — throws <see cref="ArgumentException"/> for invalid templates.</param>
+        /// <param name="handler">The delegate invoked when this route matches.</param>
+        /// <exception cref="ArgumentException">The template contains an empty parameter name or a non-terminal catch-all segment.</exception>
         public Route(HttpMethod method, string template, Func<HttpActionContext, Task> handler)
         {
             this.Method = method;
@@ -218,6 +263,10 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
         // SortedSet uses CompareTo for both ordering and identity.
         // Priority (descending by sort key) comes first; method + template act as a tiebreaker
         // to ensure a total order and to treat (method, template) as the unique key.
+        /// <summary>
+        /// Compares routes by descending priority (more-specific segments first), then by method and template as a
+        /// tiebreaker, producing the total order required by <see cref="SortedSet{T}"/>.
+        /// </summary>
         public int CompareTo(Route? other)
         {
             if (other is null)

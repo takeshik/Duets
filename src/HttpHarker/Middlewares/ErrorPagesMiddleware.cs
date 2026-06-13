@@ -20,6 +20,10 @@ namespace HttpHarker.Middlewares;
 /// </remarks>
 public sealed class ErrorPagesMiddleware : IMiddleware
 {
+    /// <summary>
+    /// Initialises the middleware, optionally registering status-code handlers via <paramref name="configure"/>.
+    /// </summary>
+    /// <param name="configure">Callback that receives a <see cref="Builder"/> to register error-page handlers.</param>
     public ErrorPagesMiddleware(Action<Builder>? configure = null)
     {
         var builder = new Builder();
@@ -32,6 +36,10 @@ public sealed class ErrorPagesMiddleware : IMiddleware
 
     private readonly Dictionary<int, Func<HttpActionContext, Task>> _handlers;
 
+    /// <summary>
+    /// Runs the rest of the pipeline, then intercepts the response if a matching error-page handler
+    /// is registered for the resulting status code.
+    /// </summary>
     public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
         await next();
@@ -67,10 +75,15 @@ public sealed class ErrorPagesMiddleware : IMiddleware
         }
     }
 
+    /// <summary>Fluent builder for registering status-code error-page handlers on <see cref="ErrorPagesMiddleware"/>.</summary>
     public sealed class Builder
     {
         internal Dictionary<int, Func<HttpActionContext, Task>> Handlers { get; } = [];
 
+        /// <summary>Registers <paramref name="handler"/> to be invoked when the pipeline produces <paramref name="statusCode"/>.</summary>
+        /// <param name="statusCode">The HTTP status code that triggers this handler.</param>
+        /// <param name="handler">The async delegate responsible for writing the error response.</param>
+        /// <returns>This builder, for fluent chaining.</returns>
         public Builder On(int statusCode, Func<HttpActionContext, Task> handler)
         {
             this.Handlers[statusCode] = handler;
