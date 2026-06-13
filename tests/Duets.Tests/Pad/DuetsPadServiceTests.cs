@@ -505,7 +505,7 @@ public sealed class DuetsPadServiceTests
                 var session = padService!.TryGetSession(sessionGuid);
                 Assert.NotNull(session);
 
-                var subChannel = Channel.CreateUnbounded<CanvasEventMessage>();
+                var subChannel = Channel.CreateUnbounded<CanvasEventMessage?>();
                 var subKey = session!.AddCanvasSubscriber(subChannel.Writer);
 
                 Assert.True(session.HasActiveSubscribers);
@@ -1354,5 +1354,47 @@ public sealed class DuetsPadServiceTests
         Assert.DoesNotContain("format(\"woff\")", result, StringComparison.Ordinal);
         Assert.DoesNotContain("format(\"truetype\")", result, StringComparison.Ordinal);
         Assert.DoesNotContain(".ttf", result, StringComparison.Ordinal);
+    }
+
+    // -------------------------------------------------------------------------
+    // Options validation (early failure on UseDuetsPad)
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void UseDuetsPad_throws_ArgumentOutOfRangeException_when_TimelineEntryLimit_is_non_positive(
+        int invalidLimit
+    )
+    {
+        using var server = new HttpServer("http://127.0.0.1:0/");
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            server.UseDuetsPad(
+                "/",
+                opts =>
+                {
+                    opts.TimelineEntryLimit = invalidLimit;
+                }
+            )
+        );
+    }
+
+    [Fact]
+    public void UseDuetsPad_does_not_throw_when_TimelineEntryLimit_is_null()
+    {
+        using var server = new HttpServer("http://127.0.0.1:0/");
+        // Should not throw.
+        using var service = server.UseDuetsPad("/", opts => opts.TimelineEntryLimit = null);
+        Assert.NotNull(service);
+    }
+
+    [Fact]
+    public void UseDuetsPad_does_not_throw_when_TimelineEntryLimit_is_positive()
+    {
+        using var server = new HttpServer("http://127.0.0.1:0/");
+        // Should not throw.
+        using var service = server.UseDuetsPad("/", opts => opts.TimelineEntryLimit = 10);
+        Assert.NotNull(service);
     }
 }

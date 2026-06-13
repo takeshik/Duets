@@ -51,14 +51,12 @@ public sealed class DuetsPadProtocolTests
             new Dictionary<long, IReadOnlyList<CommittedInteraction>>()
         );
 
+        Assert.IsType<ResetMessage>(message);
         Assert.Equal(TimelineEventTypes.Reset, message.Type);
         Assert.Equal("initial", message.Reason);
         Assert.Same(state, message.State);
         Assert.NotNull(message.StateInteractions);
         Assert.Empty(message.StateInteractions);
-        Assert.Null(message.Entry);
-        Assert.Null(message.RemoveBeforeId);
-        Assert.Null(message.Marker);
     }
 
     [Fact]
@@ -68,14 +66,11 @@ public sealed class DuetsPadProtocolTests
 
         var message = TimelineEventMessage.Append(entry, []);
 
+        Assert.IsType<AppendMessage>(message);
         Assert.Equal(TimelineEventTypes.Append, message.Type);
-        Assert.Null(message.State);
-        Assert.Null(message.Reason);
         Assert.Same(entry, message.Entry);
         Assert.NotNull(message.EntryInteractions);
         Assert.Empty(message.EntryInteractions);
-        Assert.Null(message.RemoveBeforeId);
-        Assert.Null(message.Marker);
     }
 
     [Fact]
@@ -90,14 +85,11 @@ public sealed class DuetsPadProtocolTests
 
         var message = TimelineEventMessage.Update(entry, []);
 
+        Assert.IsType<UpdateMessage>(message);
         Assert.Equal(TimelineEventTypes.Update, message.Type);
-        Assert.Null(message.State);
-        Assert.Null(message.Reason);
         Assert.Same(entry, message.Entry);
         Assert.NotNull(message.EntryInteractions);
         Assert.Empty(message.EntryInteractions);
-        Assert.Null(message.RemoveBeforeId);
-        Assert.Null(message.Marker);
     }
 
     [Fact]
@@ -112,10 +104,8 @@ public sealed class DuetsPadProtocolTests
 
         var message = TimelineEventMessage.Trim(removeBeforeId: 5, marker);
 
+        Assert.IsType<TrimMessage>(message);
         Assert.Equal(TimelineEventTypes.Trim, message.Type);
-        Assert.Null(message.State);
-        Assert.Null(message.Reason);
-        Assert.Null(message.Entry);
         Assert.Equal(5L, message.RemoveBeforeId);
         Assert.Same(marker, message.Marker);
     }
@@ -125,6 +115,7 @@ public sealed class DuetsPadProtocolTests
     {
         var message = TimelineEventMessage.Trim(removeBeforeId: 10, marker: null);
 
+        Assert.IsType<TrimMessage>(message);
         Assert.Equal(TimelineEventTypes.Trim, message.Type);
         Assert.Equal(10L, message.RemoveBeforeId);
         Assert.Null(message.Marker);

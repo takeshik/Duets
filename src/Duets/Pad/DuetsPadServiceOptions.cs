@@ -98,6 +98,28 @@ public sealed class DuetsPadServiceOptions
     /// <summary>
     /// Period of the background idle-sweep timer. Only active when
     /// <see cref="IdleTimeout"/> is enabled. Defaults to 30 seconds.
+    /// This is a test-only internal hook (like <see cref="Clock"/>) that allows tests to prevent the
+    /// background timer from firing during the test run; do not set in production code.
     /// </summary>
     internal TimeSpan CleanupInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Validates all configuration values. Called by
+    /// <see cref="DuetsPadServiceExtensions.UseDuetsPad"/> immediately after the configure
+    /// delegate is applied so that configuration errors are caught at setup time rather than
+    /// deferred to first use.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="TimelineEntryLimit"/> is set to a non-positive value.
+    /// </exception>
+    internal void Validate()
+    {
+        if (this.TimelineEntryLimit is { } limit && limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.TimelineEntryLimit),
+                "Timeline entry limit must be positive."
+            );
+        }
+    }
 }

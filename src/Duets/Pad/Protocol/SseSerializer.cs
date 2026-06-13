@@ -49,24 +49,20 @@ internal static class SseSerializer
             throw new ArgumentNullException(nameof(m));
         }
 
-        return m.Type switch
+        return m switch
         {
-            TimelineEventTypes.Reset => SerializeTimelineReset(
-                m.Type,
-                m.State!,
-                m.Reason!,
-                m.StateInteractions!
+            ResetMessage r => SerializeTimelineReset(
+                r.Type,
+                r.State,
+                r.Reason,
+                r.StateInteractions
             ),
-            TimelineEventTypes.Append or TimelineEventTypes.Update => SerializeTimelineEntryEvent(
-                m.Type,
-                m.Entry!,
-                m.EntryInteractions!
+            EntryEventMessage e => SerializeTimelineEntryEvent(
+                e.Type,
+                e.Entry,
+                e.EntryInteractions
             ),
-            TimelineEventTypes.Trim => SerializeTimelineTrim(
-                m.Type,
-                m.RemoveBeforeId!.Value,
-                m.Marker
-            ),
+            TrimMessage t => SerializeTimelineTrim(t.Type, t.RemoveBeforeId, t.Marker),
             _ => throw new InvalidOperationException(
                 $"Unrecognised TimelineEventMessage type '{m.Type}'."
             ),
@@ -148,7 +144,14 @@ internal static class SseSerializer
                     ["target"] = SerializePath(interaction.Target),
                     ["event"] = SerializeEvent(interaction.Event),
                     ["handlerId"] = interaction.HandlerId.ToString(),
-                    ["state"] = interaction.State == InteractionState.Live ? "live" : "stale",
+                    ["state"] = interaction.State switch
+                    {
+                        InteractionState.Live => "live",
+                        InteractionState.Stale => "stale",
+                        _ => throw new InvalidOperationException(
+                            $"Unrecognised interaction state '{interaction.State}'."
+                        ),
+                    },
                 }
             );
         }

@@ -28,6 +28,7 @@ public static class DuetsPadServiceExtensions
 
         var options = new DuetsPadServiceOptions();
         configure?.Invoke(options);
+        options.Validate();
 
         return new DuetsPadService(server, root, options);
     }

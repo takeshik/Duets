@@ -86,12 +86,12 @@ internal sealed class DuetsPadSession : IDisposable
 
     private readonly ConcurrentDictionary<
         Guid,
-        ChannelWriter<CanvasEventMessage>
+        ChannelWriter<CanvasEventMessage?>
     > _canvasSubscribers = new();
 
     private readonly ConcurrentDictionary<
         Guid,
-        ChannelWriter<TimelineEventMessage>
+        ChannelWriter<TimelineEventMessage?>
     > _timelineSubscribers = new();
 
     private readonly ConcurrentDictionary<
@@ -100,10 +100,7 @@ internal sealed class DuetsPadSession : IDisposable
     > _typeDeclarationSubscribers = new();
 
     private DisplayRenderer _renderer;
-    private readonly InteractionRegistry _interactionRegistry = new();
-    private IReadOnlyList<CommittedInteraction> _canvasInteractions = [];
-    private readonly Dictionary<long, IReadOnlyList<CommittedInteraction>> _timelineInteractions =
-    [];
+    private readonly InteractionStore _interactionStore = new();
 
     private readonly int? _timelineEntryLimit;
 
@@ -141,7 +138,9 @@ internal sealed class DuetsPadSession : IDisposable
         // The second argument is a JS options object; MergeDumpOptions reads maxDepth/maxItems from it.
         this.DuetsSession.SetValue(
             "__padDump__",
-            new Action<object?, object?>((v, opts) => this.Dump(v, this.MergeDumpOptions(opts)))
+            new Action<object?, object?>(
+                (v, opts) => this.Dump(v, DumpOptionsResolver.Merge(this.DumpOptions, opts))
+            )
         );
         this.DuetsSession.Execute(
             "var dump = function (v, opts) { __padDump__(v, opts); return v; };"
@@ -236,7 +235,8 @@ internal sealed class DuetsPadSession : IDisposable
     }
 
     // -------------------------------------------------------------------------
-    // State setters (kept for compatibility with any existing callers)
+    // State setters — used by tests to inject known state before exercising
+    // eval-driven paths. Not part of the normal eval lifecycle.
     // -------------------------------------------------------------------------
 
     public void SetCanvas(CanvasState canvas)
@@ -248,9 +248,8 @@ internal sealed class DuetsPadSession : IDisposable
 
         lock (this._stateLock)
         {
-            this.Unregister(this._canvasInteractions);
+            this._interactionStore.ClearCanvasInteractions();
             this.Canvas = canvas;
-            this._canvasInteractions = [];
         }
     }
 
@@ -263,13 +262,8 @@ internal sealed class DuetsPadSession : IDisposable
 
         lock (this._stateLock)
         {
-            foreach (var interactions in this._timelineInteractions.Values)
-            {
-                this.Unregister(interactions);
-            }
-
+            this._interactionStore.ClearTimelineInteractions();
             this.Timeline = timeline;
-            this._timelineInteractions.Clear();
         }
     }
 
@@ -280,10 +274,13 @@ internal sealed class DuetsPadSession : IDisposable
             throw new ArgumentNullException(nameof(objectRenderers));
         }
 
-        this.ObjectRenderers = [.. objectRenderers];
+        lock (this._stateLock)
+        {
+            this.ObjectRenderers = [.. objectRenderers];
 
-        // Rebuild the pipeline so subsequent Dump/CanvasAdd/CanvasSet calls pick up the change.
-        this._renderer = new DisplayRenderer(this.ObjectRenderers);
+            // Rebuild the pipeline so subsequent Dump/CanvasAdd/CanvasSet calls pick up the change.
+            this._renderer = new DisplayRenderer(this.ObjectRenderers);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -296,7 +293,7 @@ internal sealed class DuetsPadSession : IDisposable
     /// under the same lock used for all subsequent updates (see ordering guarantee in the
     /// class remarks).
     /// </summary>
-    public Guid AddCanvasSubscriber(ChannelWriter<CanvasEventMessage> writer)
+    public Guid AddCanvasSubscriber(ChannelWriter<CanvasEventMessage?> writer)
     {
         if (writer is null)
         {
@@ -320,7 +317,9 @@ internal sealed class DuetsPadSession : IDisposable
             }
 
             this._canvasSubscribers[key] = writer;
-            writer.TryWrite(CanvasEventMessage.Snapshot(this.Canvas, this._canvasInteractions));
+            writer.TryWrite(
+                CanvasEventMessage.Snapshot(this.Canvas, this._interactionStore.CanvasInteractions)
+            );
         }
 
         return key;
@@ -335,7 +334,7 @@ internal sealed class DuetsPadSession : IDisposable
     /// under the same lock used for all subsequent updates (see ordering guarantee in the
     /// class remarks).
     /// </summary>
-    public Guid AddTimelineSubscriber(ChannelWriter<TimelineEventMessage> writer)
+    public Guid AddTimelineSubscriber(ChannelWriter<TimelineEventMessage?> writer)
     {
         if (writer is null)
         {
@@ -360,7 +359,11 @@ internal sealed class DuetsPadSession : IDisposable
 
             this._timelineSubscribers[key] = writer;
             writer.TryWrite(
-                TimelineEventMessage.Reset(this.Timeline, "initial", this._timelineInteractions)
+                TimelineEventMessage.Reset(
+                    this.Timeline,
+                    "initial",
+                    this._interactionStore.TimelineInteractions
+                )
             );
         }
 
@@ -479,11 +482,7 @@ internal sealed class DuetsPadSession : IDisposable
             {
                 var childIndex = this.Canvas.Root.Children.Count;
                 this.Canvas = this.Canvas.Append(content.Body);
-                this._canvasInteractions =
-                [
-                    .. this._canvasInteractions,
-                    .. this.CommitInteractions(content.Interactions, childIndex),
-                ];
+                this._interactionStore.AppendCanvasInteractions(content.Interactions, childIndex);
                 this.BroadcastCanvas();
             }
         }
@@ -515,12 +514,8 @@ internal sealed class DuetsPadSession : IDisposable
 
             lock (this._stateLock)
             {
-                this.Unregister(this._canvasInteractions);
                 this.Canvas = this.Canvas.Set(new ElementChildren(content.Body));
-                this._canvasInteractions = this.CommitInteractions(
-                    content.Interactions,
-                    childIndex: 0
-                );
+                this._interactionStore.SetCanvasInteractions(content.Interactions, childIndex: 0);
                 this.BroadcastCanvas();
             }
         }
@@ -538,8 +533,7 @@ internal sealed class DuetsPadSession : IDisposable
             lock (this._stateLock)
             {
                 this.Canvas = CanvasState.Empty;
-                this.Unregister(this._canvasInteractions);
-                this._canvasInteractions = [];
+                this._interactionStore.ClearCanvasInteractions();
                 this.BroadcastCanvas();
             }
         }
@@ -654,7 +648,7 @@ internal sealed class DuetsPadSession : IDisposable
             Action? handler;
             lock (this._stateLock)
             {
-                this._interactionRegistry.TryGet(handlerId, out handler);
+                this._interactionStore.TryGetHandler(handlerId, out handler);
             }
 
             if (handler is null)
@@ -777,9 +771,7 @@ internal sealed class DuetsPadSession : IDisposable
 
                 this._typeDeclarationSubscribers.Clear();
 
-                this._interactionRegistry.Clear();
-                this._canvasInteractions = [];
-                this._timelineInteractions.Clear();
+                this._interactionStore.Clear();
             }
 
             this.DuetsSession.Dispose();
@@ -794,122 +786,6 @@ internal sealed class DuetsPadSession : IDisposable
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Merges a JS options value (the second argument to <c>dump(v, opts?)</c>) over the
-    /// session-default <see cref="DumpOptions"/>. Reads <c>maxDepth</c> and <c>maxItems</c>
-    /// integer fields from <paramref name="opts"/> when present; missing or null fields retain
-    /// the session default value. A null or absent <paramref name="opts"/> returns the session
-    /// default unchanged.
-    /// </summary>
-    private DumpOptions MergeDumpOptions(object? opts)
-    {
-        if (opts is null)
-        {
-            return this.DumpOptions;
-        }
-
-        IDictionary<string, object?>? dict = null;
-
-        if (opts is IDictionary<string, object?> genericDict)
-        {
-            dict = genericDict;
-        }
-        else if (opts is System.Collections.IDictionary nonGenericDict)
-        {
-            var converted = new Dictionary<string, object?>();
-            foreach (System.Collections.DictionaryEntry entry in nonGenericDict)
-            {
-                var key =
-                    System.Convert.ToString(
-                        entry.Key,
-                        System.Globalization.CultureInfo.InvariantCulture
-                    ) ?? "";
-                converted[key] = entry.Value;
-            }
-
-            dict = converted;
-        }
-        else if (opts is System.Dynamic.IDynamicMetaObjectProvider)
-        {
-            // Project dynamic object (e.g. Jint object literal) as key/value pairs.
-            var converted = new Dictionary<string, object?>();
-            if (opts is System.Collections.IEnumerable enumerable)
-            {
-                foreach (var item in enumerable)
-                {
-                    if (item is null)
-                    {
-                        continue;
-                    }
-
-                    var itemType = item.GetType();
-                    var keyProp = itemType.GetProperty("Key");
-                    var valueProp = itemType.GetProperty("Value");
-                    if (keyProp is null || valueProp is null)
-                    {
-                        continue;
-                    }
-
-                    var k = keyProp.GetValue(item)?.ToString() ?? "";
-                    converted[k] = valueProp.GetValue(item);
-                }
-            }
-
-            dict = converted;
-        }
-
-        if (dict is null)
-        {
-            return this.DumpOptions;
-        }
-
-        var maxDepth = this.DumpOptions.MaxDepth;
-        var maxItems = this.DumpOptions.MaxItems;
-
-        if (
-            dict.TryGetValue("maxDepth", out var maxDepthRaw)
-            && maxDepthRaw is not null
-            && TryParseInt(maxDepthRaw, out var parsedDepth)
-            && parsedDepth >= 0
-        )
-        {
-            maxDepth = parsedDepth;
-        }
-
-        if (
-            dict.TryGetValue("maxItems", out var maxItemsRaw)
-            && maxItemsRaw is not null
-            && TryParseInt(maxItemsRaw, out var parsedItems)
-            && parsedItems >= 0
-        )
-        {
-            maxItems = parsedItems;
-        }
-
-        return this.DumpOptions with
-        {
-            MaxDepth = maxDepth,
-            MaxItems = maxItems,
-        };
-    }
-
-    private static bool TryParseInt(object value, out int result)
-    {
-        try
-        {
-            result = System.Convert.ToInt32(
-                value,
-                System.Globalization.CultureInfo.InvariantCulture
-            );
-            return true;
-        }
-        catch
-        {
-            result = 0;
-            return false;
-        }
-    }
 
     private void OnConsoleLogged(ScriptConsoleEntry entry)
     {
@@ -934,41 +810,6 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    private IReadOnlyList<CommittedInteraction> CommitInteractions(
-        PendingInteractions interactions,
-        int? childIndex = null
-    )
-    {
-        if (interactions.Count == 0)
-        {
-            return [];
-        }
-
-        var committed = new List<CommittedInteraction>(interactions.Count);
-        foreach (var interaction in interactions)
-        {
-            var target = childIndex is int index
-                ? interaction.Target.Prepend(index)
-                : interaction.Target;
-            var handlerId = this._interactionRegistry.Register(interaction.Handler);
-            committed.Add(
-                new CommittedInteraction(
-                    target,
-                    interaction.Event,
-                    handlerId,
-                    InteractionState.Live
-                )
-            );
-        }
-
-        return committed;
-    }
-
-    private void Unregister(IEnumerable<CommittedInteraction> interactions)
-    {
-        this._interactionRegistry.Unregister(interactions.Select(i => i.HandlerId));
-    }
-
     /// <summary>
     /// Appends a Timeline entry and enqueues a timeline append event.
     /// Acquires <c>_stateLock</c> so enqueue happens in the same critical section as the
@@ -980,30 +821,18 @@ internal sealed class DuetsPadSession : IDisposable
         {
             this.Timeline = this.Timeline.Append(reason, content.Body, this._clock());
             var entry = this.Timeline[^1];
-            var interactions = this.CommitInteractions(content.Interactions);
-            if (interactions.Count > 0)
-            {
-                this._timelineInteractions[entry.Id] = interactions;
-            }
+            var interactions = this._interactionStore.CommitTimelineInteractions(
+                entry.Id,
+                content.Interactions
+            );
 
             this.BroadcastTimeline(TimelineEventMessage.Append(entry, interactions));
 
             if (this._timelineEntryLimit is int max && this.Timeline.Count > max)
             {
-                var removeBeforeId = this.Timeline[^max].Id;
-                var removedIds = this
-                    .Timeline.Where(e => e.Id < removeBeforeId)
-                    .Select(e => e.Id)
-                    .ToArray();
-                foreach (var removedId in removedIds)
-                {
-                    if (this._timelineInteractions.Remove(removedId, out var removedInteractions))
-                    {
-                        this.Unregister(removedInteractions);
-                    }
-                }
-
-                this.Timeline = this.Timeline.Trim(removeBeforeId);
+                var (trimmedTimeline, removeBeforeId, removedIds) = this.Timeline.TrimToLimit(max);
+                this._interactionStore.DiscardTimelineInteractions(removedIds);
+                this.Timeline = trimmedTimeline;
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
         }
@@ -1015,7 +844,10 @@ internal sealed class DuetsPadSession : IDisposable
     /// </summary>
     private void BroadcastCanvas()
     {
-        var msg = CanvasEventMessage.Replace(this.Canvas, this._canvasInteractions);
+        var msg = CanvasEventMessage.Replace(
+            this.Canvas,
+            this._interactionStore.CanvasInteractions
+        );
         foreach (var (_, writer) in this._canvasSubscribers)
         {
             writer.TryWrite(msg);

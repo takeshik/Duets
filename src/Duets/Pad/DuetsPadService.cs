@@ -399,20 +399,8 @@ public sealed class DuetsPadService : IDisposable
     {
         var sessionId = ctx.Args["sessionId"];
 
-        if (
-            !Guid.TryParse(sessionId, out var id)
-            || !this._sessions.TryGetValue(id, out var session)
-        )
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
         {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject
-                {
-                    ["ok"] = false,
-                    ["error"] = "Unknown session.",
-                    ["sessionId"] = sessionId,
-                }.ToJsonString()
-            );
             return;
         }
 
@@ -428,13 +416,13 @@ public sealed class DuetsPadService : IDisposable
             {
                 ["ok"] = true,
                 ["result"] = result.Result,
-                ["sessionId"] = id.ToString(),
+                ["sessionId"] = session.Id.ToString(),
             }
             : new JsonObject
             {
                 ["ok"] = false,
                 ["error"] = result.Error,
-                ["sessionId"] = id.ToString(),
+                ["sessionId"] = session.Id.ToString(),
             };
 
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
@@ -449,20 +437,8 @@ public sealed class DuetsPadService : IDisposable
         var sessionId = ctx.Args["sessionId"];
         var handlerId = ctx.Args["handlerId"];
 
-        if (
-            !Guid.TryParse(sessionId, out var id)
-            || !this._sessions.TryGetValue(id, out var session)
-        )
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
         {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject
-                {
-                    ["ok"] = false,
-                    ["error"] = "Unknown session.",
-                    ["sessionId"] = sessionId,
-                }.ToJsonString()
-            );
             return;
         }
 
@@ -474,7 +450,7 @@ public sealed class DuetsPadService : IDisposable
                 {
                     ["ok"] = false,
                     ["error"] = "Invalid interaction handler id.",
-                    ["sessionId"] = id.ToString(),
+                    ["sessionId"] = session.Id.ToString(),
                     ["handlerId"] = handlerId,
                 }.ToJsonString()
             );
@@ -487,7 +463,7 @@ public sealed class DuetsPadService : IDisposable
             ["ok"] = result.Ok,
             ["error"] = result.Error,
             ["stale"] = result.Stale,
-            ["sessionId"] = id.ToString(),
+            ["sessionId"] = session.Id.ToString(),
             ["handlerId"] = parsedHandlerId.ToString(),
         };
 
@@ -502,68 +478,18 @@ public sealed class DuetsPadService : IDisposable
     {
         var sessionId = ctx.Args["sessionId"];
 
-        if (
-            !Guid.TryParse(sessionId, out var id)
-            || !this._sessions.TryGetValue(id, out var session)
-        )
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
         {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject
-                {
-                    ["ok"] = false,
-                    ["error"] = "Unknown session.",
-                    ["sessionId"] = sessionId,
-                }.ToJsonString()
-            );
             return;
         }
 
-        var res = ctx.Response;
-        res.ContentType = "text/event-stream; charset=utf-8";
-        res.Headers["Cache-Control"] = "no-cache";
-        res.SendChunked = true;
-
-        var channel = Channel.CreateUnbounded<CanvasEventMessage>();
-        var key = session.AddCanvasSubscriber(channel.Writer);
-
-        using var gate = new SemaphoreSlim(1, 1);
-        using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
-        timer.Elapsed += (_, _) =>
-        {
-            session.Touch();
-            _ = WriteKeepAliveAsync(res.OutputStream, gate);
-        };
-        timer.Start();
-
-        try
-        {
-            await foreach (var msg in channel.Reader.ReadAllAsync())
-            {
-                var sseData = $"data: {SseSerializer.Serialize(msg)}\n\n";
-                await gate.WaitAsync();
-                try
-                {
-                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
-                    await res.OutputStream.FlushAsync();
-                }
-                finally
-                {
-                    gate.Release();
-                }
-            }
-        }
-        catch
-        {
-            /* Client disconnected. */
-        }
-        finally
-        {
-            timer.Stop();
-            session.RemoveCanvasSubscriber(key);
-            channel.Writer.TryComplete();
-            res.Close();
-        }
+        await this.RunSseStreamAsync<CanvasEventMessage>(
+            ctx,
+            session,
+            subscribe: session.AddCanvasSubscriber,
+            unsubscribe: session.RemoveCanvasSubscriber,
+            formatData: SseSerializer.Serialize
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -574,68 +500,18 @@ public sealed class DuetsPadService : IDisposable
     {
         var sessionId = ctx.Args["sessionId"];
 
-        if (
-            !Guid.TryParse(sessionId, out var id)
-            || !this._sessions.TryGetValue(id, out var session)
-        )
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
         {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject
-                {
-                    ["ok"] = false,
-                    ["error"] = "Unknown session.",
-                    ["sessionId"] = sessionId,
-                }.ToJsonString()
-            );
             return;
         }
 
-        var res = ctx.Response;
-        res.ContentType = "text/event-stream; charset=utf-8";
-        res.Headers["Cache-Control"] = "no-cache";
-        res.SendChunked = true;
-
-        var channel = Channel.CreateUnbounded<TimelineEventMessage>();
-        var key = session.AddTimelineSubscriber(channel.Writer);
-
-        using var gate = new SemaphoreSlim(1, 1);
-        using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
-        timer.Elapsed += (_, _) =>
-        {
-            session.Touch();
-            _ = WriteKeepAliveAsync(res.OutputStream, gate);
-        };
-        timer.Start();
-
-        try
-        {
-            await foreach (var msg in channel.Reader.ReadAllAsync())
-            {
-                var sseData = $"data: {SseSerializer.Serialize(msg)}\n\n";
-                await gate.WaitAsync();
-                try
-                {
-                    await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
-                    await res.OutputStream.FlushAsync();
-                }
-                finally
-                {
-                    gate.Release();
-                }
-            }
-        }
-        catch
-        {
-            /* Client disconnected. */
-        }
-        finally
-        {
-            timer.Stop();
-            session.RemoveTimelineSubscriber(key);
-            channel.Writer.TryComplete();
-            res.Close();
-        }
+        await this.RunSseStreamAsync<TimelineEventMessage>(
+            ctx,
+            session,
+            subscribe: session.AddTimelineSubscriber,
+            unsubscribe: session.RemoveTimelineSubscriber,
+            formatData: SseSerializer.Serialize
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -646,21 +522,8 @@ public sealed class DuetsPadService : IDisposable
     {
         var sessionIdStr = ctx.Request.QueryString["sessionId"];
 
-        if (
-            string.IsNullOrEmpty(sessionIdStr)
-            || !Guid.TryParse(sessionIdStr, out var id)
-            || !this._sessions.TryGetValue(id, out var session)
-        )
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionIdStr) is not { } session)
         {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject
-                {
-                    ["ok"] = false,
-                    ["error"] = "Unknown session.",
-                    ["sessionId"] = sessionIdStr ?? "",
-                }.ToJsonString()
-            );
             return;
         }
 
@@ -729,21 +592,85 @@ public sealed class DuetsPadService : IDisposable
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static async Task WriteKeepAliveAsync(Stream stream, SemaphoreSlim gate)
+    /// <summary>
+    /// Resolves the <see cref="DuetsPadSession"/> for <paramref name="sessionId"/>.
+    /// Returns the session when found; writes an <c>{ ok:false, error:"Unknown session." }</c>
+    /// JSON response and returns <see langword="null"/> when the session cannot be resolved.
+    /// </summary>
+    private async Task<DuetsPadSession?> ResolveSessionOrRespondAsync(
+        HttpActionContext ctx,
+        string? sessionId
+    )
     {
-        await gate.WaitAsync();
+        if (Guid.TryParse(sessionId, out var id) && this._sessions.TryGetValue(id, out var session))
+        {
+            return session;
+        }
+
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = false,
+                ["error"] = "Unknown session.",
+                ["sessionId"] = sessionId ?? "",
+            }.ToJsonString()
+        );
+        return null;
+    }
+
+    /// <summary>
+    /// Runs an SSE streaming loop for <typeparamref name="T"/> messages.
+    /// Sets the SSE response headers, creates an unbounded channel, subscribes via
+    /// <paramref name="subscribe"/>, starts a keepalive timer (null-sentinel written to
+    /// the channel on each tick), and reads from the channel until it is completed or the
+    /// client disconnects. <see langword="null"/> messages produce <c>": keepalive\n\n"</c>;
+    /// non-null messages produce <c>"data: {formatData(msg)}\n\n"</c>.
+    /// </summary>
+    private async Task RunSseStreamAsync<T>(
+        HttpActionContext ctx,
+        DuetsPadSession session,
+        Func<ChannelWriter<T?>, Guid> subscribe,
+        Action<Guid> unsubscribe,
+        Func<T, string> formatData
+    )
+        where T : class
+    {
+        var res = ctx.Response;
+        res.ContentType = "text/event-stream; charset=utf-8";
+        res.Headers["Cache-Control"] = "no-cache";
+        res.SendChunked = true;
+
+        var channel = Channel.CreateUnbounded<T?>();
+        var key = subscribe(channel.Writer);
+
+        using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
+        timer.Elapsed += (_, _) =>
+        {
+            session.Touch();
+            channel.Writer.TryWrite(null);
+        };
+        timer.Start();
+
         try
         {
-            await stream.WriteAsync(Encoding.UTF8.GetBytes(": keepalive\n\n"));
-            await stream.FlushAsync();
+            await foreach (var msg in channel.Reader.ReadAllAsync())
+            {
+                var sseData = msg is null ? ": keepalive\n\n" : $"data: {formatData(msg)}\n\n";
+                await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
+                await res.OutputStream.FlushAsync();
+            }
         }
         catch
         {
-            /* Stream may be closed or client disconnected. */
+            /* Client disconnected. */
         }
         finally
         {
-            gate.Release();
+            timer.Stop();
+            unsubscribe(key);
+            channel.Writer.TryComplete();
+            res.Close();
         }
     }
 }

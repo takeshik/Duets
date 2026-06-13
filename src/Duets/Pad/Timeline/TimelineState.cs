@@ -86,6 +86,41 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return new TimelineState(trimmed, this.NextId);
     }
 
+    /// <summary>
+    /// Trims the timeline to at most <paramref name="max"/> entries (from the end) and returns
+    /// the trimmed state, the boundary id (first retained entry id), and the ids of the removed
+    /// entries.
+    /// </summary>
+    /// <param name="max">Maximum number of entries to retain. Must be positive.</param>
+    /// <returns>
+    /// The trimmed <see cref="TimelineState"/>, the id boundary used (first retained entry id),
+    /// and the ids of entries that were removed. When no trimming is necessary (count is already
+    /// within the limit), returns <c>this</c> with a zero boundary and an empty removed-ids list.
+    /// </returns>
+    internal (TimelineState Next, long RemoveBeforeId, IReadOnlyList<long> RemovedIds) TrimToLimit(
+        int max
+    )
+    {
+        if (this.entries.Length <= max)
+        {
+            return (this, 0L, []);
+        }
+
+        // The boundary is the id of the entry that becomes the new first retained entry.
+        var firstRetainIndex = this.entries.Length - max;
+        var removeBeforeId = this.entries[firstRetainIndex].Id;
+
+        var removedIds = new long[firstRetainIndex];
+        for (var i = 0; i < firstRetainIndex; i++)
+        {
+            removedIds[i] = this.entries[i].Id;
+        }
+
+        var trimmed = new TimelineEntry[max];
+        Array.Copy(this.entries, firstRetainIndex, trimmed, 0, max);
+        return (new TimelineState(trimmed, this.NextId), removeBeforeId, removedIds);
+    }
+
     public TimelineState Clear() => Empty;
 
     public bool Equals(TimelineState? other)
