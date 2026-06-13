@@ -7,8 +7,6 @@ namespace Duets.Pad.Rendering;
 
 internal sealed class DefaultObjectRenderer : IObjectRenderer
 {
-    private static readonly RenderTreeReducer Reducer = new();
-
     public bool CanRender(object value) => true;
 
     public DisplayContent Render(object value, RenderContext context) =>
@@ -155,39 +153,6 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     }
 
     /// <summary>
-    /// Returns the exact item count when <paramref name="source"/> implements
-    /// <see cref="ICollection"/> or <see cref="ICollection{T}"/>, otherwise
-    /// <see langword="null"/>.
-    /// </summary>
-    private static int? TryGetCheapCount(IEnumerable source)
-    {
-        if (source is ICollection col)
-        {
-            return col.Count;
-        }
-
-        // Try the generic ICollection<T> for types that only implement the generic interface.
-        foreach (var iface in source.GetType().GetInterfaces())
-        {
-            if (!iface.IsGenericType)
-            {
-                continue;
-            }
-
-            if (iface.GetGenericTypeDefinition() == typeof(ICollection<>))
-            {
-                var countProperty = iface.GetProperty("Count");
-                if (countProperty is not null)
-                {
-                    return (int?)countProperty.GetValue(source);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// Formats the header text for a collection: "{TypeName} (N items)" when the exact count
     /// is known; "{TypeName} (showing first {MaxItems})" when the sequence was truncated and the
     /// exact total is unknown; "{TypeName} (N items)" when truncated but the total was known cheaply.
@@ -233,20 +198,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             ? $"{mapType.Name} (showing first {maxItems})"
             : $"{mapType.Name} ({knownCount} items)";
 
-        var typeHeader = new Element(
-            "tr",
-            ElementAttributes.Empty,
-            new ElementChildren(
-                new Element(
-                    "th",
-                    new ElementAttributes(
-                        new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
-                        new KeyValuePair<string, string?>("colspan", "2")
-                    ),
-                    new ElementChildren(new Text(headerText))
-                )
-            )
-        );
+        var typeHeader = TableRenderBuilder.BuildTypeheaderRow(headerText, columnCount: 2);
 
         var columnHeader = new Element(
             "tr",
@@ -257,8 +209,11 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             )
         );
 
-        var theadChildren = new List<ITerminalRenderNode> { typeHeader, columnHeader };
-        var thead = new Element("thead", ElementAttributes.Empty, [.. theadChildren]);
+        var thead = new Element(
+            "thead",
+            ElementAttributes.Empty,
+            new ElementChildren(typeHeader, columnHeader)
+        );
 
         var rows = new List<ITerminalRenderNode>(visibleEntries.Count + (truncated ? 1 : 0));
         var interactions = new List<PendingInteractions>();
@@ -290,7 +245,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         if (truncated)
         {
-            rows.Add(BuildTruncationRow(columnCount: 2));
+            rows.Add(TableRenderBuilder.BuildTruncationRow(columnCount: 2));
         }
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
@@ -310,7 +265,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         var maxItems = context.Options.MaxItems;
 
         // Check for cheap count before materializing (to avoid fully evaluating lazy sequences).
-        var cheapCount = TryGetCheapCount(enumerable);
+        var cheapCount = RecordProjector.TryGetCheapCount(enumerable);
 
         // Materialize at most maxItems items, detect overflow.
         var items = MaterializeCapped(enumerable, maxItems, out var truncated);
@@ -397,22 +352,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         var thead = new Element(
             "thead",
             ElementAttributes.Empty,
-            new ElementChildren(
-                new Element(
-                    "tr",
-                    ElementAttributes.Empty,
-                    new ElementChildren(
-                        new Element(
-                            "th",
-                            new ElementAttributes(
-                                new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
-                                new KeyValuePair<string, string?>("colspan", "1")
-                            ),
-                            new ElementChildren(new Text(headerText))
-                        )
-                    )
-                )
-            )
+            new ElementChildren(TableRenderBuilder.BuildTypeheaderRow(headerText, columnCount: 1))
         );
 
         var rows = new List<ITerminalRenderNode>(items.Count + (truncated ? 1 : 0));
@@ -438,7 +378,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         if (truncated)
         {
-            rows.Add(BuildTruncationRow(columnCount: 1));
+            rows.Add(TableRenderBuilder.BuildTruncationRow(columnCount: 1));
         }
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
@@ -450,31 +390,6 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
                 new ElementChildren(thead, tbody)
             ),
             PendingInteractions.Merge(interactions)
-        );
-    }
-
-    /// <summary>
-    /// Builds a truncation indicator row for a table: a single <c>&lt;tr&gt;</c> with a
-    /// <c>&lt;td class="duetspad-truncated" colspan="{columnCount}"&gt;…&lt;/td&gt;</c>.
-    /// </summary>
-    private static Element BuildTruncationRow(int columnCount)
-    {
-        return new Element(
-            "tr",
-            ElementAttributes.Empty,
-            new ElementChildren(
-                new Element(
-                    "td",
-                    new ElementAttributes(
-                        new KeyValuePair<string, string?>("class", "duetspad-truncated"),
-                        new KeyValuePair<string, string?>(
-                            "colspan",
-                            columnCount.ToString(CultureInfo.InvariantCulture)
-                        )
-                    ),
-                    new ElementChildren(new Text("…"))
-                )
-            )
         );
     }
 

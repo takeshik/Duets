@@ -53,16 +53,6 @@ public sealed class ElementChildren
         return [.. next];
     }
 
-    public ElementChildren AddRange(IEnumerable<ITerminalRenderNode> children)
-    {
-        if (children is null)
-        {
-            throw new ArgumentNullException(nameof(children));
-        }
-
-        return [.. this.children.Concat(children)];
-    }
-
     public bool Equals(ElementChildren? other)
     {
         if (ReferenceEquals(this, other))

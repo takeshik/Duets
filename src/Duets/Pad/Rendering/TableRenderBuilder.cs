@@ -63,23 +63,7 @@ internal static class TableRenderBuilder
             return new Element("thead", ElementAttributes.Empty, new ElementChildren(columnRow));
         }
 
-        var typeHeaderRow = new Element(
-            "tr",
-            ElementAttributes.Empty,
-            new ElementChildren(
-                new Element(
-                    "th",
-                    new ElementAttributes(
-                        new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
-                        new KeyValuePair<string, string?>(
-                            "colspan",
-                            columns.Count.ToString(CultureInfo.InvariantCulture)
-                        )
-                    ),
-                    new ElementChildren(new Text(typeHeaderText))
-                )
-            )
-        );
+        var typeHeaderRow = BuildTypeheaderRow(typeHeaderText, columns.Count);
 
         return new Element(
             "thead",
@@ -167,8 +151,9 @@ internal static class TableRenderBuilder
     /// <summary>
     /// Builds a truncation indicator row: a single <c>&lt;tr&gt;</c> with a
     /// <c>&lt;td class="duetspad-truncated" colspan="{columnCount}"&gt;…&lt;/td&gt;</c>.
+    /// Shared by the tabular, map, and scalar-table rendering paths.
     /// </summary>
-    private static Element BuildTruncationRow(int columnCount)
+    internal static Element BuildTruncationRow(int columnCount)
     {
         return new Element(
             "tr",
@@ -184,6 +169,32 @@ internal static class TableRenderBuilder
                         )
                     ),
                     new ElementChildren(new Text("…"))
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds a typeheader row: a <c>&lt;tr&gt;&lt;th class="duetspad-typeheader"
+    /// colspan="{columnCount}"&gt;{headerText}&lt;/th&gt;&lt;/tr&gt;</c>.
+    /// Shared by the map, scalar-table, and tabular (BuildThead) rendering paths.
+    /// </summary>
+    internal static Element BuildTypeheaderRow(string headerText, int columnCount)
+    {
+        return new Element(
+            "tr",
+            ElementAttributes.Empty,
+            new ElementChildren(
+                new Element(
+                    "th",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
+                        new KeyValuePair<string, string?>(
+                            "colspan",
+                            columnCount.ToString(CultureInfo.InvariantCulture)
+                        )
+                    ),
+                    new ElementChildren(new Text(headerText))
                 )
             )
         );

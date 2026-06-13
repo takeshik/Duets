@@ -24,6 +24,14 @@ namespace Duets.Pad.Rendering;
 /// Renderers must recurse into nested values via <see cref="RenderContext.RenderChild" />
 /// rather than calling the pipeline directly, so that depth limiting and cycle detection remain
 /// consistent across renderer boundaries.
+///
+/// <strong>Enforcement contract:</strong>
+/// <see cref="Rendering.DumpOptions.MaxDepth" /> and cycle detection are enforced centrally by the
+/// pipeline dispatch layer; renderers inherit these automatically via <see cref="RenderContext" />.
+/// <see cref="Rendering.DumpOptions.MaxItems" />, however, is <em>not</em> centrally enforced —
+/// each renderer is responsible for reading <c>context.Options.MaxItems</c> and capping the number
+/// of collection items it materializes. Custom renderers that ignore <see cref="Rendering.DumpOptions.MaxItems" />
+/// will silently exceed the configured limit.
 /// </remarks>
 public interface IObjectRenderer
 {

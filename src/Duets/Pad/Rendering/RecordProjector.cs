@@ -180,13 +180,21 @@ internal static class RecordProjector
     }
 
     /// <summary>
-    /// Attempts to read <c>Count</c> cheaply from a generic collection interface without
-    /// full enumeration. Checks <see cref="ICollection{T}"/> and
-    /// <see cref="IReadOnlyCollection{T}"/> via reflection.
+    /// Returns the exact item count when <paramref name="source"/> implements
+    /// <see cref="ICollection"/>, <see cref="ICollection{T}"/>, or
+    /// <see cref="IReadOnlyCollection{T}"/>; otherwise <see langword="null"/>.
+    /// Shared by the map, scalar-table, and enumerable rendering paths.
     /// </summary>
-    private static int? TryGetGenericCollectionCount(object value)
+    internal static int? TryGetCheapCount(IEnumerable source)
     {
-        foreach (var iface in value.GetType().GetInterfaces())
+        if (source is ICollection col)
+        {
+            return col.Count;
+        }
+
+        // Try generic ICollection<T> / IReadOnlyCollection<T> for types that only implement
+        // the generic interface.
+        foreach (var iface in source.GetType().GetInterfaces())
         {
             if (!iface.IsGenericType)
             {
@@ -199,13 +207,22 @@ internal static class RecordProjector
                 var countProp = iface.GetProperty("Count");
                 if (countProp is not null)
                 {
-                    return (int?)countProp.GetValue(value);
+                    return (int?)countProp.GetValue(source);
                 }
             }
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Attempts to read <c>Count</c> cheaply from a generic collection interface without
+    /// full enumeration. Checks <see cref="ICollection{T}"/> and
+    /// <see cref="IReadOnlyCollection{T}"/> via reflection. Used internally by
+    /// <see cref="TryExtractMapEntries"/> for generic dictionary values.
+    /// </summary>
+    private static int? TryGetGenericCollectionCount(object value) =>
+        TryGetCheapCount((IEnumerable)value);
 
     /// <summary>
     /// Returns <see langword="true"/> if <paramref name="type"/> implements a genuine generic

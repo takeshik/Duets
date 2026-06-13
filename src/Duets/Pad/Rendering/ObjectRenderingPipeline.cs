@@ -53,7 +53,7 @@ internal class DisplayRenderer(IReadOnlyList<IObjectRenderer> renderers)
         // Step 4: value already is a render node — pass through without reflection
         if (value is IRenderNode node)
         {
-            return DisplayContent.FromNode(this.reducer.Reduce(node));
+            return DisplayContent.FromNode(node);
         }
 
         // Step 5: cycle detection — only for reference types (not strings, not value types)

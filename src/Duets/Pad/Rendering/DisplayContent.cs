@@ -10,6 +10,8 @@ public sealed record DisplayContent
         new KeyValuePair<string, string?>("class", "duetspad-stack")
     );
 
+    private static readonly RenderTreeReducer Reducer = new();
+
     public DisplayContent(ITerminalRenderNode body)
         : this(body, PendingInteractions.Empty) { }
 
@@ -61,8 +63,7 @@ public sealed record DisplayContent
         return new DisplayContent(body, interactions);
     }
 
-    internal static DisplayContent FromNode(IRenderNode body) =>
-        new(new RenderTreeReducer().Reduce(body));
+    internal static DisplayContent FromNode(IRenderNode body) => new(Reducer.Reduce(body));
 
     private static DisplayContent FromElement(
         string tag,
