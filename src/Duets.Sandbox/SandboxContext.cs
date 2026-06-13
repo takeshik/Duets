@@ -193,16 +193,7 @@ internal sealed class SandboxContext : IAsyncDisposable
         // Clean up any previously faulted server state before restarting.
         if (this._webServer != null)
         {
-            this._padProtocolClient?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            this._padProtocolClient = null;
-
-            this._padService?.Dispose();
-            this._padService = null;
-            this._webServer.Dispose();
-            this._webServer = null;
-            this._webServerBaseUri = null;
-            this._webServerCts = null;
-            this._webServerTask = null;
+            this.TearDownWebServerCore();
         }
 
         this._webServerBaseUri = new Uri($"http://127.0.0.1:{port}/");
@@ -231,15 +222,6 @@ internal sealed class SandboxContext : IAsyncDisposable
             return;
         }
 
-        if (this._padProtocolClient is not null)
-        {
-            await this._padProtocolClient.DisposeAsync();
-            this._padProtocolClient = null;
-        }
-
-        this._padService?.Dispose();
-        this._padService = null;
-
         await this._webServerCts!.CancelAsync();
         try
         {
@@ -251,12 +233,23 @@ internal sealed class SandboxContext : IAsyncDisposable
             // fault the task may have accumulated before Stop() was called.
         }
 
-        this._webServer.Dispose();
+        this.TearDownWebServerCore();
+        await Console.Error.WriteLineAsync("Web server stopped.");
+    }
+
+    private void TearDownWebServerCore()
+    {
+        this._padProtocolClient?.Dispose();
+        this._padProtocolClient = null;
+
+        this._padService?.Dispose();
+        this._padService = null;
+
+        this._webServer!.Dispose();
         this._webServer = null;
         this._webServerBaseUri = null;
         this._webServerCts = null;
         this._webServerTask = null;
-        await Console.Error.WriteLineAsync("Web server stopped.");
     }
 
     public async ValueTask DisposeAsync()
@@ -275,11 +268,7 @@ internal sealed class SandboxContext : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
 
-        if (this._padProtocolClient is not null)
-        {
-            await this._padProtocolClient.DisposeAsync();
-        }
-
+        this._padProtocolClient?.Dispose();
         this._padService?.Dispose();
         this._webServer?.Dispose();
         this._session.Dispose();

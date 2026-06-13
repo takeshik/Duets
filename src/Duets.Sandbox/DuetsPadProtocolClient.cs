@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Duets.Sandbox;
 
-internal sealed class DuetsPadProtocolClient(Uri baseUri) : IAsyncDisposable
+internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
 {
     private readonly HttpClient _http = new()
     {
@@ -62,16 +62,15 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IAsyncDisposable
             throw new InvalidOperationException($"SSE stream already exists: {streamId}");
         }
 
-        var path = stream switch
+        if (!PadStreamKind.TryParse(stream, out var streamKind))
         {
-            "canvas" => $"sessions/{sessionId}/canvas-events",
-            "timeline" => $"sessions/{sessionId}/timeline-events",
-            "type-declarations" => $"type-declaration-events?sessionId={sessionId}",
-            _ => throw new ArgumentException(
-                "stream must be one of: canvas, timeline, type-declarations",
+            throw new ArgumentException(
+                $"stream must be one of: {string.Join(", ", PadStreamKind.AllTokens)}",
                 nameof(stream)
-            ),
-        };
+            );
+        }
+
+        var path = streamKind.BuildRelativePath(sessionId);
 
         var response = await this._http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
@@ -240,7 +239,7 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IAsyncDisposable
         return new JsonObject { ["ok"] = true, ["streamId"] = streamId };
     }
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
         foreach (var stream in this._sseStreams.Values)
         {
@@ -249,7 +248,6 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IAsyncDisposable
 
         this._sseStreams.Clear();
         this._http.Dispose();
-        await ValueTask.CompletedTask;
     }
 
     private static JsonObject BuildDataRecord(string? eventName, string data)

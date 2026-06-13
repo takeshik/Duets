@@ -5,7 +5,7 @@ namespace Duets.Sandbox;
 
 internal sealed class BatchRunner(SandboxContext session)
 {
-    private const string _help = """
+    private static readonly string _help = $$"""
         # Duets Sandbox — Batch Mode
 
         Batch mode reads JSON Lines (JSONL) from stdin and writes one JSON result per operation to stdout.
@@ -21,14 +21,17 @@ internal sealed class BatchRunner(SandboxContext session)
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
         | `types-dump` | | | Dump registered declaration files; returns `types` array of `{fileName, content}` |
-        | `server-start` | | `port` (int, default: 17375) | Start the web REPL server; returns `url` |
+        | `server-start` | | `port` (int, default: 17375) | Start the DuetsPad web server; returns `url` |
         | `server-stop` | | | Stop the web server |
         | `server-status` | | | Returns `running` (boolean) |
         | `pad-session-create` | | `sessionId` (string) | POST `/sessions`; returns the DuetsPad session payload |
         | `pad-session-delete` | `sessionId` | | DELETE `/sessions/{sessionId}` |
         | `pad-eval` | `sessionId`, `code` | `source` (string) | POST `/sessions/{sessionId}/eval` |
         | `pad-interaction-invoke` | `sessionId`, `handlerId` | | POST an interaction handler invocation |
-        | `pad-sse-open` | `streamId`, `sessionId`, `stream` | | Open a DuetsPad SSE stream. `stream` is `canvas`, `timeline`, or `type-declarations` |
+        | `pad-sse-open` | `streamId`, `sessionId`, `stream` | | Open a DuetsPad SSE stream. `stream` is {{string.Join(
+            ", ",
+            PadStreamKind.AllTokens.Select(t => $"`{t}`")
+        )}} |
         | `pad-sse-read` | `streamId` | `maxRecords` (int, default: 1), `timeoutMs` (int, default: 1000), `includeComments` (bool, default: false) | Read SSE data records from an open stream |
         | `pad-sse-close` | `streamId` | | Close an open SSE stream |
         | `pad-sse-list` | | | List open SSE streams |

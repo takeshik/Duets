@@ -76,7 +76,7 @@ internal sealed class InteractiveRepl(SandboxContext session)
               :complete <src> [pos]         Completions at position (default: end of src)
               :register <type-name>         Register .NET type (assembly-qualified name)
               :types                        List registered type declarations
-              :server start [port]          Start web REPL server (default port: 17375)
+              :server start [port]          Start DuetsPad web server (default port: 17375)
               :server stop                  Stop web server
               :server status                Show web server status
               :set transpiler <name>         Switch transpiler (typescript | babel)
