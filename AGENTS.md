@@ -93,6 +93,37 @@ judgment is the agent's job. Every reported suggestion must be triaged to a deci
 one and either apply it (when it is behavior-preserving and correct) or reject it deliberately (suppress via config or an
 inline ignore, with a reason). Never leave a reported suggestion dangling as a mere observation.
 
+### Comments
+
+These rules govern the *form* of comments, never their information. No explanatory content may be deleted in the
+name of tidiness. "Remove" always means remove styling or redundancy only; any genuine explanation in the affected
+text must be preserved — relocated into a documentation comment or kept as a plain in-body comment, whichever fits.
+
+- **No decorative dividers.** Do not write banner or divider lines built from repeated glyphs (`----`, `====`,
+  `****`, `####`, box-drawing `──`), in any language (C# `//`, JS/TS `//` and `/* */`, CSS `/* */`, HTML
+  `<!-- -->`). Delete the glyphs. If a divider wrapped a label, keep the label as a single plain comment
+  (`// URL helpers`, `/* Base */`, `<!-- Top bar -->`).
+- **Section labels, sparingly.** A single short label comment grouping related members within a type or file is
+  acceptable. When a type accumulates many such labels (roughly four or more), treat it as a signal to split the
+  type rather than to label harder.
+- **Document the public surface.** Public and protected C# types and members carry `///` XML doc comments stating
+  intent and contract; this applies especially to packaged libraries (e.g. HttpHarker). In JS/TS, intent and
+  contract prose on a function, class, or exported/global symbol uses a JSDoc block (`/** … */`) above the
+  declaration, matching the existing convention in `ScriptEngineInit.d.ts`. Trivial C# overrides (`ToString`,
+  `Equals`, `GetHashCode`), operators, and accessors may be left undocumented when the type-level doc already
+  covers them.
+- **Intent goes in doc comments; rationale stays inline.** A comment describing *what a member is for or
+  guarantees* belongs in a `///`/JSDoc doc comment on that member. A comment explaining *why* a particular
+  statement or block does what it does stays an in-body `//`. Do not promote local rationale to a doc comment, and
+  do not demote contract prose to an inline comment. Private-field invariants and concurrency notes stay as `//`
+  comments above the field (the codebase does not use `///` on private members).
+- **No commented-out code.** Delete it; rely on version control.
+- **Markers.** `TODO`, `HACK`, and `FIXME` are permitted when paired with a concrete, actionable note.
+- **Preserve load-bearing prose.** Security invariants (e.g. a single-point-of-use contract for `innerHTML`),
+  unit/why rationale, and similar explanations must survive any reformatting verbatim.
+
+These rules apply equally to test code.
+
 ## Testing
 
 ```bash
