@@ -9,10 +9,12 @@ namespace Duets.Pad;
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
 /// <see cref="Stack"/>, <see cref="Button"/>, and <see cref="Table"/>.
 /// </summary>
-internal sealed class UiApi(DisplayRenderer renderer, DumpOptions dumpOptions)
+internal sealed class UiApi(Func<DisplayRenderer> rendererResolver, DumpOptions dumpOptions)
 {
-    private readonly DisplayRenderer _renderer =
-        renderer ?? throw new ArgumentNullException(nameof(renderer));
+    // Resolves the session's current renderer on each render so a post-construction
+    // SetObjectRenderers swap is observed instead of a stale construction-time snapshot.
+    private readonly Func<DisplayRenderer> _rendererResolver =
+        rendererResolver ?? throw new ArgumentNullException(nameof(rendererResolver));
     private readonly DumpOptions _dumpOptions =
         dumpOptions ?? throw new ArgumentNullException(nameof(dumpOptions));
 
@@ -96,10 +98,11 @@ internal sealed class UiApi(DisplayRenderer renderer, DumpOptions dumpOptions)
         var projectedRows = rowList
             .Select(r => (IReadOnlyList<KeyValuePair<string, object?>>)[.. r])
             .ToList();
+        var renderer = this._rendererResolver();
         return TableRenderBuilder.Build(
             columns,
             projectedRows,
-            v => this._renderer.Render(v, this._dumpOptions)
+            v => renderer.Render(v, this._dumpOptions)
         );
     }
 
@@ -293,11 +296,12 @@ internal sealed class UiApi(DisplayRenderer renderer, DumpOptions dumpOptions)
 
         if (children is IEnumerable childrenEnumerable)
         {
+            var renderer = this._rendererResolver();
             return
             [
                 .. childrenEnumerable
                     .Cast<object?>()
-                    .Select(v => this._renderer.Render(v, this._dumpOptions)),
+                    .Select(v => renderer.Render(v, this._dumpOptions)),
             ];
         }
 

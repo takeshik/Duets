@@ -22,7 +22,7 @@ public sealed class UiApiJintIntegrationTests
     public async Task Element_built_from_js_object_literal_and_array_marshals_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        var ui = new UiApi(() => new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         // JS: ui.element('div', { id: 'x' }, [ui.text('hi')])
@@ -42,7 +42,7 @@ public sealed class UiApiJintIntegrationTests
     public async Task Label_from_js_serializes_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        var ui = new UiApi(() => new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         var result = session.Evaluate("ui.label('Hello')");
@@ -59,7 +59,7 @@ public sealed class UiApiJintIntegrationTests
     public async Task Table_from_js_serializes_correctly()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        var ui = new UiApi(() => new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         var result = session.Evaluate("ui.table([{ a: 1, b: 2 }])");
@@ -90,7 +90,7 @@ public sealed class UiApiJintIntegrationTests
     public async Task Element_script_tag_from_js_throws()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        var ui = new UiApi(() => new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         Assert.ThrowsAny<Exception>(() => session.Evaluate("ui.element('script')"));
@@ -100,7 +100,7 @@ public sealed class UiApiJintIntegrationTests
     public async Task Button_from_js_returns_button_content_with_click_interaction()
     {
         using var session = await CreateSessionAsync();
-        var ui = new UiApi(new DisplayRenderer([]), DumpOptions.Default);
+        var ui = new UiApi(() => new DisplayRenderer([]), DumpOptions.Default);
         session.SetValue("ui", ui);
 
         var result = session.Evaluate("ui.button('Run', () => {})");

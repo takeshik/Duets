@@ -434,6 +434,38 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("duetspad-output-error", classAttr);
     }
 
+    // Renderer swap: ui must observe SetObjectRenderers, not a construction-time snapshot
+
+    /// <summary>
+    /// Renders every string value as a single text node carrying a fixed marker, so a test can
+    /// detect whether a render went through this renderer rather than the default one.
+    /// </summary>
+    private sealed class MarkerRenderer(string marker) : IObjectRenderer
+    {
+        public bool CanRender(object? value) => value is string;
+
+        public DisplayContent Render(object value, RenderContext context) =>
+            DisplayContent.Text(marker);
+    }
+
+    [Fact]
+    public async Task Ui_children_use_renderer_replaced_after_construction()
+    {
+        // The ui host object is wired at construction. Replacing the renderers afterwards via
+        // SetObjectRenderers must be observed by ui.* child rendering, not a stale snapshot.
+        using var session = await CreatePadSessionAsync();
+        session.SetObjectRenderers([new MarkerRenderer("MARKER")]);
+
+        // ui.element renders its children through the session's current renderer.
+        var result = session.DuetsSession.Evaluate("ui.element('div', null, ['x'])");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var div = Assert.IsType<Element>(content.Body);
+        var child = Assert.Single(div.Children);
+        var text = Assert.IsType<Text>(child);
+        Assert.Equal("MARKER", text.Value);
+    }
+
     [Fact]
     public async Task CanvasAdd_render_failure_leaves_canvas_unchanged_and_does_not_throw()
     {

@@ -131,7 +131,8 @@ internal sealed class DuetsPadSession : IDisposable
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
-        SessionBootstrap.Bootstrap(this, this._renderer);
+        // ui resolves the renderer live via CurrentRenderer, so it is not passed the instance here.
+        SessionBootstrap.Bootstrap(this);
 
         // Record creation as the first activity.
         this.Touch();
@@ -214,8 +215,26 @@ internal sealed class DuetsPadSession : IDisposable
         {
             this.ObjectRenderers = [.. objectRenderers];
 
-            // Rebuild the pipeline so subsequent Dump/CanvasAdd/CanvasSet calls pick up the change.
+            // Rebuild the pipeline so subsequent renders (Dump/CanvasAdd/CanvasSet and the ui.*
+            // host object, which resolves the renderer live via CurrentRenderer) pick up the change.
             this._renderer = new DisplayRenderer(this.ObjectRenderers);
+        }
+    }
+
+    /// <summary>
+    /// Returns the renderer currently active for this session. The read is performed under
+    /// <c>_stateLock</c> so it observes a consistent renderer rather than a half-applied
+    /// <see cref="SetObjectRenderers"/> swap. Host objects such as <c>ui</c> resolve the renderer
+    /// through this property on each render so they never hold a construction-time snapshot.
+    /// </summary>
+    internal DisplayRenderer CurrentRenderer
+    {
+        get
+        {
+            lock (this._stateLock)
+            {
+                return this._renderer;
+            }
         }
     }
 
