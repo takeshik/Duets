@@ -21,7 +21,9 @@ internal sealed class DuetsPadStreamKind
         id => $"type-declaration-events?sessionId={id}"
     );
 
-    private static readonly Dictionary<string, DuetsPadStreamKind> _byToken = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, DuetsPadStreamKind> _byToken = new(
+        StringComparer.Ordinal
+    )
     {
         [Canvas.WireToken] = Canvas,
         [Timeline.WireToken] = Timeline,
@@ -40,7 +42,8 @@ internal sealed class DuetsPadStreamKind
     public string WireToken { get; }
 
     /// <summary>All known stream kinds, in declaration order.</summary>
-    public static IReadOnlyList<DuetsPadStreamKind> AllKinds => [Canvas, Timeline, TypeDeclarations];
+    public static IReadOnlyList<DuetsPadStreamKind> AllKinds =>
+        [Canvas, Timeline, TypeDeclarations];
 
     /// <summary>All known wire tokens, in declaration order.</summary>
     public static IReadOnlyList<string> AllTokens =>

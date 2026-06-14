@@ -211,10 +211,10 @@ internal sealed class BatchRunner(SandboxContext session)
             var logEntries =
                 logs.Count > 0
                     ? logs.Select(l => new
-                    {
-                        level = l.Level.ToString().ToLowerInvariant(),
-                        text = l.Text,
-                    })
+                        {
+                            level = l.Level.ToString().ToLowerInvariant(),
+                            text = l.Text,
+                        })
                         .ToArray()
                     : null;
             return new

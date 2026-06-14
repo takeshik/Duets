@@ -348,8 +348,7 @@ internal sealed class DuetsPadSession
         return key;
     }
 
-    void ITimelineSurface.Unsubscribe(Guid key) =>
-        this._timelineSubscribers.TryRemove(key, out _);
+    void ITimelineSurface.Unsubscribe(Guid key) => this._timelineSubscribers.TryRemove(key, out _);
 
     // Explicit ITypeDeclarationsSurface implementation
 
