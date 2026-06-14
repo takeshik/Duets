@@ -30,7 +30,7 @@ internal sealed class BatchRunner(SandboxContext session)
         | `pad-interaction-invoke` | `sessionId`, `handlerId` | | POST an interaction handler invocation |
         | `pad-sse-open` | `streamId`, `sessionId`, `stream` | | Open a DuetsPad SSE stream. `stream` is {{string.Join(
             ", ",
-            PadStreamKind.AllTokens.Select(t => $"`{t}`")
+            DuetsPadStreamKind.AllTokens.Select(t => $"`{t}`")
         )}} |
         | `pad-sse-read` | `streamId` | `maxRecords` (int, default: 1), `timeoutMs` (int, default: 1000), `includeComments` (bool, default: false) | Read SSE data records from an open stream |
         | `pad-sse-close` | `streamId` | | Close an open SSE stream |
@@ -211,10 +211,10 @@ internal sealed class BatchRunner(SandboxContext session)
             var logEntries =
                 logs.Count > 0
                     ? logs.Select(l => new
-                        {
-                            level = l.Level.ToString().ToLowerInvariant(),
-                            text = l.Text,
-                        })
+                    {
+                        level = l.Level.ToString().ToLowerInvariant(),
+                        text = l.Text,
+                    })
                         .ToArray()
                     : null;
             return new

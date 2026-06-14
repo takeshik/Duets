@@ -4,24 +4,24 @@ namespace Duets.Sandbox;
 /// Represents a typed SSE stream kind for the DuetsPad protocol.
 /// Each instance carries its wire token and knows how to build its relative path.
 /// </summary>
-internal sealed class PadStreamKind
+internal sealed class DuetsPadStreamKind
 {
-    public static readonly PadStreamKind Canvas = new(
+    public static readonly DuetsPadStreamKind Canvas = new(
         "canvas",
         id => $"sessions/{id}/canvas-events"
     );
 
-    public static readonly PadStreamKind Timeline = new(
+    public static readonly DuetsPadStreamKind Timeline = new(
         "timeline",
         id => $"sessions/{id}/timeline-events"
     );
 
-    public static readonly PadStreamKind TypeDeclarations = new(
+    public static readonly DuetsPadStreamKind TypeDeclarations = new(
         "type-declarations",
         id => $"type-declaration-events?sessionId={id}"
     );
 
-    private static readonly Dictionary<string, PadStreamKind> _byToken = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, DuetsPadStreamKind> _byToken = new(StringComparer.Ordinal)
     {
         [Canvas.WireToken] = Canvas,
         [Timeline.WireToken] = Timeline,
@@ -30,7 +30,7 @@ internal sealed class PadStreamKind
 
     private readonly Func<string, string> _buildRelativePath;
 
-    private PadStreamKind(string wireToken, Func<string, string> buildRelativePath)
+    private DuetsPadStreamKind(string wireToken, Func<string, string> buildRelativePath)
     {
         this.WireToken = wireToken;
         this._buildRelativePath = buildRelativePath;
@@ -40,17 +40,17 @@ internal sealed class PadStreamKind
     public string WireToken { get; }
 
     /// <summary>All known stream kinds, in declaration order.</summary>
-    public static IReadOnlyList<PadStreamKind> AllKinds => [Canvas, Timeline, TypeDeclarations];
+    public static IReadOnlyList<DuetsPadStreamKind> AllKinds => [Canvas, Timeline, TypeDeclarations];
 
     /// <summary>All known wire tokens, in declaration order.</summary>
     public static IReadOnlyList<string> AllTokens =>
         [Canvas.WireToken, Timeline.WireToken, TypeDeclarations.WireToken];
 
     /// <summary>
-    /// Parses a wire token string to its <see cref="PadStreamKind"/>.
+    /// Parses a wire token string to its <see cref="DuetsPadStreamKind"/>.
     /// Returns <see langword="false"/> when the token is not recognised.
     /// </summary>
-    public static bool TryParse(string? token, out PadStreamKind result)
+    public static bool TryParse(string? token, out DuetsPadStreamKind result)
     {
         if (token is not null && _byToken.TryGetValue(token, out var kind))
         {

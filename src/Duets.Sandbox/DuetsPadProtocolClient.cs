@@ -62,10 +62,10 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
             throw new InvalidOperationException($"SSE stream already exists: {streamId}");
         }
 
-        if (!PadStreamKind.TryParse(stream, out var streamKind))
+        if (!DuetsPadStreamKind.TryParse(stream, out var streamKind))
         {
             throw new ArgumentException(
-                $"stream must be one of: {string.Join(", ", PadStreamKind.AllTokens)}",
+                $"stream must be one of: {string.Join(", ", DuetsPadStreamKind.AllTokens)}",
                 nameof(stream)
             );
         }
