@@ -20,10 +20,10 @@ namespace Duets.Pad;
 /// </para>
 ///
 /// <para>
-/// Grouped sub-APIs are exposed as cached facade properties: <see cref="Canvas"/>,
-/// <see cref="Timeline"/>, and <see cref="TypeDeclarations"/>. Each facade holds only a
-/// back-reference to this session and forwards to the session's existing locked
-/// implementations. The facades own no state and no locks.
+/// Grouped sub-APIs are exposed as interface-typed properties: <see cref="Canvas"/>,
+/// <see cref="Timeline"/>, and <see cref="TypeDeclarations"/>. Each property returns
+/// <c>this</c> typed as the respective interface; the three interfaces are explicitly
+/// implemented by this class. The interfaces own no state and no locks.
 /// </para>
 ///
 /// <para>
@@ -34,33 +34,32 @@ namespace Duets.Pad;
 /// </para>
 ///
 /// <para>
-/// Internal ops — <see cref="Dump"/>, <see cref="CanvasAdd"/>, <see cref="CanvasSet"/>,
-/// <see cref="CanvasClear"/> — are called synchronously <em>from within</em> the eval call
-/// stack. They therefore MUST NOT re-acquire <c>_evalSemaphore</c> (deadlock). They share a
-/// separate <c>_stateLock</c> object that is also held by subscriber registration. This is the
-/// <em>only</em> lock used for state mutation + event dispatch, and it is never held across an
-/// I/O boundary.
+/// Internal ops — <see cref="Dump"/>, and the canvas interface members Add/Set/Clear —
+/// are called synchronously <em>from within</em> the eval call stack. They therefore MUST NOT
+/// re-acquire <c>_evalSemaphore</c> (deadlock). They share a separate <c>_stateLock</c>
+/// object that is also held by subscriber registration. This is the <em>only</em> lock used
+/// for state mutation + event dispatch, and it is never held across an I/O boundary.
 /// </para>
 ///
 /// <para>
 /// <b>Initial-event ordering</b><br/>
 /// When a new SSE subscriber connects, the initial event must reflect a state that is at least
 /// as new as any update the subscriber could subsequently receive. To guarantee this without a
-/// TOCTOU gap, <see cref="AddCanvasSubscriber"/> and <see cref="AddTimelineSubscriber"/> acquire
-/// <c>_stateLock</c> and, <em>while still holding it</em>, both register the writer and
-/// immediately enqueue the current-state initial event (<c>canvas.snapshot</c> /
-/// <c>timeline.reset</c>) to that writer. Subsequent mutations enqueue to all registered
-/// writers under the same lock. As a result a subscriber either (a) registers before a mutation
-/// and therefore sees the initial event followed by the update, or (b) registers after the
-/// mutation and sees the post-mutation initial event — neither can observe the post-mutation
-/// state first.
+/// TOCTOU gap, <see cref="ICanvasSurface.Subscribe"/> and
+/// <see cref="ITimelineSurface.Subscribe"/> acquire <c>_stateLock</c> and, <em>while still
+/// holding it</em>, both register the writer and immediately enqueue the current-state initial
+/// event (<c>canvas.snapshot</c> / <c>timeline.reset</c>) to that writer. Subsequent mutations
+/// enqueue to all registered writers under the same lock. As a result a subscriber either
+/// (a) registers before a mutation and therefore sees the initial event followed by the update,
+/// or (b) registers after the mutation and sees the post-mutation initial event — neither can
+/// observe the post-mutation state first.
 /// </para>
 ///
 /// <para>
 /// All enqueues use <see cref="ChannelWriter{T}.TryWrite"/> (non-blocking). A slow or
 /// disconnected subscriber is silently dropped if its channel is full; it should be removed
-/// and its channel completed via <see cref="RemoveCanvasSubscriber"/> /
-/// <see cref="RemoveTimelineSubscriber"/>.
+/// and its channel completed via <see cref="ICanvasSurface.Unsubscribe"/> /
+/// <see cref="ITimelineSurface.Unsubscribe"/>.
 /// </para>
 ///
 /// <para>
@@ -71,7 +70,11 @@ namespace Duets.Pad;
 /// and a DELETE or idle-eviction of the session affects all subscribers simultaneously.
 /// </para>
 /// </remarks>
-internal sealed class DuetsPadSession : IDisposable
+internal sealed class DuetsPadSession
+    : IDisposable,
+        ICanvasSurface,
+        ITimelineSurface,
+        ITypeDeclarationsSurface
 {
     // Serializes public eval entry; NOT re-acquired by internal ops.
     private readonly SemaphoreSlim _evalSemaphore = new(1, 1);
@@ -137,10 +140,6 @@ internal sealed class DuetsPadSession : IDisposable
         this._renderer = new DisplayRenderer(this.ObjectRenderers);
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
-        this.Canvas = new CanvasFacade(this);
-        this.Timeline = new TimelineFacade(this);
-        this.TypeDeclarations = new TypeDeclarationsFacade(this);
-
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
         // ui resolves the renderer live via CurrentRenderer, so it is not passed the instance here.
         SessionBootstrap.Bootstrap(this);
@@ -154,18 +153,17 @@ internal sealed class DuetsPadSession : IDisposable
     public DuetsSession DuetsSession { get; }
 
     /// <summary>Grouped canvas sub-API: state snapshot, mutation, and SSE subscriber registration.</summary>
-    public CanvasFacade Canvas { get; }
+    internal ICanvasSurface Canvas => this;
 
     /// <summary>Grouped timeline sub-API: state snapshot and SSE subscriber registration.</summary>
-    public TimelineFacade Timeline { get; }
+    internal ITimelineSurface Timeline => this;
 
     /// <summary>Grouped type-declaration SSE subscriber registration sub-API.</summary>
-    public TypeDeclarationsFacade TypeDeclarations { get; }
+    internal ITypeDeclarationsSurface TypeDeclarations => this;
 
-    // Backing state fields; exposed to the facades via internal properties.
-    internal CanvasState CanvasState { get; private set; } = CanvasState.Empty;
-
-    internal TimelineState TimelineState { get; private set; } = TimelineState.Empty;
+    // Backing state fields; accessed directly by internal methods and returned via interface State getters.
+    private CanvasState _canvasState = CanvasState.Empty;
+    private TimelineState _timelineState = TimelineState.Empty;
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
 
@@ -207,7 +205,7 @@ internal sealed class DuetsPadSession : IDisposable
         lock (this._stateLock)
         {
             this._interactionStore.ClearCanvasInteractions();
-            this.CanvasState = canvas;
+            this._canvasState = canvas;
         }
     }
 
@@ -221,7 +219,7 @@ internal sealed class DuetsPadSession : IDisposable
         lock (this._stateLock)
         {
             this._interactionStore.ClearTimelineInteractions();
-            this.TimelineState = timeline;
+            this._timelineState = timeline;
         }
     }
 
@@ -236,7 +234,7 @@ internal sealed class DuetsPadSession : IDisposable
         {
             this.ObjectRenderers = [.. objectRenderers];
 
-            // Rebuild the pipeline so subsequent renders (Dump/CanvasAdd/CanvasSet and the ui.*
+            // Rebuild the pipeline so subsequent renders (Dump/canvas.add/canvas.set and the ui.*
             // host object, which resolves the renderer live via CurrentRenderer) pick up the change.
             this._renderer = new DisplayRenderer(this.ObjectRenderers);
         }
@@ -259,15 +257,87 @@ internal sealed class DuetsPadSession : IDisposable
         }
     }
 
-    // SSE subscriber registration
-
     /// <summary>
-    /// Registers a Canvas SSE subscriber. A <c>canvas.snapshot</c> event for the current
-    /// Canvas state is enqueued to <paramref name="writer"/> before this method returns,
-    /// under the same lock used for all subsequent updates (see ordering guarantee in the
-    /// class remarks).
+    /// Returns <see langword="true"/> when at least one SSE subscriber (Canvas, Timeline, or
+    /// type-declaration) is currently registered. Used by the idle-eviction sweep to protect
+    /// sessions with live browser connections regardless of last-activity timestamp.
     /// </summary>
-    public Guid AddCanvasSubscriber(ChannelWriter<CanvasEventMessage?> writer)
+    internal bool HasActiveSubscribers =>
+        !this._canvasSubscribers.IsEmpty
+        || !this._timelineSubscribers.IsEmpty
+        || !this._typeDeclarationSubscribers.IsEmpty;
+
+    // Explicit ICanvasSurface implementation
+
+    CanvasState ICanvasSurface.State => this._canvasState;
+
+    void ICanvasSurface.Add(object? value)
+    {
+        try
+        {
+            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
+            if (isError)
+            {
+                this.AppendTimelineEntry("render-error", content);
+                return;
+            }
+
+            lock (this._stateLock)
+            {
+                var childIndex = this._canvasState.Root.Children.Count;
+                this._canvasState = this._canvasState.Append(content.Body);
+                this._interactionStore.AppendCanvasInteractions(content.Interactions, childIndex);
+                this.BroadcastCanvas();
+            }
+        }
+        catch
+        {
+            // Swallow.
+        }
+    }
+
+    void ICanvasSurface.Set(object? value)
+    {
+        try
+        {
+            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
+            if (isError)
+            {
+                this.AppendTimelineEntry("render-error", content);
+                return;
+            }
+
+            lock (this._stateLock)
+            {
+                this._canvasState = this._canvasState.Set(new ElementChildren(content.Body));
+                this._interactionStore.SetCanvasInteractions(content.Interactions, childIndex: 0);
+                this.BroadcastCanvas();
+            }
+        }
+        catch
+        {
+            // Swallow.
+        }
+    }
+
+    void ICanvasSurface.Clear()
+    {
+        try
+        {
+            lock (this._stateLock)
+            {
+                this._canvasState = CanvasState.Empty;
+                this._interactionStore.ClearCanvasInteractions();
+                this.BroadcastCanvas();
+            }
+        }
+        catch
+        {
+            // Swallow.
+        }
+    }
+
+    Guid ICanvasSurface.Subscribe(ChannelWriter<CanvasEventMessage?> writer)
     {
         if (writer is null)
         {
@@ -282,7 +352,7 @@ internal sealed class DuetsPadSession : IDisposable
             // runs under the same lock): either this registration completes before the clear (and
             // its writer is completed by the clear), or the clear runs first and this observes
             // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
-            // the SSE read loop at once; its finally RemoveCanvasSubscriber(Guid.Empty) is a
+            // the SSE read loop at once; its finally Canvas.Unsubscribe(Guid.Empty) is a
             // harmless no-op.
             if (this._disposed == 1)
             {
@@ -293,7 +363,7 @@ internal sealed class DuetsPadSession : IDisposable
             this._canvasSubscribers[key] = writer;
             writer.TryWrite(
                 CanvasEventMessage.Snapshot(
-                    this.CanvasState,
+                    this._canvasState,
                     this._interactionStore.CanvasInteractions
                 )
             );
@@ -302,16 +372,13 @@ internal sealed class DuetsPadSession : IDisposable
         return key;
     }
 
-    /// <summary>Removes the Canvas subscriber identified by <paramref name="key"/>.</summary>
-    public void RemoveCanvasSubscriber(Guid key) => this._canvasSubscribers.TryRemove(key, out _);
+    void ICanvasSurface.Unsubscribe(Guid key) => this._canvasSubscribers.TryRemove(key, out _);
 
-    /// <summary>
-    /// Registers a Timeline SSE subscriber. A <c>timeline.reset</c> event for the current
-    /// Timeline state is enqueued to <paramref name="writer"/> before this method returns,
-    /// under the same lock used for all subsequent updates (see ordering guarantee in the
-    /// class remarks).
-    /// </summary>
-    public Guid AddTimelineSubscriber(ChannelWriter<TimelineEventMessage?> writer)
+    // Explicit ITimelineSurface implementation
+
+    TimelineState ITimelineSurface.State => this._timelineState;
+
+    Guid ITimelineSurface.Subscribe(ChannelWriter<TimelineEventMessage?> writer)
     {
         if (writer is null)
         {
@@ -326,7 +393,7 @@ internal sealed class DuetsPadSession : IDisposable
             // runs under the same lock): either this registration completes before the clear (and
             // its writer is completed by the clear), or the clear runs first and this observes
             // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
-            // the SSE read loop at once; its finally RemoveTimelineSubscriber(Guid.Empty) is a
+            // the SSE read loop at once; its finally Timeline.Unsubscribe(Guid.Empty) is a
             // harmless no-op.
             if (this._disposed == 1)
             {
@@ -337,7 +404,7 @@ internal sealed class DuetsPadSession : IDisposable
             this._timelineSubscribers[key] = writer;
             writer.TryWrite(
                 TimelineEventMessage.Reset(
-                    this.TimelineState,
+                    this._timelineState,
                     "initial",
                     this._interactionStore.TimelineInteractions
                 )
@@ -347,17 +414,12 @@ internal sealed class DuetsPadSession : IDisposable
         return key;
     }
 
-    /// <summary>Removes the Timeline subscriber identified by <paramref name="key"/>.</summary>
-    public void RemoveTimelineSubscriber(Guid key) =>
+    void ITimelineSurface.Unsubscribe(Guid key) =>
         this._timelineSubscribers.TryRemove(key, out _);
 
-    /// <summary>
-    /// Registers a type-declaration SSE subscriber. The caller is responsible for
-    /// enqueuing existing declarations before or after this call (the route already does
-    /// this). Returns the registration key used to unregister via
-    /// <see cref="RemoveTypeDeclarationSubscriber"/>.
-    /// </summary>
-    internal Guid AddTypeDeclarationSubscriber(ChannelWriter<TypeDeclaration?> writer)
+    // Explicit ITypeDeclarationsSurface implementation
+
+    Guid ITypeDeclarationsSurface.Subscribe(ChannelWriter<TypeDeclaration?> writer)
     {
         if (writer is null)
         {
@@ -372,7 +434,7 @@ internal sealed class DuetsPadSession : IDisposable
             // its writer is completed by the clear), or the clear runs first and this observes
             // _disposed == 1 and self-completes the writer. There is no initial-snapshot enqueue
             // here — the route enqueues existing declarations. If disposed, completing the writer
-            // ends the SSE read loop at once; its finally RemoveTypeDeclarationSubscriber(Guid.Empty)
+            // ends the SSE read loop at once; its finally TypeDeclarations.Unsubscribe(Guid.Empty)
             // is a harmless no-op.
             if (this._disposed == 1)
             {
@@ -386,19 +448,8 @@ internal sealed class DuetsPadSession : IDisposable
         return key;
     }
 
-    /// <summary>Removes the type-declaration subscriber identified by <paramref name="key"/>.</summary>
-    internal void RemoveTypeDeclarationSubscriber(Guid key) =>
+    void ITypeDeclarationsSurface.Unsubscribe(Guid key) =>
         this._typeDeclarationSubscribers.TryRemove(key, out _);
-
-    /// <summary>
-    /// Returns <see langword="true"/> when at least one SSE subscriber (Canvas, Timeline, or
-    /// type-declaration) is currently registered. Used by the idle-eviction sweep to protect
-    /// sessions with live browser connections regardless of last-activity timestamp.
-    /// </summary>
-    internal bool HasActiveSubscribers =>
-        !this._canvasSubscribers.IsEmpty
-        || !this._timelineSubscribers.IsEmpty
-        || !this._typeDeclarationSubscribers.IsEmpty;
 
     // Internal ops — called from the eval call stack; must not acquire _evalSemaphore
 
@@ -417,81 +468,6 @@ internal sealed class DuetsPadSession : IDisposable
         catch
         {
             // Absolute last resort: swallow so eval is never disrupted.
-        }
-    }
-
-    /// <summary>
-    /// Renders <paramref name="value"/> and appends it to the Canvas. On render failure,
-    /// Canvas is unchanged and a Timeline output-error marker is appended. Never throws.
-    /// </summary>
-    internal void CanvasAdd(object? value)
-    {
-        try
-        {
-            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
-            if (isError)
-            {
-                this.AppendTimelineEntry("render-error", content);
-                return;
-            }
-
-            lock (this._stateLock)
-            {
-                var childIndex = this.CanvasState.Root.Children.Count;
-                this.CanvasState = this.CanvasState.Append(content.Body);
-                this._interactionStore.AppendCanvasInteractions(content.Interactions, childIndex);
-                this.BroadcastCanvas();
-            }
-        }
-        catch
-        {
-            // Swallow.
-        }
-    }
-
-    /// <summary>
-    /// Renders <paramref name="value"/> and replaces Canvas children with it. On render
-    /// failure, Canvas is unchanged and a Timeline output-error marker is appended. Never throws.
-    /// </summary>
-    internal void CanvasSet(object? value)
-    {
-        try
-        {
-            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
-            if (isError)
-            {
-                this.AppendTimelineEntry("render-error", content);
-                return;
-            }
-
-            lock (this._stateLock)
-            {
-                this.CanvasState = this.CanvasState.Set(new ElementChildren(content.Body));
-                this._interactionStore.SetCanvasInteractions(content.Interactions, childIndex: 0);
-                this.BroadcastCanvas();
-            }
-        }
-        catch
-        {
-            // Swallow.
-        }
-    }
-
-    /// <summary>Clears the Canvas and enqueues a snapshot event. Never throws.</summary>
-    internal void CanvasClear()
-    {
-        try
-        {
-            lock (this._stateLock)
-            {
-                this.CanvasState = CanvasState.Empty;
-                this._interactionStore.ClearCanvasInteractions();
-                this.BroadcastCanvas();
-            }
-        }
-        catch
-        {
-            // Swallow.
         }
     }
 
@@ -676,12 +652,12 @@ internal sealed class DuetsPadSession : IDisposable
             this.DuetsSession.ConsoleLogged -= this.OnConsoleLogged;
 
             // Complete + clear all subscriber channels under _stateLock so this teardown is
-            // serialized against Add*Subscriber (which tests _disposed and inserts under the same
+            // serialized against Subscribe calls (which test _disposed and insert under the same
             // lock). _disposed was already set to 1 above; holding _stateLock here provides the
-            // happens-before so any Add* either ran fully before this clear (and is completed by it)
-            // or observes _disposed == 1 and self-completes its writer. The lock guards only the
-            // dictionary complete/clear; DuetsSession.Dispose() runs outside it (never hold
-            // _stateLock across an I/O / teardown boundary).
+            // happens-before so any Subscribe either ran fully before this clear (and is completed
+            // by it) or observes _disposed == 1 and self-completes its writer. The lock guards
+            // only the dictionary complete/clear; DuetsSession.Dispose() runs outside it (never
+            // hold _stateLock across an I/O / teardown boundary).
             lock (this._stateLock)
             {
                 // Complete all subscriber channels so readers can drain.
@@ -787,8 +763,8 @@ internal sealed class DuetsPadSession : IDisposable
     {
         lock (this._stateLock)
         {
-            this.TimelineState = this.TimelineState.Append(reason, content.Body, this._clock());
-            var entry = this.TimelineState[^1];
+            this._timelineState = this._timelineState.Append(reason, content.Body, this._clock());
+            var entry = this._timelineState[^1];
             var interactions = this._interactionStore.CommitTimelineInteractions(
                 entry.Id,
                 content.Interactions
@@ -796,13 +772,13 @@ internal sealed class DuetsPadSession : IDisposable
 
             this.BroadcastTimeline(TimelineEventMessage.Append(entry, interactions));
 
-            if (this._timelineEntryLimit is int max && this.TimelineState.Count > max)
+            if (this._timelineEntryLimit is int max && this._timelineState.Count > max)
             {
-                var (trimmedTimeline, removeBeforeId, removedIds) = this.TimelineState.TrimToLimit(
+                var (trimmedTimeline, removeBeforeId, removedIds) = this._timelineState.TrimToLimit(
                     max
                 );
                 this._interactionStore.DiscardTimelineInteractions(removedIds);
-                this.TimelineState = trimmedTimeline;
+                this._timelineState = trimmedTimeline;
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
         }
@@ -815,7 +791,7 @@ internal sealed class DuetsPadSession : IDisposable
     private void BroadcastCanvas()
     {
         var msg = CanvasEventMessage.Replace(
-            this.CanvasState,
+            this._canvasState,
             this._interactionStore.CanvasInteractions
         );
         foreach (var (_, writer) in this._canvasSubscribers)

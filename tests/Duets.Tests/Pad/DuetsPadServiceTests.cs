@@ -608,8 +608,8 @@ public sealed class DuetsPadServiceTests
 
                 // The subscriber must be reaped without any further client activity. With
                 // write-driven detection this happens on the next keepalive write, which throws
-                // a broken-pipe exception that ends the SSE loop and runs RemoveCanvasSubscriber
-                // in its finally. Poll a bounded number of keepalive intervals.
+                // a broken-pipe exception that ends the SSE loop and runs the canvas
+                // Unsubscribe in its finally. Poll a bounded number of keepalive intervals.
                 var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
                 while (session.HasActiveSubscribers && DateTime.UtcNow < deadline)
                 {
