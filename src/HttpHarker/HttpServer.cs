@@ -8,11 +8,15 @@ namespace HttpHarker;
 /// </summary>
 public class HttpServer(string prefix) : IDisposable
 {
-    private readonly HttpListener _listener = new()
-    {
-        Prefixes = { prefix },
-        IgnoreWriteExceptions = true,
-    };
+    // IgnoreWriteExceptions is left at its default (false) on purpose. When true, the listener
+    // swallows the exception raised by a write to a client that has disconnected, so the write
+    // appears to succeed (and, on a chunked stream whose send buffer fills, can block
+    // indefinitely). Long-lived streaming handlers (e.g. SSE) rely on that write throwing as
+    // their sole disconnect signal: it is what lets their read loop break and run teardown,
+    // releasing the subscriber registration, keepalive timer, channel, and response. Swallowing
+    // it would leak those resources for the lifetime of the process. Short responses tolerate the
+    // thrown exception: it surfaces into HandleAsync's catch, which logs and closes the response.
+    private readonly HttpListener _listener = new() { Prefixes = { prefix } };
 
     private readonly List<Func<HttpListenerContext, Func<Task>, Task>> _middleware = [];
 

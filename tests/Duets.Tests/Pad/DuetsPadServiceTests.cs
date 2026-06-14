@@ -539,6 +539,93 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    // SSE disconnect reaping
+
+    [Fact]
+    public async Task Sse_subscriber_is_reaped_after_client_disconnect()
+    {
+        DuetsPadService? padService = null;
+
+        await DuetsServerFixture.RunAsync(
+            server =>
+            {
+                padService = server
+                    .UseContentTypeDetection()
+                    .UseDuetsPad(
+                        "/",
+                        opts =>
+                        {
+                            opts.SessionFactory = () =>
+                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                            opts.MonacoLoader = AssetSources.From(_ =>
+                                Task.FromResult("// monaco")
+                            );
+                            opts.TablerCss = AssetSources.From(_ =>
+                                Task.FromResult("/* tabler */")
+                            );
+                            opts.TablerIconsCss = AssetSources.From(_ =>
+                                Task.FromResult("/* icons */")
+                            );
+                            opts.TablerIconsFont = AssetSources.FromBytes(_ =>
+                                Task.FromResult("wOF2"u8.ToArray())
+                            );
+                            // Short keepalive so the write-driven disconnect detector fires
+                            // promptly: the dead client is only observed on the next keepalive write.
+                            opts.KeepAliveInterval = TimeSpan.FromMilliseconds(200);
+                        }
+                    );
+            },
+            async (client, prefix) =>
+            {
+                Assert.NotNull(padService);
+
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var sessionGuid = Guid.Parse(sessionId);
+                var session = padService!.TryGetSession(sessionGuid);
+                Assert.NotNull(session);
+
+                // Open a real SSE stream on its own client so dropping it does not disturb others.
+                using var sseClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+
+                var sseResponse = await sseClient.GetAsync(
+                    prefix + $"sessions/{sessionId}/canvas-events",
+                    HttpCompletionOption.ResponseHeadersRead
+                );
+                sseResponse.EnsureSuccessStatusCode();
+
+                // Read the initial snapshot so we know the subscriber is registered and streaming.
+                var sseStream = await sseResponse.Content.ReadAsStreamAsync();
+                var sseReader = new StreamReader(sseStream);
+                var snapshot = await ReadNextSseDataAsync(sseReader);
+                Assert.Equal(CanvasEventTypes.Snapshot, snapshot.GetProperty("type").GetString());
+                Assert.True(session!.HasActiveSubscribers);
+
+                // Simulate the browser tab closing/reloading: dispose the response and stream so
+                // the underlying TCP connection is torn down (FIN), exactly as a closed tab does.
+                sseReader.Dispose();
+                await sseStream.DisposeAsync();
+                sseResponse.Dispose();
+
+                // The subscriber must be reaped without any further client activity. With
+                // write-driven detection this happens on the next keepalive write, which throws
+                // a broken-pipe exception that ends the SSE loop and runs RemoveCanvasSubscriber
+                // in its finally. Poll a bounded number of keepalive intervals.
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                while (session.HasActiveSubscribers && DateTime.UtcNow < deadline)
+                {
+                    await Task.Delay(50);
+                }
+
+                Assert.False(
+                    session.HasActiveSubscribers,
+                    "SSE subscriber must be reaped after the client disconnects; otherwise the "
+                        + "subscriber, keepalive timer, channel, and response leak for the process "
+                        + "lifetime."
+                );
+            }
+        );
+    }
+
     // POST /sessions/{sessionId}/eval — unknown session
 
     [Fact]
