@@ -498,7 +498,7 @@ public sealed class DuetsPadServiceTests
                 Assert.NotNull(session);
 
                 var subChannel = Channel.CreateUnbounded<CanvasEventMessage?>();
-                var subKey = session!.AddCanvasSubscriber(subChannel.Writer);
+                var subKey = session!.Canvas.Subscribe(subChannel.Writer);
 
                 Assert.True(session.HasActiveSubscribers);
 
@@ -519,7 +519,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Detach the subscriber. HasActiveSubscribers is now false.
-                session.RemoveCanvasSubscriber(subKey);
+                session.Canvas.Unsubscribe(subKey);
                 Assert.False(session.HasActiveSubscribers);
 
                 // Now with no active subscriber, sweeping past the threshold must evict it.

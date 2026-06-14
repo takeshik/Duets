@@ -16,11 +16,11 @@ internal sealed class CanvasApi(DuetsPadSession session)
         session ?? throw new ArgumentNullException(nameof(session));
 
     /// <summary>Appends a rendered node to the canvas. (JS: <c>canvas.add</c>)</summary>
-    public void Add(object? value) => this._session.CanvasAdd(value);
+    public void Add(object? value) => this._session.Canvas.Add(value);
 
     /// <summary>Replaces the entire canvas with a single rendered node. (JS: <c>canvas.set</c>)</summary>
-    public void Set(object? value) => this._session.CanvasSet(value);
+    public void Set(object? value) => this._session.Canvas.Set(value);
 
     /// <summary>Clears the canvas. (JS: <c>canvas.clear</c>)</summary>
-    public void Clear() => this._session.CanvasClear();
+    public void Clear() => this._session.Canvas.Clear();
 }

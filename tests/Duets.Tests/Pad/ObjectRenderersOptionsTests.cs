@@ -50,7 +50,7 @@ public sealed class ObjectRenderersOptionsTests
         var result = await session.EvaluateAsync("dump(\"SENTINEL\")");
 
         Assert.True(result.Ok);
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("RENDERED", body.Value);
@@ -68,7 +68,7 @@ public sealed class ObjectRenderersOptionsTests
 
         await session.EvaluateAsync("canvas.add(\"SENTINEL\")");
 
-        var child = Assert.Single(session.Canvas.Root.Children);
+        var child = Assert.Single(session.Canvas.State.Root.Children);
         var text = Assert.IsType<Text>(child);
         Assert.Equal("RENDERED", text.Value);
     }
@@ -85,7 +85,7 @@ public sealed class ObjectRenderersOptionsTests
 
         await session.EvaluateAsync("dump(\"SENTINEL\")");
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("SECOND", body.Value);
     }
@@ -98,7 +98,7 @@ public sealed class ObjectRenderersOptionsTests
 
         await session.EvaluateAsync("dump(\"plain\")");
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("plain", body.Value);
     }
@@ -117,7 +117,7 @@ public sealed class ObjectRenderersOptionsTests
         var result = await session.EvaluateAsync("dump(\"SENTINEL\")");
 
         Assert.True(result.Ok);
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("ORIGINAL", body.Value);

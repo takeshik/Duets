@@ -228,8 +228,8 @@ public sealed class DuetsPadService : IDisposable
             ctx,
             session,
             this._options.KeepAliveInterval,
-            setup: session.AddCanvasSubscriber,
-            teardown: session.RemoveCanvasSubscriber,
+            setup: session.Canvas.Subscribe,
+            teardown: session.Canvas.Unsubscribe,
             formatData: SseSerializer.Serialize
         );
     }
@@ -249,8 +249,8 @@ public sealed class DuetsPadService : IDisposable
             ctx,
             session,
             this._options.KeepAliveInterval,
-            setup: session.AddTimelineSubscriber,
-            teardown: session.RemoveTimelineSubscriber,
+            setup: session.Timeline.Subscribe,
+            teardown: session.Timeline.Unsubscribe,
             formatData: SseSerializer.Serialize
         );
     }
@@ -287,7 +287,7 @@ public sealed class DuetsPadService : IDisposable
 
                 // Register with the session so that Dispose() completes the channel, which
                 // terminates the read loop and allows the finally block to run.
-                var key = session.AddTypeDeclarationSubscriber(writer);
+                var key = session.TypeDeclarations.Subscribe(writer);
 
                 foreach (var decl in declarations.GetDeclarations())
                 {
@@ -298,7 +298,7 @@ public sealed class DuetsPadService : IDisposable
             },
             teardown: key =>
             {
-                session.RemoveTypeDeclarationSubscriber(key);
+                session.TypeDeclarations.Unsubscribe(key);
                 // Unhook after removing the session subscriber so that Dispose() completing
                 // the channel writer does not race with a final handler invocation.
                 if (handler is not null)

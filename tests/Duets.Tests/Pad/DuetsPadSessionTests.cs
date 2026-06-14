@@ -93,7 +93,7 @@ public sealed class DuetsPadSessionTests
         Assert.True(result.Ok);
         Assert.Equal("x", result.Result);
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
 
         // Body should be a Text node with value "x"
@@ -111,7 +111,7 @@ public sealed class DuetsPadSessionTests
         Assert.True(result.Ok);
         Assert.Equal("3", result.Result);
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         // The body is rendered from the number 3 — DefaultObjectRenderer produces a Text node.
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("3", body.Value);
@@ -137,7 +137,7 @@ public sealed class DuetsPadSessionTests
         await session.EvaluateAsync("""dump("first")""");
         await session.EvaluateAsync("""dump("second")""");
 
-        Assert.Equal(2, session.Timeline.Count);
+        Assert.Equal(2, session.Timeline.State.Count);
     }
 
     // dump per-call options override
@@ -169,7 +169,7 @@ public sealed class DuetsPadSessionTests
 
         Assert.True(result.Ok);
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
 
         // The outer array is rendered at depth 0; inner arrays at depth 1 should be "[…]".
@@ -191,10 +191,10 @@ public sealed class DuetsPadSessionTests
         // Second dump with no override — session default (MaxDepth=5) applies, inner array renders.
         await session.EvaluateAsync("dump([[1, 2]])");
 
-        Assert.Equal(2, session.Timeline.Count);
+        Assert.Equal(2, session.Timeline.State.Count);
 
-        var first = session.Timeline[0];
-        var second = session.Timeline[1];
+        var first = session.Timeline.State[0];
+        var second = session.Timeline.State[1];
 
         var firstRows = AssertScalarTableRows(first.Body);
         Assert.Equal(new Text("[…]"), GetScalarCellValue(Assert.Single(firstRows)));
@@ -215,7 +215,7 @@ public sealed class DuetsPadSessionTests
         var result = await session.EvaluateAsync("dump([1, 2, 3], { maxItems: -1 })");
 
         Assert.True(result.Ok, $"dump threw: {result.Error}");
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
 
         // All 3 items must be visible — the default MaxItems (1000) applies.
@@ -232,7 +232,7 @@ public sealed class DuetsPadSessionTests
         var result = await session.EvaluateAsync("dump([1, 2, 3], { maxDepth: -1 })");
 
         Assert.True(result.Ok, $"dump threw: {result.Error}");
-        Assert.Single(session.Timeline);
+        Assert.Single(session.Timeline.State);
     }
 
     // console.log
@@ -244,7 +244,7 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("""console.log("hello")""");
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("console", entry.Reason);
 
         var body = Assert.IsType<Element>(entry.Body);
@@ -266,10 +266,10 @@ public sealed class DuetsPadSessionTests
         // entry produced by the side-effect handler should appear.
         await session.EvaluateAsync("""console.log("x")""", appendResult: true);
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("console", entry.Reason);
         // No spurious "evaluation" entry.
-        Assert.DoesNotContain(session.Timeline, e => e.Reason == "evaluation");
+        Assert.DoesNotContain(session.Timeline.State, e => e.Reason == "evaluation");
     }
 
     // canvas.add / canvas.set / canvas.clear
@@ -281,7 +281,7 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("""canvas.add(ui.label("hi"))""");
 
-        Assert.Single(session.Canvas.Root.Children);
+        Assert.Single(session.Canvas.State.Root.Children);
     }
 
     [Fact]
@@ -291,10 +291,10 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("""canvas.add(ui.label("a"))""");
         await session.EvaluateAsync("""canvas.add(ui.label("b"))""");
-        Assert.Equal(2, session.Canvas.Root.Children.Count);
+        Assert.Equal(2, session.Canvas.State.Root.Children.Count);
 
         await session.EvaluateAsync("""canvas.set(ui.rawHtml("<b>x</b>"))""");
-        Assert.Single(session.Canvas.Root.Children);
+        Assert.Single(session.Canvas.State.Root.Children);
     }
 
     [Fact]
@@ -303,10 +303,10 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         await session.EvaluateAsync("""canvas.add(ui.label("hi"))""");
-        Assert.Single(session.Canvas.Root.Children);
+        Assert.Single(session.Canvas.State.Root.Children);
 
         await session.EvaluateAsync("canvas.clear()");
-        Assert.Empty(session.Canvas.Root.Children);
+        Assert.Empty(session.Canvas.State.Root.Children);
     }
 
     [Fact]
@@ -314,7 +314,7 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
         _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync(
@@ -332,7 +332,7 @@ public sealed class DuetsPadSessionTests
         var invoke = await session.InvokeInteractionAsync(interaction.HandlerId);
 
         Assert.True(invoke.Ok, invoke.Error);
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
         var body = Assert.IsType<Text>(entry.Body);
         Assert.Equal("clicked", body.Value);
@@ -343,7 +343,7 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
         _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
@@ -356,7 +356,7 @@ public sealed class DuetsPadSessionTests
 
         Assert.False(invoke.Ok);
         Assert.True(invoke.Stale);
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("handler-error", entry.Reason);
     }
 
@@ -365,7 +365,7 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
         _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
@@ -378,7 +378,7 @@ public sealed class DuetsPadSessionTests
 
         Assert.False(invoke.Ok);
         Assert.True(invoke.Stale);
-        Assert.Equal("handler-error", Assert.Single(session.Timeline).Reason);
+        Assert.Equal("handler-error", Assert.Single(session.Timeline.State).Reason);
     }
 
     [Fact]
@@ -386,7 +386,7 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
         _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync("""dump(ui.button("Run", () => {}))""");
@@ -401,7 +401,7 @@ public sealed class DuetsPadSessionTests
 
         Assert.False(invoke.Ok);
         Assert.True(invoke.Stale);
-        Assert.Equal("handler-error", Assert.Single(session.Timeline).Reason);
+        Assert.Equal("handler-error", Assert.Single(session.Timeline.State).Reason);
     }
 
     // Render failure: no exception escapes, output-error marker appended
@@ -427,7 +427,7 @@ public sealed class DuetsPadSessionTests
         var exception = Record.Exception(() => session.Dump(sentinel, DumpOptions.Default));
 
         Assert.Null(exception);
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
 
         var body = Assert.IsType<Element>(entry.Body);
         var classAttr = body.Attributes.First(a => a.Key == "class").Value;
@@ -473,14 +473,14 @@ public sealed class DuetsPadSessionTests
         var sentinel = new object();
         session.SetObjectRenderers([new ThrowingRenderer(sentinel)]);
 
-        var canvasBefore = session.Canvas;
-        var exception = Record.Exception(() => session.CanvasAdd(sentinel));
+        var canvasBefore = session.Canvas.State;
+        var exception = Record.Exception(() => session.Canvas.Add(sentinel));
 
         Assert.Null(exception);
         // Canvas must be unchanged.
-        Assert.Equal(canvasBefore, session.Canvas);
+        Assert.Equal(canvasBefore, session.Canvas.State);
         // A render-error Timeline entry should have been appended.
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("render-error", entry.Reason);
     }
 
@@ -535,7 +535,7 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("1 + 2", appendResult: true);
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("evaluation", entry.Reason);
 
         var body = Assert.IsType<Text>(entry.Body);
@@ -550,7 +550,7 @@ public sealed class DuetsPadSessionTests
         // Default (Editor path) — no evaluation entry.
         await session.EvaluateAsync("1 + 2");
 
-        Assert.Empty(session.Timeline);
+        Assert.Empty(session.Timeline.State);
     }
 
     [Fact]
@@ -561,7 +561,7 @@ public sealed class DuetsPadSessionTests
         // Editor path with a dump call — only the dump entry should appear.
         await session.EvaluateAsync("""dump("x")""");
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal("dump", entry.Reason);
     }
 
@@ -575,7 +575,7 @@ public sealed class DuetsPadSessionTests
         // is used here to reliably exercise the ScriptValue.Undefined skip path.
         await session.EvaluateAsync("void 0", appendResult: true);
 
-        Assert.Empty(session.Timeline);
+        Assert.Empty(session.Timeline.State);
     }
 
     [Fact]
@@ -588,7 +588,7 @@ public sealed class DuetsPadSessionTests
         // so Null must be treated the same as Undefined and produce no "evaluation" entry.
         await session.EvaluateAsync("null", appendResult: true);
 
-        Assert.Empty(session.Timeline);
+        Assert.Empty(session.Timeline.State);
     }
 
     [Fact]
@@ -598,13 +598,13 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("""dump("a"); 1 + 2""", appendResult: true);
 
-        Assert.Equal(2, session.Timeline.Count);
-        Assert.Equal("dump", session.Timeline[0].Reason);
-        var dumpBody = Assert.IsType<Text>(session.Timeline[0].Body);
+        Assert.Equal(2, session.Timeline.State.Count);
+        Assert.Equal("dump", session.Timeline.State[0].Reason);
+        var dumpBody = Assert.IsType<Text>(session.Timeline.State[0].Body);
         Assert.Equal("a", dumpBody.Value);
 
-        Assert.Equal("evaluation", session.Timeline[1].Reason);
-        var evalBody = Assert.IsType<Text>(session.Timeline[1].Body);
+        Assert.Equal("evaluation", session.Timeline.State[1].Reason);
+        var evalBody = Assert.IsType<Text>(session.Timeline.State[1].Body);
         Assert.Equal("3", evalBody.Value);
     }
 
@@ -616,7 +616,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
 
         // Consume the initial snapshot so the channel is not already complete.
         await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
@@ -642,7 +642,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
 
         // Consume the initial reset.
         await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
@@ -666,7 +666,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<TypeDeclaration?>();
-        session.AddTypeDeclarationSubscriber(channel.Writer);
+        session.TypeDeclarations.Subscribe(channel.Writer);
 
         session.Dispose();
 
@@ -692,23 +692,23 @@ public sealed class DuetsPadSessionTests
 
         // Canvas subscriber.
         var canvasChannel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        var canvasKey = session.AddCanvasSubscriber(canvasChannel.Writer);
+        var canvasKey = session.Canvas.Subscribe(canvasChannel.Writer);
         Assert.True(session.HasActiveSubscribers);
-        session.RemoveCanvasSubscriber(canvasKey);
+        session.Canvas.Unsubscribe(canvasKey);
         Assert.False(session.HasActiveSubscribers);
 
         // Timeline subscriber.
         var timelineChannel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        var timelineKey = session.AddTimelineSubscriber(timelineChannel.Writer);
+        var timelineKey = session.Timeline.Subscribe(timelineChannel.Writer);
         Assert.True(session.HasActiveSubscribers);
-        session.RemoveTimelineSubscriber(timelineKey);
+        session.Timeline.Unsubscribe(timelineKey);
         Assert.False(session.HasActiveSubscribers);
 
         // Type-declaration subscriber.
         var declChannel = Channel.CreateUnbounded<TypeDeclaration?>();
-        var declKey = session.AddTypeDeclarationSubscriber(declChannel.Writer);
+        var declKey = session.TypeDeclarations.Subscribe(declChannel.Writer);
         Assert.True(session.HasActiveSubscribers);
-        session.RemoveTypeDeclarationSubscriber(declKey);
+        session.TypeDeclarations.Unsubscribe(declKey);
         Assert.False(session.HasActiveSubscribers);
     }
 
@@ -764,7 +764,7 @@ public sealed class DuetsPadSessionTests
         current = t1;
 
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
 
         Assert.Equal(t1, session.LastActivityUtc);
     }
@@ -780,7 +780,7 @@ public sealed class DuetsPadSessionTests
         current = t1;
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
 
         Assert.Equal(t1, session.LastActivityUtc);
     }
@@ -793,7 +793,7 @@ public sealed class DuetsPadSessionTests
 
         await session.EvaluateAsync("""dump("hello")""");
 
-        var entry = Assert.Single(session.Timeline);
+        var entry = Assert.Single(session.Timeline.State);
         Assert.Equal(t0, entry.Timestamp);
     }
 
@@ -820,7 +820,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.AddCanvasSubscriber(channel.Writer);
+        session.Canvas.Subscribe(channel.Writer);
 
         // First message: canvas.snapshot of empty canvas.
         var msg1 = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
@@ -842,7 +842,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
 
         // First message: timeline.reset of empty timeline.
         var msg1 = Assert.IsType<ResetMessage>(
@@ -915,7 +915,7 @@ public sealed class DuetsPadSessionTests
         session.Dispose();
 
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        var key = session.AddCanvasSubscriber(channel.Writer);
+        var key = session.Canvas.Subscribe(channel.Writer);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -928,7 +928,7 @@ public sealed class DuetsPadSessionTests
         session.Dispose();
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        var key = session.AddTimelineSubscriber(channel.Writer);
+        var key = session.Timeline.Subscribe(channel.Writer);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -941,7 +941,7 @@ public sealed class DuetsPadSessionTests
         session.Dispose();
 
         var channel = Channel.CreateUnbounded<TypeDeclaration?>();
-        var key = session.AddTypeDeclarationSubscriber(channel.Writer);
+        var key = session.TypeDeclarations.Subscribe(channel.Writer);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -998,7 +998,7 @@ public sealed class DuetsPadSessionTests
             var thread = new Thread(() =>
             {
                 barrier.SignalAndWait();
-                session.AddCanvasSubscriber(writer);
+                session.Canvas.Subscribe(writer);
             })
             {
                 IsBackground = true,
@@ -1071,7 +1071,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionAsync();
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
         // Drain the initial reset.
         channel.Reader.TryRead(out _);
 
@@ -1082,7 +1082,7 @@ public sealed class DuetsPadSessionTests
             await session.EvaluateAsync($"""dump("{i}")""");
         }
 
-        Assert.Equal(appendCount, session.Timeline.Count);
+        Assert.Equal(appendCount, session.Timeline.State.Count);
 
         // Drain all events; none should be timeline.trim.
         var events = new List<TimelineEventMessage?>();
@@ -1107,11 +1107,11 @@ public sealed class DuetsPadSessionTests
             await session.EvaluateAsync($"""dump("{i}")""");
         }
 
-        Assert.Equal(limit, session.Timeline.Count);
+        Assert.Equal(limit, session.Timeline.State.Count);
         // The most recent 3 entries (ids 4, 5, 6) are retained; the oldest are gone.
-        Assert.Equal(4L, session.Timeline[0].Id);
-        Assert.Equal(5L, session.Timeline[1].Id);
-        Assert.Equal(6L, session.Timeline[2].Id);
+        Assert.Equal(4L, session.Timeline.State[0].Id);
+        Assert.Equal(5L, session.Timeline.State[1].Id);
+        Assert.Equal(6L, session.Timeline.State[2].Id);
     }
 
     [Fact]
@@ -1121,7 +1121,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionWithLimitAsync(limit);
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
         // Drain initial reset.
         channel.Reader.TryRead(out _);
 
@@ -1157,7 +1157,7 @@ public sealed class DuetsPadSessionTests
         using var session = await CreatePadSessionWithLimitAsync(limit);
 
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
         // Drain initial reset.
         channel.Reader.TryRead(out _);
 
@@ -1202,12 +1202,12 @@ public sealed class DuetsPadSessionTests
         }
 
         // At this point Timeline has 2 entries; NextId must be limit+1 (= 3), not reset.
-        Assert.Equal(limit + 1, (int)session.Timeline.NextId);
+        Assert.Equal(limit + 1, (int)session.Timeline.State.NextId);
 
         // A further append uses the next id (= 3), not 0 or 1.
         await session.EvaluateAsync("""dump("after-trim")""");
 
-        var lastId = session.Timeline[^1].Id;
+        var lastId = session.Timeline.State[^1].Id;
         Assert.Equal(limit + 1L, lastId);
     }
 
@@ -1223,11 +1223,11 @@ public sealed class DuetsPadSessionTests
             await session.EvaluateAsync($"""dump("{i}")""");
         }
 
-        Assert.Equal(limit, session.Timeline.Count);
+        Assert.Equal(limit, session.Timeline.State.Count);
 
         // A subscriber attaching now should receive a reset reflecting only the trimmed entries.
         var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.AddTimelineSubscriber(channel.Writer);
+        session.Timeline.Subscribe(channel.Writer);
 
         var reset = Assert.IsType<ResetMessage>(
             await channel.Reader.ReadAsync(TestContext.Current.CancellationToken)
@@ -1236,7 +1236,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal(limit, reset.State.Count);
 
         // The reset state must NOT include entries that were trimmed.
-        var lowestRetainedId = session.Timeline[0].Id;
+        var lowestRetainedId = session.Timeline.State[0].Id;
         Assert.All(reset.State, e => Assert.True(e.Id >= lowestRetainedId));
     }
 }

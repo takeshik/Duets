@@ -20,6 +20,13 @@ namespace Duets.Pad;
 /// </para>
 ///
 /// <para>
+/// Grouped sub-APIs are exposed as cached facade properties: <see cref="Canvas"/>,
+/// <see cref="Timeline"/>, and <see cref="TypeDeclarations"/>. Each facade holds only a
+/// back-reference to this session and forwards to the session's existing locked
+/// implementations. The facades own no state and no locks.
+/// </para>
+///
+/// <para>
 /// <b>Thread-safety and locking model</b><br/>
 /// Public eval entry (<see cref="EvaluateAsync"/>) is serialized by <c>_evalSemaphore</c>
 /// (SemaphoreSlim(1,1)). This is intentional: <see cref="DuetsSession"/> itself throws on
@@ -130,6 +137,10 @@ internal sealed class DuetsPadSession : IDisposable
         this._renderer = new DisplayRenderer(this.ObjectRenderers);
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
+        this.Canvas = new CanvasFacade(this);
+        this.Timeline = new TimelineFacade(this);
+        this.TypeDeclarations = new TypeDeclarationsFacade(this);
+
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
         // ui resolves the renderer live via CurrentRenderer, so it is not passed the instance here.
         SessionBootstrap.Bootstrap(this);
@@ -142,9 +153,19 @@ internal sealed class DuetsPadSession : IDisposable
 
     public DuetsSession DuetsSession { get; }
 
-    public CanvasState Canvas { get; private set; } = CanvasState.Empty;
+    /// <summary>Grouped canvas sub-API: state snapshot, mutation, and SSE subscriber registration.</summary>
+    public CanvasFacade Canvas { get; }
 
-    public TimelineState Timeline { get; private set; } = TimelineState.Empty;
+    /// <summary>Grouped timeline sub-API: state snapshot and SSE subscriber registration.</summary>
+    public TimelineFacade Timeline { get; }
+
+    /// <summary>Grouped type-declaration SSE subscriber registration sub-API.</summary>
+    public TypeDeclarationsFacade TypeDeclarations { get; }
+
+    // Backing state fields; exposed to the facades via internal properties.
+    internal CanvasState CanvasState { get; private set; } = CanvasState.Empty;
+
+    internal TimelineState TimelineState { get; private set; } = TimelineState.Empty;
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
 
@@ -186,7 +207,7 @@ internal sealed class DuetsPadSession : IDisposable
         lock (this._stateLock)
         {
             this._interactionStore.ClearCanvasInteractions();
-            this.Canvas = canvas;
+            this.CanvasState = canvas;
         }
     }
 
@@ -200,7 +221,7 @@ internal sealed class DuetsPadSession : IDisposable
         lock (this._stateLock)
         {
             this._interactionStore.ClearTimelineInteractions();
-            this.Timeline = timeline;
+            this.TimelineState = timeline;
         }
     }
 
@@ -271,7 +292,10 @@ internal sealed class DuetsPadSession : IDisposable
 
             this._canvasSubscribers[key] = writer;
             writer.TryWrite(
-                CanvasEventMessage.Snapshot(this.Canvas, this._interactionStore.CanvasInteractions)
+                CanvasEventMessage.Snapshot(
+                    this.CanvasState,
+                    this._interactionStore.CanvasInteractions
+                )
             );
         }
 
@@ -313,7 +337,7 @@ internal sealed class DuetsPadSession : IDisposable
             this._timelineSubscribers[key] = writer;
             writer.TryWrite(
                 TimelineEventMessage.Reset(
-                    this.Timeline,
+                    this.TimelineState,
                     "initial",
                     this._interactionStore.TimelineInteractions
                 )
@@ -413,8 +437,8 @@ internal sealed class DuetsPadSession : IDisposable
 
             lock (this._stateLock)
             {
-                var childIndex = this.Canvas.Root.Children.Count;
-                this.Canvas = this.Canvas.Append(content.Body);
+                var childIndex = this.CanvasState.Root.Children.Count;
+                this.CanvasState = this.CanvasState.Append(content.Body);
                 this._interactionStore.AppendCanvasInteractions(content.Interactions, childIndex);
                 this.BroadcastCanvas();
             }
@@ -442,7 +466,7 @@ internal sealed class DuetsPadSession : IDisposable
 
             lock (this._stateLock)
             {
-                this.Canvas = this.Canvas.Set(new ElementChildren(content.Body));
+                this.CanvasState = this.CanvasState.Set(new ElementChildren(content.Body));
                 this._interactionStore.SetCanvasInteractions(content.Interactions, childIndex: 0);
                 this.BroadcastCanvas();
             }
@@ -460,7 +484,7 @@ internal sealed class DuetsPadSession : IDisposable
         {
             lock (this._stateLock)
             {
-                this.Canvas = CanvasState.Empty;
+                this.CanvasState = CanvasState.Empty;
                 this._interactionStore.ClearCanvasInteractions();
                 this.BroadcastCanvas();
             }
@@ -763,8 +787,8 @@ internal sealed class DuetsPadSession : IDisposable
     {
         lock (this._stateLock)
         {
-            this.Timeline = this.Timeline.Append(reason, content.Body, this._clock());
-            var entry = this.Timeline[^1];
+            this.TimelineState = this.TimelineState.Append(reason, content.Body, this._clock());
+            var entry = this.TimelineState[^1];
             var interactions = this._interactionStore.CommitTimelineInteractions(
                 entry.Id,
                 content.Interactions
@@ -772,11 +796,13 @@ internal sealed class DuetsPadSession : IDisposable
 
             this.BroadcastTimeline(TimelineEventMessage.Append(entry, interactions));
 
-            if (this._timelineEntryLimit is int max && this.Timeline.Count > max)
+            if (this._timelineEntryLimit is int max && this.TimelineState.Count > max)
             {
-                var (trimmedTimeline, removeBeforeId, removedIds) = this.Timeline.TrimToLimit(max);
+                var (trimmedTimeline, removeBeforeId, removedIds) = this.TimelineState.TrimToLimit(
+                    max
+                );
                 this._interactionStore.DiscardTimelineInteractions(removedIds);
-                this.Timeline = trimmedTimeline;
+                this.TimelineState = trimmedTimeline;
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
         }
@@ -789,7 +815,7 @@ internal sealed class DuetsPadSession : IDisposable
     private void BroadcastCanvas()
     {
         var msg = CanvasEventMessage.Replace(
-            this.Canvas,
+            this.CanvasState,
             this._interactionStore.CanvasInteractions
         );
         foreach (var (_, writer) in this._canvasSubscribers)
