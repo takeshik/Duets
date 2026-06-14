@@ -132,7 +132,14 @@ public class HttpServer(string prefix) : IDisposable
                 try
                 {
                     var ctx = await this._listener.GetContextAsync();
-                    await this.HandleAsync(ctx);
+
+                    // Dispatch the request without awaiting it so the worker returns to
+                    // GetContextAsync immediately. Awaiting here would pin the worker for the
+                    // entire response lifetime; a long-lived response (e.g. an SSE stream) would
+                    // then occupy a worker indefinitely, and once all workers were so occupied no
+                    // new connection could be accepted. HandleAsync already catches and reports
+                    // its own exceptions, so the request handling is self-contained.
+                    this.HandleAsync(ctx).Forget();
                 }
                 catch (HttpListenerException) when (!this._listener.IsListening)
                 {
