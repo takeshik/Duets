@@ -150,7 +150,7 @@ internal sealed class DuetsPadSession : IDisposable
     /// <summary>
     /// Session-default <see cref="Rendering.DumpOptions" /> applied to all render entry points
     /// (<c>dump</c>, <c>canvas</c>, <c>ui</c>). The <c>dump(value, opts?)</c> function accepts
-    /// a per-call override merged over this value via <see cref="MergeDumpOptions"/>.
+    /// a per-call override merged over this value via <see cref="DumpOptionsResolver.Merge"/>.
     /// </summary>
     public DumpOptions DumpOptions { get; private set; }
 

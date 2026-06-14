@@ -44,7 +44,7 @@ internal static class SessionBootstrap
 
         // Bind __padDump__ and define the dump global in JS.
         // Core (ScriptEngineInit.js) does not define dump; DuetsPad owns it.
-        // The second argument is a JS options object; MergeDumpOptions reads maxDepth/maxItems from it.
+        // The second argument is a JS options object; DumpOptionsResolver.Merge reads maxDepth/maxItems from it.
         duetsSession.SetValue(
             "__padDump__",
             new Action<object?, object?>(
