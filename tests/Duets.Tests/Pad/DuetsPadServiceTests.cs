@@ -1310,7 +1310,7 @@ public sealed class DuetsPadServiceTests
         const string input =
             "@font-face{font-family:\"tabler-icons\";font-style:normal;font-weight:400;src:url(\"./fonts/tabler-icons.woff2?v3.44.0\") format(\"woff2\"),url(\"./fonts/tabler-icons.woff?\") format(\"woff\"),url(\"./fonts/tabler-icons.ttf?v3.44.0\") format(\"truetype\")}";
 
-        var result = DuetsPadService.RewriteTablerIconsCss(input);
+        var result = AssetProvider.RewriteTablerIconsCss(input);
 
         // The src must reference only the canonical local woff2 route.
         Assert.Contains(

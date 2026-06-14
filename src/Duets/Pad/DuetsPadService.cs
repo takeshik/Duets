@@ -1,12 +1,7 @@
-using System.Collections.Concurrent;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading.Channels;
 using Duets.Pad.Protocol;
 using HttpHarker;
-using Timer = System.Timers.Timer;
 
 namespace Duets.Pad;
 
@@ -16,71 +11,28 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadService : IDisposable
 {
-    private const string TablerIconsPackageVersion = "3.44.0";
-    private const string TablerCorePackageVersion = "1.4.0";
-
     private readonly DuetsPadServiceOptions _options;
-    private readonly ConcurrentDictionary<Guid, DuetsPadSession> _sessions = new();
-    private readonly Timer? _cleanupTimer;
-    private readonly Lazy<Task<string>> _monaco;
-    private readonly Lazy<Task<string>> _tabler;
-    private readonly Lazy<Task<string>> _tablerIconsCss;
-    private readonly Lazy<Task<byte[]>> _tablerIconsFont;
+    private readonly AssetProvider _assets;
+    private readonly SessionRegistry _registry;
 
     internal DuetsPadService(HttpServer server, string root, DuetsPadServiceOptions options)
     {
         this._options = options ?? throw new ArgumentNullException(nameof(options));
-
-        var monacoSource =
-            options.MonacoLoader
-            ?? AssetSources
-                .Unpkg("monaco-editor", "0.55.1", "min/vs/loader.js")
-                .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-monaco-loader.js"));
-        this._monaco = new Lazy<Task<string>>(() => monacoSource.GetStringAsync());
-
-        var tablerSource =
-            options.TablerCss
-            ?? AssetSources
-                .Unpkg("@tabler/core", TablerCorePackageVersion, "dist/css/tabler.min.css")
-                .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler.css"));
-        this._tabler = new Lazy<Task<string>>(() => tablerSource.GetStringAsync());
-
-        var tablerIconsCssSource =
-            options.TablerIconsCss
-            ?? AssetSources
-                .Unpkg(
-                    "@tabler/icons-webfont",
-                    TablerIconsPackageVersion,
-                    "dist/tabler-icons.min.css"
-                )
-                .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler-icons.css"));
-        this._tablerIconsCss = new Lazy<Task<string>>(async () =>
-            RewriteTablerIconsCss(await tablerIconsCssSource.GetStringAsync().ConfigureAwait(false))
-        );
-
-        var tablerIconsFontSource =
-            options.TablerIconsFont
-            ?? AssetSources
-                .Unpkg(
-                    "@tabler/icons-webfont",
-                    TablerIconsPackageVersion,
-                    "dist/fonts/tabler-icons.woff2"
-                )
-                .WithDiskCache(Path.Combine(Path.GetTempPath(), "duetspad-tabler-icons.woff2"));
-        this._tablerIconsFont = new Lazy<Task<byte[]>>(() => tablerIconsFontSource.GetBytesAsync());
+        this._assets = new AssetProvider(options);
+        this._registry = new SessionRegistry(options);
 
         server
             .UseSimpleRouting(
                 root,
                 routes =>
                     routes
-                        .MapGet("/", this.HandleIndexAsync)
-                        .MapGet("/duetspad-config.js", this.HandleDuetsPadConfigJsAsync)
-                        .MapGet("/duetspad.js", this.HandleDuetsPadJsAsync)
-                        .MapGet("/monaco-loader.js", this.HandleMonacoLoaderAsync)
-                        .MapGet("/tabler.css", this.HandleTablerCssAsync)
-                        .MapGet("/tabler-icons.css", this.HandleTablerIconsCssAsync)
-                        .MapGet("/tabler-icons.woff2", this.HandleTablerIconsFontAsync)
+                        .MapGet("/", this._assets.HandleIndexAsync)
+                        .MapGet("/duetspad-config.js", this._assets.HandleDuetsPadConfigJsAsync)
+                        .MapGet("/duetspad.js", this._assets.HandleDuetsPadJsAsync)
+                        .MapGet("/monaco-loader.js", this._assets.HandleMonacoLoaderAsync)
+                        .MapGet("/tabler.css", this._assets.HandleTablerCssAsync)
+                        .MapGet("/tabler-icons.css", this._assets.HandleTablerIconsCssAsync)
+                        .MapGet("/tabler-icons.woff2", this._assets.HandleTablerIconsFontAsync)
                         .MapGet("/type-declaration-events", this.HandleTypeDeclarationEventsAsync)
                         .MapPost("/sessions", this.HandlePostSessionAsync)
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
@@ -100,142 +52,10 @@ public sealed class DuetsPadService : IDisposable
                 "Duets.Resources.DuetsPadStaticFiles",
                 root
             );
-
-        // Start the idle-cleanup sweep timer only when IdleTimeout is enabled.
-        if (options.IdleTimeout is { } timeout && timeout > TimeSpan.Zero)
-        {
-            this._cleanupTimer = new Timer(options.CleanupInterval.TotalMilliseconds);
-            this._cleanupTimer.Elapsed += (_, _) => this.RemoveIdleSessions();
-            this._cleanupTimer.Start();
-        }
     }
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
-        if (this._cleanupTimer is not null)
-        {
-            this._cleanupTimer.Stop();
-            this._cleanupTimer.Dispose();
-        }
-
-        foreach (var (_, session) in this._sessions)
-        {
-            session.Dispose();
-        }
-
-        this._sessions.Clear();
-    }
-
-    // Static asset handlers
-
-    private async Task HandleIndexAsync(HttpActionContext ctx)
-    {
-        using var stream = typeof(DuetsPadService).Assembly.GetManifestResourceStream(
-            "Duets.Resources.DuetsPadStaticFiles.index.html"
-        );
-        if (stream is null)
-        {
-            ctx.Response.StatusCode = 404;
-            ctx.Response.Close();
-            return;
-        }
-
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var html = await reader.ReadToEndAsync();
-        await ctx.CloseAsync("text/html; charset=utf-8", html);
-    }
-
-    private async Task HandleDuetsPadConfigJsAsync(HttpActionContext ctx)
-    {
-        var url = JsonValue.Create(this._options.MonacoBaseUrl).ToJsonString();
-        var js = $"window.DUETSPAD_MONACO_VS = {url};";
-        await ctx.CloseAsync("text/javascript; charset=utf-8", js);
-    }
-
-    private async Task HandleDuetsPadJsAsync(HttpActionContext ctx)
-    {
-        using var stream = typeof(DuetsPadService).Assembly.GetManifestResourceStream(
-            "Duets.Resources.DuetsPadStaticFiles.duetspad.js"
-        );
-        if (stream is null)
-        {
-            ctx.Response.StatusCode = 404;
-            ctx.Response.Close();
-            return;
-        }
-
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var js = await reader.ReadToEndAsync();
-        await ctx.CloseAsync("text/javascript; charset=utf-8", js);
-    }
-
-    private async Task HandleMonacoLoaderAsync(HttpActionContext ctx)
-    {
-        var content = await this._monaco.Value;
-        await ctx.CloseAsync("text/javascript", content);
-    }
-
-    private async Task HandleTablerCssAsync(HttpActionContext ctx)
-    {
-        var content = await this._tabler.Value;
-        await ctx.CloseAsync("text/css; charset=utf-8", content);
-    }
-
-    private async Task HandleTablerIconsCssAsync(HttpActionContext ctx)
-    {
-        var content = await this._tablerIconsCss.Value;
-        await ctx.CloseAsync("text/css; charset=utf-8", content);
-    }
-
-    private async Task HandleTablerIconsFontAsync(HttpActionContext ctx)
-    {
-        var bytes = await this._tablerIconsFont.Value;
-        await ctx.CloseAsync(
-            new ByteArrayContent(bytes)
-            {
-                Headers = { ContentType = new MediaTypeHeaderValue("font/woff2") },
-            }
-        );
-    }
-
-    /// <summary>
-    /// Rewrites each <c>@font-face</c> <c>src:</c> declaration in the Tabler Icons CSS so it
-    /// references only the local woff2 route, dropping the upstream woff/ttf fallback entries
-    /// that have no route in DuetsPad (ADR-33).
-    /// </summary>
-    internal static string RewriteTablerIconsCss(string css)
-    {
-        // DuetsPad serves only tabler-icons.woff2 (ADR-33). Replace each @font-face src list with a
-        // single local woff2 reference, dropping the upstream woff/ttf fallbacks that have no route.
-        // (In the Tabler Icons stylesheet, "src:" appears only inside @font-face, and is the last
-        // declaration before the block's closing brace.)
-        const string canonicalSrc = "src:url(\"tabler-icons.woff2\") format(\"woff2\")";
-        var sb = new StringBuilder(css.Length);
-        var i = 0;
-        while (true)
-        {
-            var srcIdx = css.IndexOf("src:", i, StringComparison.Ordinal);
-            if (srcIdx < 0)
-            {
-                sb.Append(css, i, css.Length - i);
-                break;
-            }
-
-            var brace = css.IndexOf('}', srcIdx);
-            if (brace < 0)
-            {
-                sb.Append(css, i, css.Length - i);
-                break;
-            }
-
-            sb.Append(css, i, srcIdx - i); // text before "src:"
-            sb.Append(canonicalSrc); // canonical single-source replacement
-            i = brace; // resume at the '}' (kept)
-        }
-
-        return sb.ToString();
-    }
+    public void Dispose() => this._registry.Dispose();
 
     // POST /sessions
 
@@ -267,30 +87,11 @@ public sealed class DuetsPadService : IDisposable
             }
         }
 
-        if (existingId.HasValue && this._sessions.TryGetValue(existingId.Value, out _))
-        {
-            await ctx.CloseAsync(
-                "application/json; charset=utf-8",
-                new JsonObject { ["sessionId"] = existingId.Value.ToString() }.ToJsonString()
-            );
-            return;
-        }
-
-        // Create a new session.
-        var duetsSession = await this._options.SessionFactory();
-        var newId = Guid.NewGuid();
-        this._sessions[newId] = new DuetsPadSession(
-            newId,
-            duetsSession,
-            this._options.ObjectRenderers,
-            this._options.Clock,
-            this._options.TimelineEntryLimit,
-            this._options.DumpOptions
-        );
+        var (_, id) = await this._registry.GetOrCreateSessionAsync(existingId);
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
-            new JsonObject { ["sessionId"] = newId.ToString() }.ToJsonString()
+            new JsonObject { ["sessionId"] = id.ToString() }.ToJsonString()
         );
     }
 
@@ -300,19 +101,8 @@ public sealed class DuetsPadService : IDisposable
     {
         var sessionId = ctx.Args["sessionId"];
 
-        if (Guid.TryParse(sessionId, out var id) && this._sessions.TryRemove(id, out var session))
+        if (Guid.TryParse(sessionId, out var id) && this._registry.TryDeleteSession(id))
         {
-            // The session is already removed from the dictionary; a dispose failure must not
-            // escape into the HTTP handler. There is no logger here, so observe and continue.
-            try
-            {
-                session.Dispose();
-            }
-            catch
-            {
-                // Swallow: the session is orphaned but unreachable; nothing more to do.
-            }
-
             await ctx.CloseAsync(
                 "application/json; charset=utf-8",
                 new JsonObject { ["ok"] = true, ["sessionId"] = id.ToString() }.ToJsonString()
@@ -338,8 +128,7 @@ public sealed class DuetsPadService : IDisposable
     /// Returns the <see cref="DuetsPadSession"/> identified by <paramref name="id"/>, or
     /// <see langword="null"/> if no such session exists. Exposed for testing only.
     /// </summary>
-    internal DuetsPadSession? TryGetSession(Guid id) =>
-        this._sessions.TryGetValue(id, out var session) ? session : null;
+    internal DuetsPadSession? TryGetSession(Guid id) => this._registry.TryGetSession(id);
 
     /// <summary>
     /// Removes and disposes sessions that have been idle longer than
@@ -347,41 +136,7 @@ public sealed class DuetsPadService : IDisposable
     /// <see cref="DuetsPadServiceOptions.IdleTimeout"/> is <see langword="null"/> or non-positive.
     /// Called by the background cleanup timer; also directly callable by tests.
     /// </summary>
-    internal void RemoveIdleSessions()
-    {
-        if (this._options.IdleTimeout is not { } timeout || timeout <= TimeSpan.Zero)
-        {
-            return;
-        }
-
-        var now = this._options.Clock();
-        foreach (var (id, session) in this._sessions)
-        {
-            // Never evict a session that has a live SSE stream; the subscriber guard is
-            // timing-independent and takes precedence over the LastActivity check.
-            if (session.HasActiveSubscribers)
-            {
-                continue;
-            }
-
-            if (now - session.LastActivityUtc > timeout)
-            {
-                if (this._sessions.TryRemove(id, out var removed))
-                {
-                    // One session's dispose failure must not abort the sweep over the others,
-                    // nor kill the cleanup timer. There is no logger here, so observe and continue.
-                    try
-                    {
-                        removed.Dispose();
-                    }
-                    catch
-                    {
-                        // Swallow and proceed to the next idle session.
-                    }
-                }
-            }
-        }
-    }
+    internal void RemoveIdleSessions() => this._registry.RemoveIdleSessions();
 
     // POST /sessions/{sessionId}/eval
 
@@ -469,11 +224,12 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        await this.RunSseStreamAsync<CanvasEventMessage>(
+        await SseTransport.RunAsync<CanvasEventMessage>(
             ctx,
             session,
-            subscribe: session.AddCanvasSubscriber,
-            unsubscribe: session.RemoveCanvasSubscriber,
+            this._options.KeepAliveInterval,
+            setup: session.AddCanvasSubscriber,
+            teardown: session.RemoveCanvasSubscriber,
             formatData: SseSerializer.Serialize
         );
     }
@@ -489,11 +245,12 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        await this.RunSseStreamAsync<TimelineEventMessage>(
+        await SseTransport.RunAsync<TimelineEventMessage>(
             ctx,
             session,
-            subscribe: session.AddTimelineSubscriber,
-            unsubscribe: session.RemoveTimelineSubscriber,
+            this._options.KeepAliveInterval,
+            setup: session.AddTimelineSubscriber,
+            teardown: session.RemoveTimelineSubscriber,
             formatData: SseSerializer.Serialize
         );
     }
@@ -509,65 +266,53 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        var res = ctx.Response;
-        res.ContentType = "text/event-stream; charset=utf-8";
-        res.Headers["Cache-Control"] = "no-cache";
-        res.SendChunked = true;
-
         var declarations = session.DuetsSession.Declarations;
-        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
 
-        void OnDeclarationChanged(TypeDeclaration decl) => channel.Writer.TryWrite(decl);
+        // Captured by both setup and teardown closures so the handler instance can be removed.
+        Action<TypeDeclaration>? handler = null;
 
-        // Subscribe before enumerating existing declarations so no declaration registered
-        // between the two steps is lost. A declaration added during this window may be
-        // delivered twice; that is harmless because Monaco addExtraLib is keyed by fileName
-        // and is therefore idempotent.
-        declarations.DeclarationChanged += OnDeclarationChanged;
-
-        // Register with the session so that Dispose() completes the channel, which
-        // terminates the read loop below and allows the finally block to run.
-        var key = session.AddTypeDeclarationSubscriber(channel.Writer);
-
-        foreach (var decl in declarations.GetDeclarations())
-        {
-            channel.Writer.TryWrite(decl);
-        }
-
-        // Touch on attach (session lookup already happened; record SSE attach as activity).
-        session.Touch();
-
-        using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
-        timer.Elapsed += (_, _) =>
-        {
-            session.Touch();
-            channel.Writer.TryWrite(null);
-        };
-        timer.Start();
-
-        try
-        {
-            await foreach (var decl in channel.Reader.ReadAllAsync())
+        await SseTransport.RunAsync<TypeDeclaration>(
+            ctx,
+            session,
+            this._options.KeepAliveInterval,
+            setup: writer =>
             {
-                var sseData = decl is null
-                    ? ": keepalive\n\n"
-                    : $"data: {new JsonObject { ["fileName"] = decl.FileName, ["content"] = decl.Content }.ToJsonString()}\n\n";
-                await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
-                await res.OutputStream.FlushAsync();
-            }
-        }
-        catch
-        {
-            /* Client disconnected. */
-        }
-        finally
-        {
-            timer.Stop();
-            session.RemoveTypeDeclarationSubscriber(key);
-            declarations.DeclarationChanged -= OnDeclarationChanged;
-            channel.Writer.TryComplete();
-            res.Close();
-        }
+                handler = decl => writer.TryWrite(decl);
+
+                // Subscribe before enumerating existing declarations so no declaration registered
+                // between the two steps is lost. A declaration added during this window may be
+                // delivered twice; that is harmless because Monaco addExtraLib is keyed by fileName
+                // and is therefore idempotent.
+                declarations.DeclarationChanged += handler;
+
+                // Register with the session so that Dispose() completes the channel, which
+                // terminates the read loop and allows the finally block to run.
+                var key = session.AddTypeDeclarationSubscriber(writer);
+
+                foreach (var decl in declarations.GetDeclarations())
+                {
+                    writer.TryWrite(decl);
+                }
+
+                return key;
+            },
+            teardown: key =>
+            {
+                session.RemoveTypeDeclarationSubscriber(key);
+                // Unhook after removing the session subscriber so that Dispose() completing
+                // the channel writer does not race with a final handler invocation.
+                if (handler is not null)
+                {
+                    declarations.DeclarationChanged -= handler;
+                }
+            },
+            formatData: decl =>
+                new JsonObject
+                {
+                    ["fileName"] = decl.FileName,
+                    ["content"] = decl.Content,
+                }.ToJsonString()
+        );
     }
 
     // Helpers
@@ -582,7 +327,7 @@ public sealed class DuetsPadService : IDisposable
         string? sessionId
     )
     {
-        if (Guid.TryParse(sessionId, out var id) && this._sessions.TryGetValue(id, out var session))
+        if (this._registry.TryGetSession(sessionId) is { } session)
         {
             return session;
         }
@@ -597,60 +342,5 @@ public sealed class DuetsPadService : IDisposable
             }.ToJsonString()
         );
         return null;
-    }
-
-    /// <summary>
-    /// Runs an SSE streaming loop for <typeparamref name="T"/> messages.
-    /// Sets the SSE response headers, creates an unbounded channel, subscribes via
-    /// <paramref name="subscribe"/>, starts a keepalive timer (null-sentinel written to
-    /// the channel on each tick), and reads from the channel until it is completed or the
-    /// client disconnects. <see langword="null"/> messages produce <c>": keepalive\n\n"</c>;
-    /// non-null messages produce <c>"data: {formatData(msg)}\n\n"</c>.
-    /// </summary>
-    private async Task RunSseStreamAsync<T>(
-        HttpActionContext ctx,
-        DuetsPadSession session,
-        Func<ChannelWriter<T?>, Guid> subscribe,
-        Action<Guid> unsubscribe,
-        Func<T, string> formatData
-    )
-        where T : class
-    {
-        var res = ctx.Response;
-        res.ContentType = "text/event-stream; charset=utf-8";
-        res.Headers["Cache-Control"] = "no-cache";
-        res.SendChunked = true;
-
-        var channel = Channel.CreateUnbounded<T?>();
-        var key = subscribe(channel.Writer);
-
-        using var timer = new Timer(this._options.KeepAliveInterval.TotalMilliseconds);
-        timer.Elapsed += (_, _) =>
-        {
-            session.Touch();
-            channel.Writer.TryWrite(null);
-        };
-        timer.Start();
-
-        try
-        {
-            await foreach (var msg in channel.Reader.ReadAllAsync())
-            {
-                var sseData = msg is null ? ": keepalive\n\n" : $"data: {formatData(msg)}\n\n";
-                await res.OutputStream.WriteAsync(Encoding.UTF8.GetBytes(sseData));
-                await res.OutputStream.FlushAsync();
-            }
-        }
-        catch
-        {
-            /* Client disconnected. */
-        }
-        finally
-        {
-            timer.Stop();
-            unsubscribe(key);
-            channel.Writer.TryComplete();
-            res.Close();
-        }
     }
 }
