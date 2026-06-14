@@ -130,68 +130,8 @@ internal sealed class DuetsPadSession : IDisposable
         this._renderer = new DisplayRenderer(this.ObjectRenderers);
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
-        // Subscribe to console output — runs synchronously on the eval thread.
-        this.DuetsSession.ConsoleLogged += this.OnConsoleLogged;
-
-        // Bind __padDump__ and define the dump global in JS.
-        // Core (ScriptEngineInit.js) does not define dump; DuetsPad owns it.
-        // The second argument is a JS options object; MergeDumpOptions reads maxDepth/maxItems from it.
-        this.DuetsSession.SetValue(
-            "__padDump__",
-            new Action<object?, object?>(
-                (v, opts) => this.Dump(v, DumpOptionsResolver.Merge(this.DumpOptions, opts))
-            )
-        );
-        this.DuetsSession.Execute(
-            "var dump = function (v, opts) { __padDump__(v, opts); return v; };"
-        );
-
-        // Bind canvas and ui globals.
-        this.DuetsSession.SetValue("canvas", new CanvasApi(this));
-        this.DuetsSession.SetValue("ui", new UiApi(this._renderer, this.DumpOptions));
-
-        // Register per-session d.ts declarations for canvas, ui, and dump.
-        this.DuetsSession.Declarations.RegisterDeclaration(
-            """
-            // DuetsPad per-session globals
-            declare const canvas: {
-                /** Renders value and appends it as a new child of the canvas root. */
-                add(value: any): void;
-                /** Renders value and replaces all canvas children with it. */
-                set(value: any): void;
-                /** Clears all canvas children. */
-                clear(): void;
-            };
-
-            declare const ui: {
-                /** Returns a raw-HTML escape-hatch node (use sparingly). */
-                rawHtml(content: string): any;
-                /** Builds a structured element node. */
-                element(tag: string, attributes?: any, children?: any[]): any;
-                /** Returns a plain text node. */
-                text(value: string): any;
-                /** Returns a <span class="duetspad-label"> wrapping value. */
-                label(value: string): any;
-                /** Returns a <div class="duetspad-stack"> containing rendered children. */
-                stack(children?: any[]): any;
-                /** Returns a button with a click handler. */
-                button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
-                /** Builds a <table class="duetspad-table"> from rows. */
-                table(rows: any[], options?: { columns?: string[] }): any;
-            };
-
-            /**
-             * Renders value to the DuetsPad Timeline and returns it unchanged,
-             * so it can be inserted anywhere in an expression chain without breaking it.
-             *
-             * ```ts
-             * dump(someArray)          // renders the array, returns it
-             * dump(obj).someProperty   // renders obj, then accesses .someProperty — type is preserved
-             * ```
-             */
-            declare function dump<T>(value: T, opts?: { maxDepth?: number; maxItems?: number }): T;
-            """
-        );
+        // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
+        SessionBootstrap.Bootstrap(this, this._renderer);
 
         // Record creation as the first activity.
         this.Touch();
@@ -428,21 +368,8 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            DisplayContent content;
-            try
-            {
-                content = this._renderer.Render(value, options);
-            }
-            catch (Exception ex)
-            {
-                this.AppendTimelineEntry(
-                    "render-error",
-                    DisplayContent.FromNode(OutputError.Create($"Render error: {ex.Message}"))
-                );
-                return;
-            }
-
-            this.AppendTimelineEntry("dump", content);
+            var (content, isError) = this.TryRenderContent(value, options);
+            this.AppendTimelineEntry(isError ? "render-error" : "dump", content);
         }
         catch
         {
@@ -458,15 +385,10 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            DisplayContent content;
-            try
+            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
+            if (isError)
             {
-                content = this._renderer.Render(value, this.DumpOptions);
-            }
-            catch (Exception ex)
-            {
-                var errorBody = OutputError.Create($"Render error: {ex.Message}");
-                this.AppendTimelineEntry("render-error", DisplayContent.FromNode(errorBody));
+                this.AppendTimelineEntry("render-error", content);
                 return;
             }
 
@@ -492,15 +414,10 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            DisplayContent content;
-            try
+            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
+            if (isError)
             {
-                content = this._renderer.Render(value, this.DumpOptions);
-            }
-            catch (Exception ex)
-            {
-                var errorBody = OutputError.Create($"Render error: {ex.Message}");
-                this.AppendTimelineEntry("render-error", DisplayContent.FromNode(errorBody));
+                this.AppendTimelineEntry("render-error", content);
                 return;
             }
 
@@ -681,21 +598,8 @@ internal sealed class DuetsPadSession : IDisposable
     {
         try
         {
-            DisplayContent content;
-            try
-            {
-                content = this._renderer.Render(value, this.DumpOptions);
-            }
-            catch (Exception ex)
-            {
-                this.AppendTimelineEntry(
-                    "render-error",
-                    DisplayContent.FromNode(OutputError.Create($"Render error: {ex.Message}"))
-                );
-                return;
-            }
-
-            this.AppendTimelineEntry("evaluation", content);
+            var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
+            this.AppendTimelineEntry(isError ? "render-error" : "evaluation", content);
         }
         catch
         {
@@ -773,7 +677,41 @@ internal sealed class DuetsPadSession : IDisposable
 
     // Private helpers
 
-    private void OnConsoleLogged(ScriptConsoleEntry entry)
+    /// <summary>
+    /// Renders <paramref name="value"/> to a <see cref="DisplayContent"/>. Never throws.
+    /// </summary>
+    /// <returns>
+    /// A tuple of (<c>Content</c>, <c>IsRenderError</c>). When <c>IsRenderError</c> is
+    /// <see langword="false"/>, <c>Content</c> is the successfully rendered result. When
+    /// <c>IsRenderError</c> is <see langword="true"/>, <c>Content</c> contains an
+    /// <c>OutputError</c> node describing the failure; the caller should append a
+    /// <c>render-error</c> Timeline entry (under <c>_stateLock</c>) and return.
+    /// </returns>
+    /// <remarks>
+    /// The render step is performed OUTSIDE <c>_stateLock</c> by design. The P3 invariant
+    /// requires that the initial SSE event be enqueued under the same lock that guards
+    /// subsequent mutations; callers therefore must acquire <c>_stateLock</c> themselves
+    /// before appending the returned content or broadcasting state changes.
+    /// </remarks>
+    private (DisplayContent Content, bool IsRenderError) TryRenderContent(
+        object? value,
+        DumpOptions options
+    )
+    {
+        try
+        {
+            return (this._renderer.Render(value, options), false);
+        }
+        catch (Exception ex)
+        {
+            var errorContent = DisplayContent.FromNode(
+                OutputError.Create($"Render error: {ex.Message}")
+            );
+            return (errorContent, true);
+        }
+    }
+
+    internal void OnConsoleLogged(ScriptConsoleEntry entry)
     {
         try
         {
@@ -788,7 +726,8 @@ internal sealed class DuetsPadSession : IDisposable
                 ),
                 new ElementChildren(new Text(entry.Text))
             );
-            this.AppendTimelineEntry("console", DisplayContent.FromNode(body));
+            var (content, isError) = this.TryRenderContent(body, this.DumpOptions);
+            this.AppendTimelineEntry(isError ? "render-error" : "console", content);
         }
         catch
         {
