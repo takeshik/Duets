@@ -5,9 +5,7 @@ namespace HttpHarker.Tests;
 
 public sealed class ZipFileProviderTests
 {
-    // ---------------------------------------------------------------------------
     // Helpers
-    // ---------------------------------------------------------------------------
 
     private static MemoryStream BuildZip(IEnumerable<(string path, string content)> entries)
     {
@@ -26,9 +24,7 @@ public sealed class ZipFileProviderTests
         return ms;
     }
 
-    // ---------------------------------------------------------------------------
     // Concurrency
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task GetFileContent_is_safe_under_concurrent_access()
@@ -63,9 +59,7 @@ public sealed class ZipFileProviderTests
         Assert.NotNull(provider.GetFileContent("INDEX.HTML"));
     }
 
-    // ---------------------------------------------------------------------------
     // Path normalisation
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void GetFileContent_normalises_backslash_entry_names()
@@ -87,9 +81,7 @@ public sealed class ZipFileProviderTests
         Assert.Equal("<p>sub</p>", Encoding.UTF8.GetString(bytes));
     }
 
-    // ---------------------------------------------------------------------------
     // Basic retrieval
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void GetFileContent_returns_bytes_for_existing_file()
@@ -115,9 +107,7 @@ public sealed class ZipFileProviderTests
         Assert.Equal("console.log('hi')", Encoding.UTF8.GetString(bytes));
     }
 
-    // ---------------------------------------------------------------------------
     // Directory entries
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void GetFileContent_returns_null_for_directory_entry_with_trailing_slash()
@@ -137,9 +127,7 @@ public sealed class ZipFileProviderTests
         Assert.Null(provider.GetFileContent("notexist.txt"));
     }
 
-    // ---------------------------------------------------------------------------
     // Stream consumed at construction
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void Provider_works_after_original_stream_is_disposed()

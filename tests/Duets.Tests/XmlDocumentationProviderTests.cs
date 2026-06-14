@@ -72,7 +72,7 @@ public sealed class XmlDocumentationProviderTests
         Assert.Null(provider.Get(typeof(string)));
     }
 
-    // ── FetchFromNuGetAsync: TFM selection ───────────────────────────────────
+    // FetchFromNuGetAsync: TFM selection
 
     [Fact]
     public async Task FetchFromNuGetAsync_prefers_runtime_tfm_over_netstandard()
@@ -149,7 +149,7 @@ public sealed class XmlDocumentationProviderTests
         }
     }
 
-    // ── @param / @returns ────────────────────────────────────────────────────
+    // @param / @returns
 
     [Fact]
     public void Get_includes_param_and_returns_annotations()
@@ -192,7 +192,7 @@ public sealed class XmlDocumentationProviderTests
         Assert.Contains("Immutable in .NET.", result);
     }
 
-    // ── whitespace normalisation ─────────────────────────────────────────────
+    // whitespace normalisation
 
     [Fact]
     public void Get_normalizes_indented_summary_to_single_line()
@@ -233,7 +233,7 @@ public sealed class XmlDocumentationProviderTests
         Assert.Contains("value", result);
     }
 
-    // ── inline XML elements ───────────────────────────────────────────────────
+    // inline XML elements
 
     [Fact]
     public void Get_resolves_see_cref_to_simple_type_name()
@@ -261,7 +261,7 @@ public sealed class XmlDocumentationProviderTests
         Assert.Null(provider.Get(typeof(string)));
     }
 
-    // ── null / fallback ───────────────────────────────────────────────────────
+    // null / fallback
 
     [Fact]
     public void Get_returns_null_for_unknown_member()
@@ -306,7 +306,7 @@ public sealed class XmlDocumentationProviderTests
         Assert.Equal("Number of chars.", provider.Get(typeof(string).GetProperty("Length")!));
     }
 
-    // ── summary ──────────────────────────────────────────────────────────────
+    // summary
 
     [Fact]
     public void Get_returns_summary_for_type()

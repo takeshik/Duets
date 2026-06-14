@@ -6,9 +6,7 @@ namespace HttpHarker.Tests;
 
 public sealed class StaticFileMiddlewareTests
 {
-    // ---------------------------------------------------------------------------
     // Helpers
-    // ---------------------------------------------------------------------------
 
     private static MemoryStream BuildZip(IEnumerable<(string path, string content)> entries)
     {
@@ -47,9 +45,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Cache-Control
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Cache_control_header_set_by_selector()
@@ -74,9 +70,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Content-Type
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Content_type_resolved_from_file_extension()
@@ -146,9 +140,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // ETag
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task ETag_header_present_when_enabled()
@@ -165,9 +157,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Explicit file paths
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Explicit_file_path_is_served()
@@ -185,9 +175,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Root prefix scoping
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Files_served_only_under_configured_root_prefix()
@@ -209,9 +197,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // HEAD request
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task HEAD_returns_200_with_content_length_but_no_body()
@@ -311,9 +297,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Missing file → passes to next middleware (404 from server default)
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Missing_file_returns_404()
@@ -346,9 +330,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Default document
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Root_path_serves_default_document()
@@ -412,9 +394,7 @@ public sealed class StaticFileMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // SPA fallback
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Spa_fallback_serves_index_html_for_extensionless_path()

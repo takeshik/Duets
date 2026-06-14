@@ -2,9 +2,7 @@ namespace HttpHarker.Tests;
 
 public sealed class ContentTypeProviderTests
 {
-    // ---------------------------------------------------------------------------
     // CreateDefault — known extensions
-    // ---------------------------------------------------------------------------
 
     [Theory]
     [InlineData(".html", "text/html; charset=utf-8")]
@@ -48,9 +46,7 @@ public sealed class ContentTypeProviderTests
         Assert.Equal("application/bar", provider.Resolve(".bar", null!));
     }
 
-    // ---------------------------------------------------------------------------
     // Add / AddRange
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void Add_overrides_existing_mapping()
@@ -104,9 +100,7 @@ public sealed class ContentTypeProviderTests
         Assert.Equal("application/octet-stream", result);
     }
 
-    // ---------------------------------------------------------------------------
     // Custom fallback
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void Custom_fallback_is_invoked_for_unknown_key()
@@ -118,9 +112,7 @@ public sealed class ContentTypeProviderTests
         Assert.Equal("text/plain", result);
     }
 
-    // ---------------------------------------------------------------------------
     // Key lookup is case-insensitive
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void Resolve_key_lookup_is_case_insensitive()

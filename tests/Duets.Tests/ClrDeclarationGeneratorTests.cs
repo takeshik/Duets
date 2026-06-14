@@ -4,7 +4,7 @@ namespace Duets.Tests;
 
 public sealed class ClrDeclarationGeneratorTests
 {
-    // ── JSDoc provider integration ────────────────────────────────────────────
+    // JSDoc provider integration
 
     private static XmlDocumentationProvider XmlProvider(string membersXml)
     {

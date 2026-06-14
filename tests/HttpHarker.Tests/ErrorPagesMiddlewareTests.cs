@@ -10,9 +10,7 @@ public sealed class ErrorPagesMiddlewareTests
         return ServerFixture.RunAsync(configure, test);
     }
 
-    // ---------------------------------------------------------------------------
     // Already-committed response is not re-processed
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Already_committed_response_is_not_touched()
@@ -37,9 +35,7 @@ public sealed class ErrorPagesMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Default (200 / 0) status code treated as 404
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Default_status_code_treated_as_404()
@@ -56,9 +52,7 @@ public sealed class ErrorPagesMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Ordering: ErrorPages placed AFTER routing is not invoked for matched routes
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task ErrorPages_after_routing_not_invoked_for_matched_route()
@@ -96,9 +90,7 @@ public sealed class ErrorPagesMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Multiple handlers
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Multiple_handlers_each_invoked_for_correct_code()
@@ -169,9 +161,7 @@ public sealed class ErrorPagesMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Registered status code handler is invoked
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Registered_handler_invoked_for_matching_status_code()
@@ -190,9 +180,7 @@ public sealed class ErrorPagesMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Unregistered status code: response is closed without custom body
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Unregistered_status_code_response_closed_with_no_custom_body()

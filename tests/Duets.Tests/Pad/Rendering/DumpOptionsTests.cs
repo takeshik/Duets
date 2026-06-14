@@ -27,7 +27,7 @@ public sealed class DumpOptionsTests
         return Assert.Single(td.Children);
     }
 
-    // ── Default values ────────────────────────────────────────────────────────
+    // Default values
 
     [Fact]
     public void Default_MaxDepth_is_5()
@@ -50,7 +50,7 @@ public sealed class DumpOptionsTests
         Assert.Equal(DumpOptions.Default.MaxItems, instance.MaxItems);
     }
 
-    // ── With-expression override ──────────────────────────────────────────────
+    // With-expression override
 
     [Fact]
     public void With_MaxDepth_overrides_only_MaxDepth()
@@ -70,7 +70,7 @@ public sealed class DumpOptionsTests
         Assert.Equal(50, opts.MaxItems);
     }
 
-    // ── Validation: negative limits are rejected ──────────────────────────────
+    // Validation: negative limits are rejected
 
     [Fact]
     public void New_DumpOptions_with_negative_MaxDepth_throws_ArgumentOutOfRangeException()
@@ -122,7 +122,7 @@ public sealed class DumpOptionsTests
         Assert.Equal(0, opts.MaxItems);
     }
 
-    // ── Pipeline depth-limit override ─────────────────────────────────────────
+    // Pipeline depth-limit override
 
     [Fact]
     public void Pipeline_Render_with_MaxDepth_1_truncates_at_depth_1()

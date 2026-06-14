@@ -16,9 +16,7 @@ public sealed class SimpleRoutingMiddlewareTests
         return ctx.CloseAsync(body);
     }
 
-    // ---------------------------------------------------------------------------
     // HTTP methods
-    // ---------------------------------------------------------------------------
 
     [Theory]
     [InlineData("GET")]
@@ -49,9 +47,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Catch-all parameters
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Catch_all_captures_remaining_path_segments()
@@ -93,9 +89,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Template validation at construction
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public void Empty_parameter_name_throws_at_construction()
@@ -108,9 +102,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Literal routes
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Literal_route_matched_exactly()
@@ -126,9 +118,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Route priority: literal beats parameter
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Literal_segment_takes_priority_over_parameter()
@@ -154,9 +144,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Map() fluent builder
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Map_with_explicit_method_registers_route()
@@ -212,9 +200,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Root prefix scoping
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Routes_scoped_to_configured_root_prefix()
@@ -232,9 +218,7 @@ public sealed class SimpleRoutingMiddlewareTests
         );
     }
 
-    // ---------------------------------------------------------------------------
     // Route parameters
-    // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Single_parameter_segment_captured_in_args()

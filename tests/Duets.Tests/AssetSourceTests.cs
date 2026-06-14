@@ -2,7 +2,7 @@ namespace Duets.Tests;
 
 public sealed class AssetSourceTests
 {
-    // ── From(text factory) round-trip ────────────────────────────────────────
+    // From(text factory) round-trip
 
     [Fact]
     public async Task GetStringAsync_over_From_returns_original_string()
@@ -15,7 +15,7 @@ public sealed class AssetSourceTests
         Assert.Equal(expected, actual);
     }
 
-    // ── FromBytes binary round-trip ──────────────────────────────────────────
+    // FromBytes binary round-trip
 
     [Fact]
     public async Task FromBytes_GetBytesAsync_returns_exact_bytes()
@@ -28,7 +28,7 @@ public sealed class AssetSourceTests
         Assert.Equal(expected, actual);
     }
 
-    // ── WithDiskCache byte caching ───────────────────────────────────────────
+    // WithDiskCache byte caching
 
     [Fact]
     public async Task WithDiskCache_returns_identical_bytes_on_second_read()

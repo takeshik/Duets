@@ -45,7 +45,7 @@ public sealed class InspectTests
         Assert.Equal("[1,2,3]", Inspect(engine, "[1, 2, 3]", "{compact: true}"));
     }
 
-    // --- arrays ---
+    // arrays
 
     [Fact]
     public void Array_defaults_to_multiline()
@@ -63,7 +63,7 @@ public sealed class InspectTests
         );
     }
 
-    // --- circular reference ---
+    // circular reference
 
     [Fact]
     public void Circular_reference_is_replaced_with_marker()
@@ -131,7 +131,7 @@ public sealed class InspectTests
         );
     }
 
-    // --- primitives ---
+    // primitives
 
     [Fact]
     public void Null_formats_as_null()
@@ -147,7 +147,7 @@ public sealed class InspectTests
         Assert.Equal("""{"x":1,"y":2}""", Inspect(engine, "{x: 1, y: 2}", "{compact: true}"));
     }
 
-    // --- objects ---
+    // objects
 
     [Fact]
     public void Object_defaults_to_multiline()

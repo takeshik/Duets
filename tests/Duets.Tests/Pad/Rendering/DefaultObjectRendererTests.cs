@@ -344,7 +344,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal(new Text("custom-value"), result);
     }
 
-    // ── CLR object: property and field projection ─────────────────────────
+    // CLR object: property and field projection
 
     [Fact]
     public void Render_clr_object_with_property_and_field_returns_duetspad_object()
@@ -414,7 +414,7 @@ public sealed class DefaultObjectRendererTests
         );
     }
 
-    // ── CLR object: list renders as table ─────────────────────────────────
+    // CLR object: list renders as table
 
     [Fact]
     public void Render_object_list_returns_duetspad_table()
@@ -480,7 +480,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("y", Assert.IsType<Text>(headers[1].Children[0]).Value);
     }
 
-    // ── Tabular: zero-column fallback ────────────────────────────────────
+    // Tabular: zero-column fallback
 
     [Fact]
     public void Render_list_of_no_member_objects_falls_back_to_scalar_table_not_empty_table()
@@ -509,7 +509,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("duetspad-table", element.Attributes["class"]);
     }
 
-    // ── Tabular: union of columns across heterogeneous rows ───────────────
+    // Tabular: union of columns across heterogeneous rows
 
     [Fact]
     public void Render_heterogeneous_record_list_uses_union_of_columns()
@@ -544,7 +544,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("", Assert.IsType<Text>(cells0[1].Children[0]).Value);
     }
 
-    // ── CLR object: getter exception → [error] marker ────────────────────
+    // CLR object: getter exception → [error] marker
 
     [Fact]
     public void Render_object_with_throwing_getter_includes_error_marker_not_exception()
@@ -564,7 +564,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal(new Text("[error]"), GetRowValue(errorRow!));
     }
 
-    // ── Render node passthrough ───────────────────────────────────────────
+    // Render node passthrough
 
     [Fact]
     public void Render_array_containing_text_node_passes_through_the_node()
@@ -634,7 +634,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal(new Text("[error]"), errorCell.Children[0]);
     }
 
-    // ── ADR-40: enum and JS-object/CLR-object convergence regressions ────
+    // ADR-40: enum and JS-object/CLR-object convergence regressions
 
     [Fact]
     public void Render_enum_returns_text_with_member_name()
@@ -786,7 +786,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal(new Text("Alice"), GetRowValue(nestedRow0));
     }
 
-    // ── Part A: item cap and count display ───────────────────────────────
+    // Part A: item cap and count display
 
     [Fact]
     public void Render_array_with_max_items_cap_truncates_and_shows_indicator()
@@ -906,7 +906,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("duetspad-truncated", truncationCell.Attributes["class"]);
     }
 
-    // ── Part B: ToString() summary row for CLR objects ───────────────────
+    // Part B: ToString() summary row for CLR objects
 
     [Fact]
     public void Render_record_with_tostring_override_shows_summary_row()
@@ -995,7 +995,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Null(thead);
     }
 
-    // ── Fix 1: map MaxItems bounded materialization ───────────────────────
+    // Fix 1: map MaxItems bounded materialization
 
     [Fact]
     public void Render_map_with_max_items_enumerates_at_most_max_items_plus_one_entries()
@@ -1027,7 +1027,7 @@ public sealed class DefaultObjectRendererTests
         );
     }
 
-    // ── Fix 1b: tabular row map MaxItems bounded materialization ─────────────
+    // Fix 1b: tabular row map MaxItems bounded materialization
 
     [Fact]
     public void Render_tabular_row_dictionary_enumerates_at_most_max_items_plus_one_entries()
@@ -1049,7 +1049,7 @@ public sealed class DefaultObjectRendererTests
         );
     }
 
-    // ── Fix 2: throwing ToString() in summary row ─────────────────────────
+    // Fix 2: throwing ToString() in summary row
 
     [Fact]
     public void Render_object_with_throwing_toString_still_renders_member_rows()
@@ -1079,7 +1079,7 @@ public sealed class DefaultObjectRendererTests
         Assert.NotNull(safeRow);
     }
 
-    // ── Helper types ──────────────────────────────────────────────────────
+    // Helper types
 
     private sealed record SimpleRecord(string Name, int Age);
 

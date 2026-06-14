@@ -7,7 +7,7 @@ public sealed class UiApiTests
 {
     private static UiApi CreateUiApi() => new(() => new DisplayRenderer([]), DumpOptions.Default);
 
-    // ── Positive: RawHtml ──────────────────────────────────────────────────
+    // Positive: RawHtml
 
     [Fact]
     public void RawHtml_returns_RawHtml_node()
@@ -20,7 +20,7 @@ public sealed class UiApiTests
         Assert.Equal("<strong>hello</strong>", node.Content);
     }
 
-    // ── Positive: Text ────────────────────────────────────────────────────
+    // Positive: Text
 
     [Fact]
     public void Text_returns_Text_node()
@@ -33,7 +33,7 @@ public sealed class UiApiTests
         Assert.Equal("hello", node.Value);
     }
 
-    // ── Positive: Label ───────────────────────────────────────────────────
+    // Positive: Label
 
     [Fact]
     public void Label_returns_span_with_duetspad_label_class_and_text_child()
@@ -51,7 +51,7 @@ public sealed class UiApiTests
         Assert.Equal("my label", (string?)json["children"]![0]!["value"]);
     }
 
-    // ── Positive: Stack ───────────────────────────────────────────────────
+    // Positive: Stack
 
     [Fact]
     public void Stack_with_no_children_returns_empty_div()
@@ -118,7 +118,7 @@ public sealed class UiApiTests
         Assert.Empty(result.Interactions);
     }
 
-    // ── Positive: Element ─────────────────────────────────────────────────
+    // Positive: Element
 
     [Fact]
     public void Element_with_attribute_dict_and_child_list_builds_correct_node()
@@ -177,7 +177,7 @@ public sealed class UiApiTests
         Assert.Equal("x-debug-panel", (string?)json["tag"]);
     }
 
-    // ── Positive: Table ───────────────────────────────────────────────────
+    // Positive: Table
 
     [Fact]
     public void Table_with_single_row_builds_thead_and_tbody()
@@ -271,7 +271,7 @@ public sealed class UiApiTests
         Assert.Equal("", (string?)cells[1]!["children"]![0]!["value"]);
     }
 
-    // ── Positive: Table with CLR object rows ──────────────────────────────
+    // Positive: Table with CLR object rows
 
     [Fact]
     public void Table_with_clr_object_rows_uses_projected_properties_as_columns()
@@ -317,7 +317,7 @@ public sealed class UiApiTests
         Assert.Equal("Name", (string?)headers[1]!["children"]![0]!["value"]);
     }
 
-    // ── Negative: Table ───────────────────────────────────────────────────
+    // Negative: Table
 
     [Fact]
     public void Element_script_tag_throws()
@@ -362,7 +362,7 @@ public sealed class UiApiTests
         Assert.Throws<ArgumentException>(() => ui.Element("div", attrs));
     }
 
-    // ── Negative: Table ───────────────────────────────────────────────────
+    // Negative: Table
 
     [Fact]
     public void Table_with_non_enumerable_rows_throws()
@@ -457,7 +457,7 @@ public sealed class UiApiTests
         Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    // ── Helper types ──────────────────────────────────────────────────────
+    // Helper types
 
     private sealed record SimpleRow(string Name, int Age);
 }
