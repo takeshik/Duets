@@ -6,7 +6,16 @@ namespace HttpHarker;
 /// <summary>
 /// <see cref="System.Net.HttpListener"/>-based HTTP server with a composable middleware pipeline.
 /// </summary>
-public class HttpServer(string prefix) : IDisposable
+/// <param name="prefix">The URL prefix the underlying <see cref="System.Net.HttpListener"/> listens on.</param>
+/// <param name="maxConcurrentRequests">
+/// Maximum number of in-flight request handlers that may run simultaneously. When this limit is
+/// reached, additional incoming requests are rejected immediately with HTTP 503 (Service
+/// Unavailable) without entering the middleware pipeline. Set this well above the highest
+/// expected number of simultaneous connections: long-lived responses (e.g. SSE streams) each
+/// hold one slot for their entire lifetime and release it only on teardown. The default (1024)
+/// is generous enough that only genuine runaway or abusive clients are rejected.
+/// </param>
+public class HttpServer(string prefix, int maxConcurrentRequests = 1024) : IDisposable
 {
     // IgnoreWriteExceptions is left at its default (false) on purpose. When true, the listener
     // swallows the exception raised by a write to a client that has disconnected, so the write
@@ -19,6 +28,11 @@ public class HttpServer(string prefix) : IDisposable
     private readonly HttpListener _listener = new() { Prefixes = { prefix } };
 
     private readonly List<Func<HttpListenerContext, Func<Task>, Task>> _middleware = [];
+
+    // Atomic counter of in-flight handlers. Incremented before entering HandleAsync and
+    // decremented in its finally block so every code path — including exceptions and 503
+    // rejections — decrements exactly once per increment.
+    private int _inFlightCount;
 
     private CancellationTokenSource? _cts;
 
@@ -137,6 +151,26 @@ public class HttpServer(string prefix) : IDisposable
                 {
                     var ctx = await this._listener.GetContextAsync();
 
+                    // Reject immediately if the concurrency cap is reached. The check and
+                    // increment are performed atomically: if the post-increment value exceeds the
+                    // cap we undo it and send 503 without ever entering HandleAsync. This is
+                    // non-blocking — the accept loop never waits for a slot to free up.
+                    if (Interlocked.Increment(ref this._inFlightCount) > maxConcurrentRequests)
+                    {
+                        Interlocked.Decrement(ref this._inFlightCount);
+                        try
+                        {
+                            ctx.Response.StatusCode = 503;
+                            ctx.Response.Close();
+                        }
+                        catch
+                        {
+                            /* ignore — client may have already disconnected */
+                        }
+
+                        continue;
+                    }
+
                     // Dispatch the request without awaiting it so the worker returns to
                     // GetContextAsync immediately. Awaiting here would pin the worker for the
                     // entire response lifetime; a long-lived response (e.g. an SSE stream) would
@@ -184,40 +218,50 @@ public class HttpServer(string prefix) : IDisposable
 
         try
         {
-            await NextAsync();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(
-                $"[HttpServer] {ctx.Request.HttpMethod} {ctx.Request.Url?.AbsolutePath}: {ex}"
-            );
             try
             {
-                ctx.Response.StatusCode = 500;
+                await NextAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"[HttpServer] {ctx.Request.HttpMethod} {ctx.Request.Url?.AbsolutePath}: {ex}"
+                );
+                try
+                {
+                    ctx.Response.StatusCode = 500;
+                    ctx.Response.Close();
+                }
+                catch
+                {
+                    /* ignore */
+                }
+
+                return;
+            }
+
+            // Close the response if no middleware committed it.
+            // If status was never changed from the default (200), treat as 404.
+            try
+            {
+                if (ctx.Response.StatusCode == 200)
+                {
+                    ctx.Response.StatusCode = 404;
+                }
+
                 ctx.Response.Close();
             }
-            catch
+            catch (ObjectDisposedException)
             {
-                /* ignore */
+                // Already closed by middleware — nothing to do.
             }
-
-            return;
         }
-
-        // Close the response if no middleware committed it.
-        // If status was never changed from the default (200), treat as 404.
-        try
+        finally
         {
-            if (ctx.Response.StatusCode == 200)
-            {
-                ctx.Response.StatusCode = 404;
-            }
-
-            ctx.Response.Close();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Already closed by middleware — nothing to do.
+            // Release the in-flight slot. This runs regardless of whether the handler
+            // completed normally, threw, or was cancelled — including for long-lived SSE
+            // streams that hold the slot open for their entire lifetime.
+            Interlocked.Decrement(ref this._inFlightCount);
         }
 
         return;

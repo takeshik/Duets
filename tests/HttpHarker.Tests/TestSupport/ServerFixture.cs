@@ -11,13 +11,14 @@ internal static class ServerFixture
 {
     public static async Task RunAsync(
         Action<HttpServer> configure,
-        Func<HttpClient, string, Task> test
+        Func<HttpClient, string, Task> test,
+        int maxConcurrentRequests = 1024
     )
     {
         var port = PickPort();
         var prefix = $"http://127.0.0.1:{port}/";
 
-        using var server = new HttpServer(prefix);
+        using var server = new HttpServer(prefix, maxConcurrentRequests);
         configure(server);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
