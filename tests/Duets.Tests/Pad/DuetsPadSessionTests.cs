@@ -5,7 +5,6 @@ using Duets.Pad;
 using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
-using Duets.Pad.State;
 using Duets.Pad.Timeline;
 using Jint;
 
@@ -361,7 +360,7 @@ public sealed class DuetsPadSessionTests
     }
 
     [Fact]
-    public async Task SetCanvas_unregisters_previous_canvas_interactions()
+    public async Task CanvasClear_unregisters_previous_canvas_interactions()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
@@ -373,30 +372,7 @@ public sealed class DuetsPadSessionTests
         var replace = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
         var handlerId = Assert.Single(replace.Interactions).HandlerId;
 
-        session.SetCanvas(CanvasState.Empty);
-        var invoke = await session.InvokeInteractionAsync(handlerId);
-
-        Assert.False(invoke.Ok);
-        Assert.True(invoke.Stale);
-        Assert.Equal("handler-error", Assert.Single(session.Timeline.State).Reason);
-    }
-
-    [Fact]
-    public async Task SetTimeline_unregisters_previous_timeline_interactions()
-    {
-        using var session = await CreatePadSessionAsync();
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
-        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
-
-        var eval = await session.EvaluateAsync("""dump(ui.button("Run", () => {}))""");
-        Assert.True(eval.Ok, eval.Error);
-        var append = Assert.IsAssignableFrom<EntryEventMessage>(
-            await channel.Reader.ReadAsync(TestContext.Current.CancellationToken)
-        );
-        var handlerId = Assert.Single(append.EntryInteractions).HandlerId;
-
-        session.SetTimeline(TimelineState.Empty);
+        await session.EvaluateAsync("canvas.clear()");
         var invoke = await session.InvokeInteractionAsync(handlerId);
 
         Assert.False(invoke.Ok);
@@ -419,9 +395,8 @@ public sealed class DuetsPadSessionTests
     [Fact]
     public async Task Dump_render_failure_appends_output_error_marker_and_does_not_throw()
     {
-        using var session = await CreatePadSessionAsync();
         var sentinel = new object();
-        session.SetObjectRenderers([new ThrowingRenderer(sentinel)]);
+        using var session = await CreatePadSessionAsync([new ThrowingRenderer(sentinel)]);
 
         // Call the internal op directly with the sentinel CLR value.
         var exception = Record.Exception(() => session.Dump(sentinel, DumpOptions.Default));
@@ -434,44 +409,11 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("duetspad-output-error", classAttr);
     }
 
-    // Renderer swap: ui must observe SetObjectRenderers, not a construction-time snapshot
-
-    /// <summary>
-    /// Renders every string value as a single text node carrying a fixed marker, so a test can
-    /// detect whether a render went through this renderer rather than the default one.
-    /// </summary>
-    private sealed class MarkerRenderer(string marker) : IObjectRenderer
-    {
-        public bool CanRender(object? value) => value is string;
-
-        public DisplayContent Render(object value, RenderContext context) =>
-            DisplayContent.Text(marker);
-    }
-
-    [Fact]
-    public async Task Ui_children_use_renderer_replaced_after_construction()
-    {
-        // The ui host object is wired at construction. Replacing the renderers afterwards via
-        // SetObjectRenderers must be observed by ui.* child rendering, not a stale snapshot.
-        using var session = await CreatePadSessionAsync();
-        session.SetObjectRenderers([new MarkerRenderer("MARKER")]);
-
-        // ui.element renders its children through the session's current renderer.
-        var result = session.DuetsSession.Evaluate("ui.element('div', null, ['x'])");
-        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
-
-        var div = Assert.IsType<Element>(content.Body);
-        var child = Assert.Single(div.Children);
-        var text = Assert.IsType<Text>(child);
-        Assert.Equal("MARKER", text.Value);
-    }
-
     [Fact]
     public async Task CanvasAdd_render_failure_leaves_canvas_unchanged_and_does_not_throw()
     {
-        using var session = await CreatePadSessionAsync();
         var sentinel = new object();
-        session.SetObjectRenderers([new ThrowingRenderer(sentinel)]);
+        using var session = await CreatePadSessionAsync([new ThrowingRenderer(sentinel)]);
 
         var canvasBefore = session.Canvas.State;
         var exception = Record.Exception(() => session.Canvas.Add(sentinel));

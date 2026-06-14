@@ -6,17 +6,10 @@ namespace Duets.Pad;
 /// Performs one-time JavaScript-environment wiring for a new DuetsPad session.
 /// </summary>
 /// <remarks>
-/// <para>
 /// This class is a pure construction-time helper: it binds host objects, defines
 /// JS globals, and registers the per-session <c>.d.ts</c> declarations into the
 /// underlying <see cref="DuetsSession"/>. It does not retain session state, locks,
 /// or subscribers after <see cref="Bootstrap"/> returns.
-/// </para>
-/// <para>
-/// The <c>ui</c> host object does not capture a renderer instance. It is wired with a
-/// resolver that reads the session's current renderer on each render, so a later
-/// <c>SetObjectRenderers</c> swap is observed instead of a construction-time snapshot.
-/// </para>
 /// </remarks>
 internal static class SessionBootstrap
 {
@@ -26,10 +19,14 @@ internal static class SessionBootstrap
     /// before the session is exposed to callers.
     /// </summary>
     /// <param name="padSession">
-    /// The owning <see cref="DuetsPadSession"/>. Used to bind <c>canvas</c>, to wire the
-    /// <c>dump</c> delegate, and to resolve the current renderer for the <c>ui</c> host object.
+    /// The owning <see cref="DuetsPadSession"/>. Used to bind <c>canvas</c> and to wire the
+    /// <c>dump</c> delegate.
     /// </param>
-    internal static void Bootstrap(DuetsPadSession padSession)
+    /// <param name="renderer">
+    /// The session's <see cref="DisplayRenderer"/>, captured at construction time and bound to the
+    /// <c>ui</c> host object. Immutable for the session lifetime.
+    /// </param>
+    internal static void Bootstrap(DuetsPadSession padSession, DisplayRenderer renderer)
     {
         var duetsSession = padSession.DuetsSession;
 
@@ -50,10 +47,7 @@ internal static class SessionBootstrap
 
         // Bind canvas and ui globals.
         duetsSession.SetValue("canvas", new CanvasApi(padSession));
-        duetsSession.SetValue(
-            "ui",
-            new UiApi(() => padSession.CurrentRenderer, padSession.DumpOptions)
-        );
+        duetsSession.SetValue("ui", new UiApi(renderer, padSession.DumpOptions));
 
         // Register per-session d.ts declarations for canvas, ui, and dump.
         duetsSession.Declarations.RegisterDeclaration(

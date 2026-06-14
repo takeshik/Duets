@@ -113,19 +113,6 @@ internal sealed class InteractionStore
         }
     }
 
-    /// <summary>
-    /// Releases and removes all Timeline interactions.
-    /// </summary>
-    public void ClearTimelineInteractions()
-    {
-        foreach (var interactions in this._timelineInteractions.Values)
-        {
-            this.Release(interactions);
-        }
-
-        this._timelineInteractions.Clear();
-    }
-
     // Handler lookup
 
     /// <summary>

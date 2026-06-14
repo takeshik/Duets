@@ -109,7 +109,7 @@ internal sealed class DuetsPadSession
         ChannelWriter<TypeDeclaration?>
     > _typeDeclarationSubscribers = new();
 
-    private DisplayRenderer _renderer;
+    private readonly DisplayRenderer _renderer;
     private readonly InteractionStore _interactionStore = new();
 
     private readonly int? _timelineEntryLimit;
@@ -141,8 +141,7 @@ internal sealed class DuetsPadSession
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
 
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
-        // ui resolves the renderer live via CurrentRenderer, so it is not passed the instance here.
-        SessionBootstrap.Bootstrap(this);
+        SessionBootstrap.Bootstrap(this, this._renderer);
 
         // Record creation as the first activity.
         this.Touch();
@@ -165,7 +164,7 @@ internal sealed class DuetsPadSession
     private CanvasState _canvasState = CanvasState.Empty;
     private TimelineState _timelineState = TimelineState.Empty;
 
-    public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; private set; }
+    public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; }
 
     /// <summary>
     /// Session-default <see cref="Rendering.DumpOptions" /> applied to all render entry points
@@ -190,71 +189,6 @@ internal sealed class DuetsPadSession
     internal void Touch()
     {
         Interlocked.Exchange(ref this._lastActivityTicks, this._clock().UtcTicks);
-    }
-
-    // State setters — used by tests to inject known state before exercising
-    // eval-driven paths. Not part of the normal eval lifecycle.
-
-    public void SetCanvas(CanvasState canvas)
-    {
-        if (canvas is null)
-        {
-            throw new ArgumentNullException(nameof(canvas));
-        }
-
-        lock (this._stateLock)
-        {
-            this._interactionStore.ClearCanvasInteractions();
-            this._canvasState = canvas;
-        }
-    }
-
-    public void SetTimeline(TimelineState timeline)
-    {
-        if (timeline is null)
-        {
-            throw new ArgumentNullException(nameof(timeline));
-        }
-
-        lock (this._stateLock)
-        {
-            this._interactionStore.ClearTimelineInteractions();
-            this._timelineState = timeline;
-        }
-    }
-
-    public void SetObjectRenderers(IReadOnlyList<IObjectRenderer> objectRenderers)
-    {
-        if (objectRenderers is null)
-        {
-            throw new ArgumentNullException(nameof(objectRenderers));
-        }
-
-        lock (this._stateLock)
-        {
-            this.ObjectRenderers = [.. objectRenderers];
-
-            // Rebuild the pipeline so subsequent renders (Dump/canvas.add/canvas.set and the ui.*
-            // host object, which resolves the renderer live via CurrentRenderer) pick up the change.
-            this._renderer = new DisplayRenderer(this.ObjectRenderers);
-        }
-    }
-
-    /// <summary>
-    /// Returns the renderer currently active for this session. The read is performed under
-    /// <c>_stateLock</c> so it observes a consistent renderer rather than a half-applied
-    /// <see cref="SetObjectRenderers"/> swap. Host objects such as <c>ui</c> resolve the renderer
-    /// through this property on each render so they never hold a construction-time snapshot.
-    /// </summary>
-    internal DisplayRenderer CurrentRenderer
-    {
-        get
-        {
-            lock (this._stateLock)
-            {
-                return this._renderer;
-            }
-        }
     }
 
     /// <summary>
