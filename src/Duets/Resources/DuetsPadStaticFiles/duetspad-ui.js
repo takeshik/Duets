@@ -337,6 +337,57 @@
     render();
   }
 
+  /**
+   * Wires the custom dropdown for #btn-more.
+   * Bootstrap JS is not loaded, so this implements a minimal open/close
+   * cycle: clicking the button toggles `.show` on the menu; clicking outside
+   * or pressing Escape closes it.
+   */
+  function wireMoreDropdown() {
+    const btnMore = query("#btn-more");
+    const menuMore = query("#menu-more");
+    if (!btnMore || !menuMore) return;
+
+    function closeMenu() {
+      menuMore.classList.remove("show");
+      btnMore.setAttribute("aria-expanded", "false");
+    }
+
+    function openMenu() {
+      menuMore.classList.add("show");
+      btnMore.setAttribute("aria-expanded", "true");
+    }
+
+    btnMore.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const isOpen = menuMore.classList.contains("show");
+      if (isOpen) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    });
+
+    // Close on any click outside the dropdown.
+    document.addEventListener("click", (event) => {
+      if (!menuMore.contains(event.target) && event.target !== btnMore) {
+        closeMenu();
+      }
+    });
+
+    // Close on Escape.
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    });
+
+    query("#menu-reset-session")?.addEventListener("click", () => {
+      closeMenu();
+      window.DuetsPad?.resetSession();
+    });
+  }
+
   function wireToolbar() {
     for (const button of queryAll("#seg-panes button")) {
       button.addEventListener("click", () => {
@@ -367,6 +418,8 @@
         window.DuetsPad?.clearTimeline();
       });
     }
+
+    wireMoreDropdown();
   }
 
   function init() {

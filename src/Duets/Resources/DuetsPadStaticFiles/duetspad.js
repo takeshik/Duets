@@ -165,6 +165,31 @@
     return res.json();
   }
 
+  // Connection state — single source of truth for whether the SSE session is live.
+  let isConnected = false;
+
+  /**
+   * Synchronises all UI elements whose enabled/disabled state depends on the
+   * SSE connection: the Run button, the immediate input, and the canvas pane.
+   */
+  function syncConnectionUi() {
+    const btnRun = document.getElementById("btn-run");
+    if (btnRun) {
+      btnRun.disabled = !isConnected;
+    }
+
+    if (immediateEditorRef) {
+      immediateEditorRef.updateOptions({ readOnly: !isConnected });
+    }
+
+    activeEditor?.updateOptions({ readOnly: !isConnected });
+
+    const paneCanvas = document.getElementById("pane-canvas");
+    if (paneCanvas) {
+      paneCanvas.classList.toggle("pane-disabled", !isConnected);
+    }
+  }
+
   // Status display helpers
 
   function setEditorStatus(text, isError) {
@@ -175,37 +200,70 @@
   }
 
   function setSessionStatus(connected) {
+    isConnected = connected;
+
     const el = document.getElementById("session-status");
-    if (!el) return;
-    const dot =
-      el.querySelector(".status-dot") ?? document.createElement("span");
-    dot.className = connected ? "status-dot status-dot-animated" : "status-dot";
-    if (!el.contains(dot)) {
-      el.prepend(dot);
+    if (el) {
+      const dot =
+        el.querySelector(".status-dot") ?? document.createElement("span");
+      dot.className = connected
+        ? "status-dot status-dot-animated"
+        : "status-dot";
+      if (!el.contains(dot)) {
+        el.prepend(dot);
+      }
+
+      const labelEl = el.querySelector(".session-label");
+      if (labelEl) {
+        labelEl.textContent = connected ? "connected" : "disconnected";
+      }
+
+      el.className = `status ${connected ? "status-green" : "status-red"} session-status`;
+      el.title = connected ? "Session connected" : "Session disconnected";
+
+      // Update the hover popup with current connection details.
+      const popup = el.querySelector(".session-popup");
+      if (popup) {
+        const sid =
+          sessionId ?? sessionStorage.getItem("duetspad.sessionId") ?? "—";
+        popup.textContent = `Session: ${sid}\nStatus: ${connected ? "connected" : "disconnected"}`;
+      }
     }
-    // Replace text node (last child) with updated label.
-    const label = connected ? "connected" : "disconnected";
-    const lastChild = el.lastChild;
-    if (lastChild && lastChild.nodeType === Node.TEXT_NODE) {
-      lastChild.textContent = label;
-    } else {
-      el.appendChild(document.createTextNode(label));
-    }
-    el.className = `status ${connected ? "status-green" : "status-red"} session-status`;
-    el.title = connected ? "Session connected" : "Session disconnected";
+
+    syncConnectionUi();
   }
 
-  // Module-scoped editor reference
-  // Assigned once Monaco has created the editor; null before that point.
+  // Module-scoped editor references
+  // Assigned once Monaco has created the editors; null before that point.
 
   let activeEditor = null;
+  // Holds the immediate REPL editor so syncConnectionUi() can toggle readOnly.
+  let immediateEditorRef = null;
+
+  // Editor content persistence (localStorage)
+
+  const EDITOR_CONTENT_KEY = "duetspad.editor.content";
+
+  /** Persists the editor content; silently ignores storage errors. */
+  function saveEditorContent(text) {
+    try {
+      localStorage.setItem(EDITOR_CONTENT_KEY, text);
+    } catch {
+      // localStorage may be unavailable (private browsing quota etc.)
+    }
+  }
 
   // Run current editor content
 
   async function runCurrent() {
     if (!activeEditor) return;
+    if (!isConnected) {
+      setEditorStatus("Disconnected", true);
+      return;
+    }
     const code = activeEditor.getValue();
     if (!code.trim()) return;
+    saveEditorContent(code);
     setEditorStatus("Running…", false);
     try {
       const data = await evalCode(code);
@@ -425,6 +483,21 @@
 
       activeEditor = editor;
 
+      /** Loads the last-saved editor content, returning "" on any error. */
+      function loadEditorContent() {
+        try {
+          return localStorage.getItem(EDITOR_CONTENT_KEY) ?? "";
+        } catch {
+          return "";
+        }
+      }
+
+      // Restore previously saved content (overrides the empty initial value).
+      const savedContent = loadEditorContent();
+      if (savedContent) {
+        editor.setValue(savedContent);
+      }
+
       new MutationObserver(() => {
         monaco.editor.setTheme(monacoThemeFromUi());
       }).observe(document.documentElement, {
@@ -477,8 +550,27 @@
         }
       }
 
-      editor.onDidChangeModelContent(syncEditorPlaceholder);
+      editor.onDidChangeModelContent(() => {
+        syncEditorPlaceholder();
+      });
       syncEditorPlaceholder();
+
+      // Save on blur so content survives tab switches and navigation.
+      editor.onDidBlurEditorText(() => {
+        saveEditorContent(editor.getValue());
+      });
+
+      // Save on page hide and visibility-hidden so content survives navigation
+      // and backgrounding (the latter matters for mobile where pagehide may not
+      // fire reliably).
+      window.addEventListener("pagehide", () => {
+        if (activeEditor) saveEditorContent(activeEditor.getValue());
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden" && activeEditor) {
+          saveEditorContent(activeEditor.getValue());
+        }
+      });
 
       // Open canvas and timeline SSE streams.
       // Drive the session-status indicator from the timeline stream's open/error events.
@@ -522,6 +614,10 @@
           fixedOverflowWidgets: true,
         },
       );
+
+      immediateEditorRef = immediateEditor;
+      // Apply current connection state to the immediate editor now that it exists.
+      syncConnectionUi();
 
       // Immediate history (localStorage)
       const HISTORY_KEY = "duetspad.immediate.history";
@@ -637,6 +733,10 @@
       async function submitImmediate() {
         const code = immediateEditor.getValue().trim();
         if (!code) return;
+        if (!isConnected) {
+          setEditorStatus("Disconnected", true);
+          return;
+        }
         setEditorStatus("Evaluating…", false);
         try {
           const data = await evalCode(code, /*immediate*/ true);
@@ -766,6 +866,8 @@
   // Entry point
 
   async function main() {
+    // Apply initial disconnected state immediately (before SSE connects).
+    syncConnectionUi();
     try {
       const id = await initSession();
       setupMonaco(id);
@@ -784,6 +886,22 @@
     },
     clearTimeline: () => {
       resetTimeline();
+    },
+    /**
+     * Terminates the current session on the server (best-effort DELETE), clears
+     * the stored session id, and reloads the page to start a fresh session.
+     * Editor content in localStorage is intentionally preserved across resets.
+     */
+    resetSession: async () => {
+      try {
+        if (sessionId) {
+          await fetch(padUrl(`sessions/${sessionId}`), { method: "DELETE" });
+        }
+      } catch {
+        // Ignore — the page reload will clean up regardless.
+      }
+      sessionStorage.removeItem("duetspad.sessionId");
+      location.reload();
     },
   };
 

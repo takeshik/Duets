@@ -217,6 +217,13 @@ body {
     font-size: 18px;
 }
 
+/* Run button disabled state — Tabler's :disabled rule mutes opacity; reinforce
+   cursor so the pointer does not imply interactivity. */
+#btn-run:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
 /* Segmented groups (Tabler .btn-group): active state in our accent.
    seg-panes = multi toggle (soft tint), seg-view = single select (solid). */
 .seg-panes .btn.active {
@@ -234,6 +241,32 @@ body {
     font-family: var(--common-font-mono);
     font-size: 12px;
     white-space: nowrap;
+    position: relative;
+}
+
+/* Hover popup anchored below the session status indicator.
+   Shown only on hover; no JS event handlers needed. */
+.session-popup {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 100;
+    min-width: 220px;
+    padding: 8px 10px;
+    background: var(--common-elevated);
+    border: 1px solid var(--common-border);
+    border-radius: var(--common-radius-sm);
+    font-family: var(--common-font-mono);
+    font-size: 11px;
+    color: var(--common-text-muted);
+    white-space: pre;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+#session-status:hover .session-popup {
+    display: block;
 }
 
 /* Workspace + panes */
@@ -496,6 +529,14 @@ html[data-bs-theme="light"] .immediate-console {
     padding: 14px 16px 20px;
 }
 
+/* Disabled canvas pane — dims the pane while keeping content visible/readable.
+   pointer-events:none on the content prevents accidental interaction; the pane
+   header is not covered so the pane remains navigable. */
+.pane-disabled #canvas-content {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
 /* Timeline pane — append-only log with a left rail */
 #timeline-content {
     flex: 1 1 0;
@@ -713,6 +754,33 @@ html[data-bs-theme="light"] .immediate-console {
 }
 .workspace-tabbar .nav-link .ti {
     font-size: 16px;
+}
+
+/* More (⋮) dropdown — CSS-only positioning; Bootstrap JS / Popper not loaded.
+   The container is `position: relative` so the absolute menu offsets from it.
+   `right: 0; left: auto` right-aligns the menu to the button edge so it grows
+   leftward and stays on-screen. `z-index: 200` keeps it above panes/splitters. */
+#dropdown-more {
+    position: relative;
+}
+
+#menu-more {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: auto;
+    margin-top: 2px;
+    z-index: 200;
+    min-width: max-content;
+}
+
+#menu-more.show {
+    display: block;
+}
+
+#menu-more .dropdown-item {
+    white-space: nowrap;
 }
 
 /* Responsive — narrow viewports stack */

@@ -161,17 +161,28 @@
           class="status status-yellow session-status"
           title="Session status"
         >
-          <span class="status-dot status-dot-animated"></span>connecting
+          <span class="status-dot status-dot-animated"></span>
+          <span class="session-label">connecting</span>
+          <div class="session-popup"></div>
         </span>
 
-        <button
-          type="button"
-          class="btn btn-icon btn-ghost-secondary"
-          id="btn-more"
-          title="More"
-        >
-          <i class="ti ti-dots-vertical"></i>
-        </button>
+        <div class="dropdown" id="dropdown-more">
+          <button
+            type="button"
+            class="btn btn-icon btn-ghost-secondary"
+            id="btn-more"
+            title="More"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <i class="ti ti-dots-vertical"></i>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end" id="menu-more">
+            <button type="button" class="dropdown-item" id="menu-reset-session">
+              <i class="ti ti-refresh-alert me-2"></i>Reset session
+            </button>
+          </div>
+        </div>
       </header>
 
       <!-- Tab bar (only visible in 'tabs' view) -->
