@@ -1251,7 +1251,7 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
-    public async Task DuetsPadUiJs_uses_modern_bindings_and_dom_construction()
+    public async Task DuetsPadUIJs_uses_modern_bindings_and_dom_construction()
     {
         await RunAsync(
             async (client, prefix) =>

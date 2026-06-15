@@ -10,7 +10,7 @@ namespace Duets.Pad;
 /// All calls delegate to the owning <see cref="DuetsPadSession"/> ops which run on the eval
 /// call stack (no extra locking required here).
 /// </remarks>
-internal sealed class CanvasApi(DuetsPadSession session)
+internal sealed class CanvasGlobal(DuetsPadSession session)
 {
     private readonly DuetsPadSession _session =
         session ?? throw new ArgumentNullException(nameof(session));

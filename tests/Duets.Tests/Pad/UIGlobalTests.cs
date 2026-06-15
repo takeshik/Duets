@@ -3,16 +3,16 @@ using Duets.Pad.Rendering;
 
 namespace Duets.Tests.Pad;
 
-public sealed class UiApiTests
+public sealed class UIGlobalTests
 {
-    private static UiApi CreateUiApi() => new(new DisplayRenderer([]), DumpOptions.Default);
+    private static UIGlobal CreateUIGlobal() => new(new DisplayRenderer([]), DumpOptions.Default);
 
     // Positive: RawHtml
 
     [Fact]
     public void RawHtml_returns_RawHtml_node()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.RawHtml("<strong>hello</strong>");
 
@@ -25,7 +25,7 @@ public sealed class UiApiTests
     [Fact]
     public void Text_returns_Text_node()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Text("hello");
 
@@ -38,7 +38,7 @@ public sealed class UiApiTests
     [Fact]
     public void Label_returns_span_with_duetspad_label_class_and_text_child()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Label("my label");
 
@@ -56,7 +56,7 @@ public sealed class UiApiTests
     [Fact]
     public void Stack_with_no_children_returns_empty_div()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Stack();
 
@@ -70,7 +70,7 @@ public sealed class UiApiTests
     [Fact]
     public void Stack_with_children_renders_each_via_pipeline()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var children = new object?[] { "hello", "world" };
 
         var result = ui.Stack(children);
@@ -84,7 +84,7 @@ public sealed class UiApiTests
     [Fact]
     public void Button_returns_button_body_and_pending_click_interaction()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var clicked = false;
 
         var result = ui.Button("Run", () => clicked = true);
@@ -104,7 +104,7 @@ public sealed class UiApiTests
     [Fact]
     public void Disabled_button_returns_button_body_without_pending_interaction()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Button(
             "Run",
@@ -123,7 +123,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_with_attribute_dict_and_child_list_builds_correct_node()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var attrs = new Dictionary<string, object?> { ["id"] = "x", ["class"] = "card" };
         var childText = new Duets.Pad.Rendering.Text("hi");
 
@@ -142,7 +142,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_with_null_attributes_uses_empty_attributes()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Element("div", null, null);
 
@@ -156,7 +156,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_with_null_attribute_value_preserves_null_boolean_attribute()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var attrs = new Dictionary<string, object?> { ["hidden"] = null };
 
         var result = ui.Element("div", attrs);
@@ -169,7 +169,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_tag_x_debug_panel_is_allowed()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Element("x-debug-panel");
 
@@ -182,7 +182,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_single_row_builds_thead_and_tbody()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[]
         {
             new Dictionary<string, object?> { ["a"] = 1, ["b"] = 2 },
@@ -217,7 +217,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_empty_rows_returns_table_with_empty_thead_and_tbody()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var result = ui.Table(Array.Empty<object?>());
 
@@ -232,7 +232,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_explicit_columns_option_uses_those_columns()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[]
         {
             new Dictionary<string, object?>
@@ -257,7 +257,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_missing_column_in_row_produces_empty_text_cell()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[] { new Dictionary<string, object?> { ["a"] = 1 } };
         var options = new Dictionary<string, object?> { ["columns"] = new object[] { "a", "z" } };
 
@@ -276,7 +276,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_clr_object_rows_uses_projected_properties_as_columns()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[] { new SimpleRow("Alice", 30), new SimpleRow("Bob", 25) };
 
         var result = ui.Table(rows);
@@ -300,7 +300,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_explicit_columns_over_clr_object_rows_honors_column_order()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[] { new SimpleRow("Alice", 30) };
         var options = new Dictionary<string, object?>
         {
@@ -322,7 +322,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_script_tag_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Element("script"));
     }
@@ -330,7 +330,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_iframe_tag_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Element("iframe"));
     }
@@ -338,7 +338,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_href_javascript_url_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var attrs = new Dictionary<string, object?> { ["href"] = "javascript:alert(1)" };
 
         Assert.Throws<ArgumentException>(() => ui.Element("a", attrs));
@@ -347,7 +347,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_on_event_attribute_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var attrs = new Dictionary<string, object?> { ["onclick"] = "alert(1)" };
 
         Assert.Throws<ArgumentException>(() => ui.Element("div", attrs));
@@ -356,7 +356,7 @@ public sealed class UiApiTests
     [Fact]
     public void Element_srcdoc_attribute_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var attrs = new Dictionary<string, object?> { ["srcdoc"] = "<p>html</p>" };
 
         Assert.Throws<ArgumentException>(() => ui.Element("div", attrs));
@@ -367,7 +367,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_non_enumerable_rows_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Table(1));
     }
@@ -375,7 +375,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_null_row_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { null }));
     }
@@ -383,7 +383,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_string_rows_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Table("not-an-array"));
     }
@@ -391,7 +391,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_primitive_row_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { 42 }));
     }
@@ -399,7 +399,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_array_row_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { new object[] { 1, 2 } }));
     }
@@ -407,7 +407,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_duplicate_columns_throws()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[] { new Dictionary<string, object?> { ["a"] = 1 } };
         var options = new Dictionary<string, object?> { ["columns"] = new object[] { "a", "a" } };
 
@@ -418,7 +418,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_non_string_column_element_throws_ArgumentException()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
         var rows = new object?[] { new Dictionary<string, object?> { ["a"] = 1 } };
         // columns list contains an int instead of a string — must be rejected
         var options = new Dictionary<string, object?> { ["columns"] = new object?[] { 1 } };
@@ -431,7 +431,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_string_element_row_throws_invalid_row()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var ex = Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { "a string" }));
         Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -440,7 +440,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_int_element_row_throws_invalid_row()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var ex = Assert.Throws<ArgumentException>(() => ui.Table(new object?[] { 42 }));
         Assert.Contains("invalid row", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -449,7 +449,7 @@ public sealed class UiApiTests
     [Fact]
     public void Table_with_array_element_row_throws_invalid_row()
     {
-        var ui = CreateUiApi();
+        var ui = CreateUIGlobal();
 
         var ex = Assert.Throws<ArgumentException>(() =>
             ui.Table(new object?[] { new object[] { 1, 2 } })

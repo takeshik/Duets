@@ -9,7 +9,7 @@ namespace Duets.Pad;
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
 /// <see cref="Stack"/>, <see cref="Button"/>, and <see cref="Table"/>.
 /// </summary>
-internal sealed class UiApi(DisplayRenderer renderer, DumpOptions dumpOptions)
+internal sealed class UIGlobal(DisplayRenderer renderer, DumpOptions dumpOptions)
 {
     private readonly DisplayRenderer _renderer =
         renderer ?? throw new ArgumentNullException(nameof(renderer));

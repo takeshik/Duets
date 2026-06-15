@@ -46,8 +46,8 @@ internal static class SessionBootstrap
         duetsSession.Execute("var dump = function (v, opts) { __padDump__(v, opts); return v; };");
 
         // Bind canvas and ui globals.
-        duetsSession.SetValue("canvas", new CanvasApi(padSession));
-        duetsSession.SetValue("ui", new UiApi(renderer, padSession.DumpOptions));
+        duetsSession.SetValue("canvas", new CanvasGlobal(padSession));
+        duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions));
 
         // Register per-session d.ts declarations for canvas, ui, and dump.
         duetsSession.Declarations.RegisterDeclaration(
