@@ -169,6 +169,14 @@
   // Connection state — single source of truth for whether the SSE session is live.
   let isConnected = false;
 
+  // Module-scoped EventSource reference.
+  // Kept here so swapSession() can close the old stream before opening the new one.
+  let activeEventSource = null;
+
+  // Set to true during swapSession() to suppress onerror-driven reconnect logic
+  // for the outgoing stream.
+  let sessionSwapInProgress = false;
+
   /**
    * Synchronises all UI elements whose enabled/disabled state depends on the
    * SSE connection: the Run button, the immediate input, and the canvas pane.
@@ -238,6 +246,10 @@
   // Assigned once Monaco has created the editors; null before that point.
 
   let activeEditor = null;
+
+  // Assigned inside setupMonaco() once the SSE dispatcher is ready.
+  // swapSession() calls this to re-subscribe on the new session.
+  let subscribeSession = null;
   // Holds the immediate REPL editor so syncConnectionUi() can toggle readOnly.
   let immediateEditorRef = null;
 
@@ -407,6 +419,79 @@
     }
   }
 
+  // Session swap
+
+  /**
+   * Performs a no-reload session swap:
+   * 1. Closes the current EventSource.
+   * 2. Deletes the old session on the server (best-effort).
+   * 3. Creates a new session via POST /sessions.
+   * 4. Updates sessionStorage and the module-level sessionId.
+   * 5. Clears the Canvas and Timeline panes (the initial SSE burst will re-populate them).
+   * 6. Opens a new EventSource on the new session.
+   * The editor content is intentionally left untouched.
+   */
+  async function swapSession() {
+    if (sessionSwapInProgress) return;
+    sessionSwapInProgress = true;
+    setSessionStatus(false);
+
+    const oldId = sessionId;
+
+    // Step 1: close the outgoing EventSource.
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+
+    // Step 2: delete the old session (best-effort).
+    if (oldId) {
+      try {
+        await fetch(padUrl(`sessions/${oldId}`), { method: "DELETE" });
+      } catch {
+        // Ignore — the old session will eventually be evicted by the server.
+      }
+    }
+
+    // Step 3: create a new session via POST /sessions (no prior id in the body).
+    let newId;
+    try {
+      const res = await fetch(padUrl("sessions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!res.ok) {
+        throw new Error(`Session creation failed: ${res.status}`);
+      }
+      const data = await res.json();
+      newId = data.sessionId;
+    } catch (err) {
+      console.error(
+        "[DuetsPad] swapSession: failed to create new session",
+        err,
+      );
+      sessionSwapInProgress = false;
+      return;
+    }
+
+    // Step 4: persist the new id.
+    sessionId = newId;
+    sessionStorage.setItem("duetspad.sessionId", newId);
+
+    // Step 5: clear Canvas and Timeline panes before the new stream arrives
+    // so the old content does not persist during the brief gap.
+    const canvasContent = document.getElementById("canvas-content");
+    if (canvasContent) canvasContent.textContent = "";
+    resetTimeline();
+
+    // Step 6: open the new EventSource.
+    sessionSwapInProgress = false;
+    if (subscribeSession) {
+      subscribeSession(newId);
+    }
+  }
+
   // Control channel
 
   /**
@@ -427,9 +512,8 @@
     }
   });
 
-  // TODO: implement no-reload session swap when the server-side session reset lands.
-  controlHandlers.set("reset", (msg) => {
-    console.info("[DuetsPad] control.reset received", msg);
+  controlHandlers.set("reset", (_msg) => {
+    void swapSession();
   });
 
   // TODO: implement open-text (toast fallback + new-tab seed) in the next step.
@@ -473,7 +557,12 @@
       onOpen?.();
     };
     es.onerror = () => {
-      // EventSource will attempt to reconnect automatically.
+      // During an intentional session swap the outgoing stream must be closed
+      // immediately so it does not reconnect. Outside of a swap, let EventSource
+      // attempt automatic reconnection (its default behaviour).
+      if (sessionSwapInProgress) {
+        es.close();
+      }
       onError?.();
     };
     return es;
@@ -614,24 +703,28 @@
       });
 
       // Open the unified event stream. Route each message to the appropriate handler by type prefix.
-      openSse(
-        `sessions/${id}/events`,
-        (msg) => {
-          if (msg.type.startsWith("canvas.")) {
-            handleCanvasEvent(msg);
-          } else if (msg.type.startsWith("timeline.")) {
-            handleTimelineEvent(msg);
-          } else if (msg.type === PAD_EVENTS.typeDeclaration) {
-            addExtraLib(msg);
-          } else if (msg.type.startsWith("control.")) {
-            handleControlEvent(msg);
-          }
-        },
-        {
-          onOpen: () => setSessionStatus(true),
-          onError: () => setSessionStatus(false),
-        },
-      );
+      // subscribeSession is exposed at module scope so swapSession() can re-subscribe after a reset.
+      subscribeSession = (targetId) => {
+        activeEventSource = openSse(
+          `sessions/${targetId}/events`,
+          (msg) => {
+            if (msg.type.startsWith("canvas.")) {
+              handleCanvasEvent(msg);
+            } else if (msg.type.startsWith("timeline.")) {
+              handleTimelineEvent(msg);
+            } else if (msg.type === PAD_EVENTS.typeDeclaration) {
+              addExtraLib(msg);
+            } else if (msg.type.startsWith("control.")) {
+              handleControlEvent(msg);
+            }
+          },
+          {
+            onOpen: () => setSessionStatus(true),
+            onError: () => setSessionStatus(false),
+          },
+        );
+      };
+      subscribeSession(id);
 
       // Immediate Monaco editor
       // Single-line REPL editor sharing the page-global TS completion env.
@@ -941,20 +1034,12 @@
       resetTimeline();
     },
     /**
-     * Terminates the current session on the server (best-effort DELETE), clears
-     * the stored session id, and reloads the page to start a fresh session.
-     * Editor content in localStorage is intentionally preserved across resets.
+     * Performs a no-reload session swap: closes the current SSE stream, deletes
+     * the old session, creates a new one, and re-subscribes. The Canvas and
+     * Timeline panes are cleared; the editor content is preserved.
      */
-    resetSession: async () => {
-      try {
-        if (sessionId) {
-          await fetch(padUrl(`sessions/${sessionId}`), { method: "DELETE" });
-        }
-      } catch {
-        // Ignore — the page reload will clean up regardless.
-      }
-      sessionStorage.removeItem("duetspad.sessionId");
-      location.reload();
+    resetSession: () => {
+      void swapSession();
     },
   };
 
