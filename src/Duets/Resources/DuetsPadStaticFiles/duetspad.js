@@ -25,7 +25,7 @@
   // Session bootstrap
   // Reads sessionId from sessionStorage; POSTs to /sessions to reuse a live session
   // or obtain a fresh one; stores the returned id back into sessionStorage.
-  // A seeded tab (opened via pad.openText, carrying a "?seed" param) ignores the
+  // A handoff tab (opened via pad.openText, carrying a "?handoff" param) ignores the
   // stored id so it always gets a fresh isolated session: window.open copies the
   // opener's sessionStorage, and reusing that id would attach the new tab to the
   // opener's session.
@@ -33,8 +33,10 @@
   let sessionId = null;
 
   async function initSession() {
-    const hasSeed = new URLSearchParams(window.location.search).has("seed");
-    const stored = hasSeed
+    const hasHandoff = new URLSearchParams(window.location.search).has(
+      "handoff",
+    );
+    const stored = hasHandoff
       ? null
       : sessionStorage.getItem("duetspad.sessionId");
     const body = stored ? JSON.stringify({ sessionId: stored }) : "{}";
@@ -264,27 +266,27 @@
 
   const EDITOR_CONTENT_KEY = "duetspad.editor.content";
 
-  // Seed key utilities for one-shot localStorage text transfer across tabs.
-  // A seed key stores text that a newly opened tab reads exactly once, then
+  // Handoff key utilities for one-shot localStorage text transfer across tabs.
+  // A handoff key stores text that a newly opened tab reads exactly once, then
   // deletes. The key name embeds a UUID so concurrent openText calls do not
   // collide.
 
-  const SEED_KEY_PREFIX = "duetspad.seed.";
-  const SEED_MAX_KEYS = 20;
+  const HANDOFF_KEY_PREFIX = "duetspad.handoff.";
+  const HANDOFF_MAX_KEYS = 20;
 
   /**
-   * Writes text under a fresh seed key and returns the UUID portion so the
+   * Writes text under a fresh handoff key and returns the UUID portion so the
    * caller can embed it in the target URL.
-   * Old surplus seed keys (beyond SEED_MAX_KEYS) are pruned to prevent
+   * Old surplus handoff keys (beyond HANDOFF_MAX_KEYS) are pruned to prevent
    * unbounded growth in case they are never consumed.
-   * @param {string} text - The seed content to store.
-   * @returns {string} The UUID identifying this seed key.
+   * @param {string} text - The handoff content to store.
+   * @returns {string} The UUID identifying this handoff key.
    */
-  function writeSeed(text) {
+  function writeHandoff(text) {
     const uuid = crypto.randomUUID();
     try {
-      localStorage.setItem(SEED_KEY_PREFIX + uuid, text);
-      pruneSeedKeys();
+      localStorage.setItem(HANDOFF_KEY_PREFIX + uuid, text);
+      pruneHandoffKeys();
     } catch {
       // localStorage unavailable; best-effort only.
     }
@@ -292,15 +294,15 @@
   }
 
   /**
-   * Reads and immediately deletes the seed for the given UUID.
+   * Reads and immediately deletes the handoff for the given UUID.
    * Returns the stored text, or null if the key is absent or storage is
    * unavailable. The one-shot delete ensures a second caller gets nothing.
-   * @param {string} uuid - The UUID from the URL ?seed= parameter.
+   * @param {string} uuid - The UUID from the URL ?handoff= parameter.
    * @returns {string|null} The stored text, or null.
    */
-  function consumeSeed(uuid) {
+  function consumeHandoff(uuid) {
     try {
-      const key = SEED_KEY_PREFIX + uuid;
+      const key = HANDOFF_KEY_PREFIX + uuid;
       const value = localStorage.getItem(key);
       if (value !== null) {
         localStorage.removeItem(key);
@@ -312,23 +314,23 @@
   }
 
   /**
-   * Removes the oldest surplus seed keys so at most SEED_MAX_KEYS remain.
+   * Removes the oldest surplus handoff keys so at most HANDOFF_MAX_KEYS remain.
    * Keys are sorted lexicographically; since UUIDs are random (v4) this is not
    * truly FIFO, but it keeps storage bounded in pathological cases.
    */
-  function pruneSeedKeys() {
+  function pruneHandoffKeys() {
     try {
       const keys = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         // biome-ignore lint/complexity/useOptionalChain: k?.startsWith() returns undefined (not false) when k is null, which is not safe in boolean context here
-        if (k && k.startsWith(SEED_KEY_PREFIX)) {
+        if (k && k.startsWith(HANDOFF_KEY_PREFIX)) {
           keys.push(k);
         }
       }
-      if (keys.length > SEED_MAX_KEYS) {
+      if (keys.length > HANDOFF_MAX_KEYS) {
         keys.sort();
-        for (const k of keys.slice(0, keys.length - SEED_MAX_KEYS)) {
+        for (const k of keys.slice(0, keys.length - HANDOFF_MAX_KEYS)) {
           localStorage.removeItem(k);
         }
       }
@@ -653,10 +655,10 @@
   controlHandlers.set("openText", (msg) => {
     if (typeof msg.text !== "string") return;
 
-    const uuid = writeSeed(msg.text);
+    const uuid = writeHandoff(msg.text);
     const targetUrl = new URL(document.location.href);
     targetUrl.search = "";
-    targetUrl.searchParams.set("seed", uuid);
+    targetUrl.searchParams.set("handoff", uuid);
     const href = targetUrl.href;
 
     const newTab = window.open(href, "_blank");
@@ -766,17 +768,19 @@
         }
       }
 
-      // Seed: if the URL carries ?seed=<uuid>, consume it from localStorage
+      // Handoff: if the URL carries ?handoff=<uuid>, consume it from localStorage
       // and use it as the initial content (one-shot; key is deleted on read).
       // Otherwise fall back to the last persisted editor content.
-      const seedParam = new URLSearchParams(window.location.search).get("seed");
-      const seedContent = seedParam ? consumeSeed(seedParam) : null;
-      if (seedContent !== null) {
-        editor.setValue(seedContent);
-        // Remove the ?seed= parameter from the URL without reloading so
+      const handoffParam = new URLSearchParams(window.location.search).get(
+        "handoff",
+      );
+      const handoffContent = handoffParam ? consumeHandoff(handoffParam) : null;
+      if (handoffContent !== null) {
+        editor.setValue(handoffContent);
+        // Remove the ?handoff= parameter from the URL without reloading so
         // the next time the user refreshes they get a fresh empty editor.
         const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete("seed");
+        cleanUrl.searchParams.delete("handoff");
         window.history.replaceState(null, "", cleanUrl.href);
       } else {
         // Restore previously saved content (overrides the empty initial value).

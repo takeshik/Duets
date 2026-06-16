@@ -83,7 +83,7 @@ internal static class SessionBootstrap
             declare const pad: {
                 /** Resets the current session (engine + canvas + timeline). Eventually-consistent: takes effect after the current run completes. */
                 resetSession(): void;
-                /** Opens a new tab seeded with the given text. */
+                /** Opens a new tab with the given text handed off as the initial content. */
                 openText(text: string): void;
                 /** Replaces the editor content with the given text. */
                 setEditorText(text: string): void;

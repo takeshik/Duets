@@ -13,7 +13,7 @@ internal static class ControlEventTypes
     /// <summary>Op name for <c>pad.resetSession()</c>: resets the engine, canvas, and timeline.</summary>
     public const string Reset = "reset";
 
-    /// <summary>Op name for <c>pad.openText(text)</c>: opens a new tab seeded with the given text.</summary>
+    /// <summary>Op name for <c>pad.openText(text)</c>: opens a new tab with the given text handed off as the initial content.</summary>
     public const string OpenText = "openText";
 
     /// <summary>Op name for <c>pad.setEditorText(text)</c>: replaces the editor content with the given text.</summary>

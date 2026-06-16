@@ -473,7 +473,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     /// <summary>
     /// Enqueues an <c>openText</c> control command. Every call is delivered; there is no collapse.
     /// </summary>
-    /// <param name="text">The seed text for the new tab.</param>
+    /// <param name="text">The text to hand off as the initial content of the new tab.</param>
     internal void RequestOpenText(string text)
     {
         this.EnqueueControl(

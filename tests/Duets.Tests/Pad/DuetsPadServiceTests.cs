@@ -927,7 +927,7 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
-    public async Task DuetsPadJs_seeded_tab_creates_fresh_session()
+    public async Task DuetsPadJs_handoff_tab_creates_fresh_session()
     {
         await RunAsync(
             async (client, prefix) =>
@@ -935,11 +935,12 @@ public sealed class DuetsPadServiceTests
                 var js = await client.GetStringAsync(prefix + "duetspad.js");
 
                 Assert.Contains(
-                    "const hasSeed = new URLSearchParams(window.location.search).has(\"seed\");",
+                    "const hasHandoff = new URLSearchParams(window.location.search).has(",
                     js,
                     StringComparison.Ordinal
                 );
-                Assert.Contains("const stored = hasSeed", js, StringComparison.Ordinal);
+                Assert.Contains("\"handoff\"", js, StringComparison.Ordinal);
+                Assert.Contains("const stored = hasHandoff", js, StringComparison.Ordinal);
                 Assert.Contains("? null", js, StringComparison.Ordinal);
                 Assert.Contains(
                     ": sessionStorage.getItem(\"duetspad.sessionId\")",

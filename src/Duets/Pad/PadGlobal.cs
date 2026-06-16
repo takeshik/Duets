@@ -22,7 +22,7 @@ internal sealed class PadGlobal(DuetsPadSession session)
     public void ResetSession() => this._session.RequestResetSession();
 
     /// <summary>
-    /// Requests that a new tab be opened seeded with <paramref name="text"/>.
+    /// Requests that a new tab be opened with <paramref name="text"/> handed off as the initial content.
     /// Every call is delivered; there is no collapse within a single eval.
     /// (JS: <c>pad.openText</c>)
     /// </summary>
