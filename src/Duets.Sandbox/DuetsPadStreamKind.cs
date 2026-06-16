@@ -1,33 +1,17 @@
 namespace Duets.Sandbox;
 
 /// <summary>
-/// Represents a typed SSE stream kind for the DuetsPad protocol.
-/// Each instance carries its wire token and knows how to build its relative path.
+/// Represents the unified SSE stream kind for the DuetsPad protocol.
 /// </summary>
 internal sealed class DuetsPadStreamKind
 {
-    public static readonly DuetsPadStreamKind Canvas = new(
-        "canvas",
-        id => $"sessions/{id}/canvas-events"
-    );
-
-    public static readonly DuetsPadStreamKind Timeline = new(
-        "timeline",
-        id => $"sessions/{id}/timeline-events"
-    );
-
-    public static readonly DuetsPadStreamKind TypeDeclarations = new(
-        "type-declarations",
-        id => $"type-declaration-events?sessionId={id}"
-    );
+    public static readonly DuetsPadStreamKind Events = new("events", id => $"sessions/{id}/events");
 
     private static readonly Dictionary<string, DuetsPadStreamKind> _byToken = new(
         StringComparer.Ordinal
     )
     {
-        [Canvas.WireToken] = Canvas,
-        [Timeline.WireToken] = Timeline,
-        [TypeDeclarations.WireToken] = TypeDeclarations,
+        [Events.WireToken] = Events,
     };
 
     private readonly Func<string, string> _buildRelativePath;
@@ -38,16 +22,14 @@ internal sealed class DuetsPadStreamKind
         this._buildRelativePath = buildRelativePath;
     }
 
-    /// <summary>The string token used on the wire (e.g. "canvas").</summary>
+    /// <summary>The string token used on the wire (e.g. "events").</summary>
     public string WireToken { get; }
 
     /// <summary>All known stream kinds, in declaration order.</summary>
-    public static IReadOnlyList<DuetsPadStreamKind> AllKinds =>
-        [Canvas, Timeline, TypeDeclarations];
+    public static IReadOnlyList<DuetsPadStreamKind> AllKinds => [Events];
 
     /// <summary>All known wire tokens, in declaration order.</summary>
-    public static IReadOnlyList<string> AllTokens =>
-        [Canvas.WireToken, Timeline.WireToken, TypeDeclarations.WireToken];
+    public static IReadOnlyList<string> AllTokens => [Events.WireToken];
 
     /// <summary>
     /// Parses a wire token string to its <see cref="DuetsPadStreamKind"/>.

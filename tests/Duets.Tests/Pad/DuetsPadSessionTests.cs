@@ -30,6 +30,36 @@ public sealed class DuetsPadSessionTests
         return new DuetsPadSession(Guid.NewGuid(), duetsSession, renderers);
     }
 
+    private static async Task<CanvasEventMessage> ReadCanvasEventAsync(
+        ChannelReader<PadEventMessage?> reader,
+        CancellationToken ct
+    )
+    {
+        while (true)
+        {
+            var msg = await reader.ReadAsync(ct);
+            if (msg is PadEventMessage.Canvas canvas)
+            {
+                return canvas.Message;
+            }
+        }
+    }
+
+    private static async Task<TimelineEventMessage> ReadTimelineEventAsync(
+        ChannelReader<PadEventMessage?> reader,
+        CancellationToken ct
+    )
+    {
+        while (true)
+        {
+            var msg = await reader.ReadAsync(ct);
+            if (msg is PadEventMessage.Timeline timeline)
+            {
+                return timeline.Message;
+            }
+        }
+    }
+
     private static IReadOnlyList<Element> AssertScalarTableRows(IRenderNode result)
     {
         var table = Assert.IsType<Element>(result);
@@ -312,16 +342,19 @@ public sealed class DuetsPadSessionTests
     public async Task Canvas_button_interaction_invokes_handler_and_appends_dump()
     {
         using var session = await CreatePadSessionAsync();
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
-        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync(
             """canvas.add(ui.button("Run", () => dump("clicked")))"""
         );
 
         Assert.True(eval.Ok, eval.Error);
-        var replace = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
+        var replace = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(CanvasEventTypes.Replace, replace.Type);
         var interaction = Assert.Single(replace.Interactions);
         Assert.Equal([0], interaction.Target.Segments);
@@ -341,13 +374,16 @@ public sealed class DuetsPadSessionTests
     public async Task Cleared_canvas_button_interaction_returns_stale_and_appends_handler_error()
     {
         using var session = await CreatePadSessionAsync();
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
-        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
         Assert.True(eval.Ok, eval.Error);
-        var replace = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
+        var replace = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
         var handlerId = Assert.Single(replace.Interactions).HandlerId;
 
         await session.EvaluateAsync("canvas.clear()");
@@ -363,13 +399,16 @@ public sealed class DuetsPadSessionTests
     public async Task CanvasClear_unregisters_previous_canvas_interactions()
     {
         using var session = await CreatePadSessionAsync();
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
-        _ = await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
         Assert.True(eval.Ok, eval.Error);
-        var replace = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
+        var replace = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
         var handlerId = Assert.Single(replace.Interactions).HandlerId;
 
         await session.EvaluateAsync("canvas.clear()");
@@ -557,16 +596,17 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // Consume the initial snapshot so the channel is not already complete.
-        await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        while (channel.Reader.TryRead(out _)) { }
 
         session.Dispose();
 
-        // After dispose the writer must be completed, so ReadAllAsync terminates.
-        var items = new List<CanvasEventMessage?>();
+        // After dispose the writer must be completed, so ReadAllAsync terminates without
+        // producing any additional items.
+        var items = new List<PadEventMessage?>();
         await foreach (
             var msg in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
         )
@@ -583,15 +623,15 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // Consume the initial reset.
-        await channel.Reader.ReadAsync(TestContext.Current.CancellationToken);
+        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        while (channel.Reader.TryRead(out _)) { }
 
         session.Dispose();
 
-        var items = new List<TimelineEventMessage?>();
+        var items = new List<PadEventMessage?>();
         await foreach (
             var msg in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
         )
@@ -607,22 +647,22 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
-        session.TypeDeclarations.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         session.Dispose();
 
         // After dispose the writer must be completed, so ReadAllAsync terminates.
-        var items = new List<TypeDeclaration?>();
+        var items = new List<PadEventMessage?>();
         await foreach (
-            var decl in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
+            var msg in channel.Reader.ReadAllAsync(TestContext.Current.CancellationToken)
         )
         {
-            items.Add(decl);
+            items.Add(msg);
         }
 
-        // Channel is complete and no items were written by this test.
-        Assert.Empty(items);
+        // Channel is complete (initial burst items may have been buffered but are drained here).
+        Assert.True(channel.Reader.Completion.IsCompleted);
     }
 
     [Fact]
@@ -632,25 +672,13 @@ public sealed class DuetsPadSessionTests
 
         Assert.False(session.HasActiveSubscribers);
 
-        // Canvas subscriber.
-        var canvasChannel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        var canvasKey = session.Canvas.Subscribe(canvasChannel.Writer);
+        var eventsChannel = Channel.CreateUnbounded<PadEventMessage?>();
+        var eventsKey = session.SubscribeEvents(
+            eventsChannel.Writer,
+            session.DuetsSession.Declarations
+        );
         Assert.True(session.HasActiveSubscribers);
-        session.Canvas.Unsubscribe(canvasKey);
-        Assert.False(session.HasActiveSubscribers);
-
-        // Timeline subscriber.
-        var timelineChannel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        var timelineKey = session.Timeline.Subscribe(timelineChannel.Writer);
-        Assert.True(session.HasActiveSubscribers);
-        session.Timeline.Unsubscribe(timelineKey);
-        Assert.False(session.HasActiveSubscribers);
-
-        // Type-declaration subscriber.
-        var declChannel = Channel.CreateUnbounded<TypeDeclaration?>();
-        var declKey = session.TypeDeclarations.Subscribe(declChannel.Writer);
-        Assert.True(session.HasActiveSubscribers);
-        session.TypeDeclarations.Unsubscribe(declKey);
+        session.UnsubscribeEvents(eventsKey);
         Assert.False(session.HasActiveSubscribers);
     }
 
@@ -705,8 +733,8 @@ public sealed class DuetsPadSessionTests
         var t1 = t0.AddMinutes(2);
         current = t1;
 
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         Assert.Equal(t1, session.LastActivityUtc);
     }
@@ -721,8 +749,8 @@ public sealed class DuetsPadSessionTests
         var t1 = t0.AddMinutes(2);
         current = t1;
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         Assert.Equal(t1, session.LastActivityUtc);
     }
@@ -761,19 +789,25 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        session.Canvas.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // First message: canvas.snapshot of empty canvas.
-        var msg1 = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
+        // First canvas message: canvas.snapshot of empty canvas.
+        var msg1 = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(CanvasEventTypes.Snapshot, msg1.Type);
         Assert.Empty(msg1.State.Root.Children);
 
         // Trigger a canvas mutation.
         await session.EvaluateAsync("""canvas.add(ui.label("test"))""");
 
-        // Second message: canvas.replace reflecting the addition.
-        var msg2 = (await channel.Reader.ReadAsync(TestContext.Current.CancellationToken))!;
+        // Next canvas message: canvas.replace reflecting the addition.
+        var msg2 = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
         Assert.Equal(CanvasEventTypes.Replace, msg2.Type);
         Assert.Single(msg2.State.Root.Children);
     }
@@ -783,12 +817,12 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // First message: timeline.reset of empty timeline.
+        // First timeline message: timeline.reset of empty timeline.
         var msg1 = Assert.IsType<ResetMessage>(
-            await channel.Reader.ReadAsync(TestContext.Current.CancellationToken)
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
         );
         Assert.Equal(TimelineEventTypes.Reset, msg1.Type);
         Assert.Equal("initial", msg1.Reason);
@@ -797,9 +831,9 @@ public sealed class DuetsPadSessionTests
         // Trigger an append.
         await session.EvaluateAsync("""dump("hi")""");
 
-        // Second message: timeline.append event for the new entry.
+        // Next timeline message: timeline.append event for the new entry.
         var msg2 = Assert.IsAssignableFrom<EntryEventMessage>(
-            await channel.Reader.ReadAsync(TestContext.Current.CancellationToken)
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
         );
         Assert.Equal(TimelineEventTypes.Append, msg2.Type);
         Assert.NotNull(msg2.Entry);
@@ -856,8 +890,8 @@ public sealed class DuetsPadSessionTests
         var session = await CreatePadSessionAsync();
         session.Dispose();
 
-        var channel = Channel.CreateUnbounded<CanvasEventMessage?>();
-        var key = session.Canvas.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        var key = session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -869,8 +903,8 @@ public sealed class DuetsPadSessionTests
         var session = await CreatePadSessionAsync();
         session.Dispose();
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        var key = session.Timeline.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        var key = session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -882,8 +916,8 @@ public sealed class DuetsPadSessionTests
         var session = await CreatePadSessionAsync();
         session.Dispose();
 
-        var channel = Channel.CreateUnbounded<TypeDeclaration?>();
-        var key = session.TypeDeclarations.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        var key = session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         Assert.Equal(Guid.Empty, key);
         Assert.True(channel.Reader.Completion.IsCompleted);
@@ -923,7 +957,7 @@ public sealed class DuetsPadSessionTests
         const int subscriberCount = 32;
         var channels = Enumerable
             .Range(0, subscriberCount)
-            .Select(_ => Channel.CreateUnbounded<CanvasEventMessage?>())
+            .Select(_ => Channel.CreateUnbounded<PadEventMessage?>())
             .ToArray();
 
         // Use a Barrier across dedicated threads (not thread-pool tasks) so every participant
@@ -940,7 +974,7 @@ public sealed class DuetsPadSessionTests
             var thread = new Thread(() =>
             {
                 barrier.SignalAndWait();
-                session.Canvas.Subscribe(writer);
+                session.SubscribeEvents(writer, session.DuetsSession.Declarations);
             })
             {
                 IsBackground = true,
@@ -1012,10 +1046,10 @@ public sealed class DuetsPadSessionTests
     {
         using var session = await CreatePadSessionAsync();
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
-        // Drain the initial reset.
-        channel.Reader.TryRead(out _);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        while (channel.Reader.TryRead(out _)) { }
 
         // Append several entries via dump.
         const int appendCount = 10;
@@ -1026,15 +1060,18 @@ public sealed class DuetsPadSessionTests
 
         Assert.Equal(appendCount, session.Timeline.State.Count);
 
-        // Drain all events; none should be timeline.trim.
-        var events = new List<TimelineEventMessage?>();
+        // Drain all events; only timeline events, none should be timeline.trim.
+        var events = new List<TimelineEventMessage>();
         while (channel.Reader.TryRead(out var msg))
         {
-            events.Add(msg);
+            if (msg is PadEventMessage.Timeline tl)
+            {
+                events.Add(tl.Message);
+            }
         }
 
         Assert.Equal(appendCount, events.Count);
-        Assert.All(events, e => Assert.Equal(TimelineEventTypes.Append, e!.Type));
+        Assert.All(events, e => Assert.Equal(TimelineEventTypes.Append, e.Type));
     }
 
     [Fact]
@@ -1062,10 +1099,10 @@ public sealed class DuetsPadSessionTests
         const int limit = 3;
         using var session = await CreatePadSessionWithLimitAsync(limit);
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
-        // Drain initial reset.
-        channel.Reader.TryRead(out _);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        // Drain initial burst.
+        while (channel.Reader.TryRead(out _)) { }
 
         // Append exactly limit entries — no trim yet.
         for (var i = 0; i < limit; i++)
@@ -1076,15 +1113,18 @@ public sealed class DuetsPadSessionTests
         // The (limit+1)-th append triggers the first trim.
         await session.EvaluateAsync($"""dump("trigger")""");
 
-        // Collect all events for this fourth append.
-        var events = new List<TimelineEventMessage?>();
+        // Collect timeline events for these appends.
+        var events = new List<TimelineEventMessage>();
         while (channel.Reader.TryRead(out var msg))
         {
-            events.Add(msg);
+            if (msg is PadEventMessage.Timeline tl)
+            {
+                events.Add(tl.Message);
+            }
         }
 
         // Expect: 3 appends (ids 0,1,2) + then append id=3 + trim removing id 0.
-        var trimEvents = events.Where(e => e!.Type == TimelineEventTypes.Trim).ToList();
+        var trimEvents = events.Where(e => e.Type == TimelineEventTypes.Trim).ToList();
         Assert.NotEmpty(trimEvents);
 
         var trim = Assert.IsType<TrimMessage>(trimEvents[^1]);
@@ -1098,10 +1138,10 @@ public sealed class DuetsPadSessionTests
         const int limit = 2;
         using var session = await CreatePadSessionWithLimitAsync(limit);
 
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
-        // Drain initial reset.
-        channel.Reader.TryRead(out _);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        // Drain initial burst.
+        while (channel.Reader.TryRead(out _)) { }
 
         // Fill to limit.
         for (var i = 0; i < limit; i++)
@@ -1115,16 +1155,19 @@ public sealed class DuetsPadSessionTests
         // This append triggers a trim.
         await session.EvaluateAsync("""dump("trigger")""");
 
-        // Collect events from the triggering eval.
-        var events = new List<TimelineEventMessage?>();
+        // Collect timeline events from the triggering eval.
+        var events = new List<TimelineEventMessage>();
         while (channel.Reader.TryRead(out var msg))
         {
-            events.Add(msg);
+            if (msg is PadEventMessage.Timeline tl)
+            {
+                events.Add(tl.Message);
+            }
         }
 
         Assert.True(events.Count >= 2, "Expected at least one append and one trim event.");
-        var appendIdx = events.FindIndex(e => e!.Type == TimelineEventTypes.Append);
-        var trimIdx = events.FindIndex(e => e!.Type == TimelineEventTypes.Trim);
+        var appendIdx = events.FindIndex(e => e.Type == TimelineEventTypes.Append);
+        var trimIdx = events.FindIndex(e => e.Type == TimelineEventTypes.Trim);
         Assert.True(
             appendIdx >= 0 && trimIdx > appendIdx,
             "timeline.append must appear before timeline.trim"
@@ -1168,11 +1211,11 @@ public sealed class DuetsPadSessionTests
         Assert.Equal(limit, session.Timeline.State.Count);
 
         // A subscriber attaching now should receive a reset reflecting only the trimmed entries.
-        var channel = Channel.CreateUnbounded<TimelineEventMessage?>();
-        session.Timeline.Subscribe(channel.Writer);
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
         var reset = Assert.IsType<ResetMessage>(
-            await channel.Reader.ReadAsync(TestContext.Current.CancellationToken)
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
         );
         Assert.Equal(TimelineEventTypes.Reset, reset.Type);
         Assert.Equal(limit, reset.State.Count);

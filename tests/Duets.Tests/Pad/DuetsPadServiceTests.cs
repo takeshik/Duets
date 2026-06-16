@@ -64,10 +64,15 @@ public sealed class DuetsPadServiceTests
     private static Task RunAsync(Func<HttpClient, string, Task> test) => RunAsync("/", null, test);
 
     /// <summary>
-    /// Reads SSE lines from <paramref name="reader"/> until a <c>data: ...</c> line is found,
-    /// parses the JSON payload, and returns it.
+    /// Reads SSE lines from <paramref name="reader"/> until a <c>data: ...</c> line is found
+    /// whose <c>type</c> field starts with <paramref name="typePrefix"/> (or any data line when
+    /// <paramref name="typePrefix"/> is <see langword="null"/>), parses the JSON payload, and
+    /// returns it.
     /// </summary>
-    private static async Task<JsonElement> ReadNextSseDataAsync(StreamReader reader)
+    private static async Task<JsonElement> ReadNextSseDataAsync(
+        StreamReader reader,
+        string? typePrefix = null
+    )
     {
         while (true)
         {
@@ -82,7 +87,19 @@ public sealed class DuetsPadServiceTests
             }
 
             using var doc = JsonDocument.Parse(line["data: ".Length..]);
-            return doc.RootElement.Clone();
+            var element = doc.RootElement.Clone();
+
+            if (
+                typePrefix is null
+                || (
+                    element.TryGetProperty("type", out var typeProp)
+                    && typeProp.GetString()?.StartsWith(typePrefix, StringComparison.Ordinal)
+                        == true
+                )
+            )
+            {
+                return element;
+            }
         }
     }
 
@@ -493,12 +510,15 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
                 var sessionGuid = Guid.Parse(sessionId);
 
-                // Attach a canvas subscriber directly at the session level — no real sleep required.
+                // Attach a subscriber directly at the session level — no real sleep required.
                 var session = padService!.TryGetSession(sessionGuid);
                 Assert.NotNull(session);
 
-                var subChannel = Channel.CreateUnbounded<CanvasEventMessage?>();
-                var subKey = session!.Canvas.Subscribe(subChannel.Writer);
+                var subChannel = Channel.CreateUnbounded<PadEventMessage?>();
+                var subKey = session!.SubscribeEvents(
+                    subChannel.Writer,
+                    session.DuetsSession.Declarations
+                );
 
                 Assert.True(session.HasActiveSubscribers);
 
@@ -519,7 +539,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Detach the subscriber. HasActiveSubscribers is now false.
-                session.Canvas.Unsubscribe(subKey);
+                session.UnsubscribeEvents(subKey);
                 Assert.False(session.HasActiveSubscribers);
 
                 // Now with no active subscriber, sweeping past the threshold must evict it.
@@ -588,7 +608,7 @@ public sealed class DuetsPadServiceTests
                 using var sseClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
                 var sseResponse = await sseClient.GetAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events",
+                    prefix + $"sessions/{sessionId}/events",
                     HttpCompletionOption.ResponseHeadersRead
                 );
                 sseResponse.EnsureSuccessStatusCode();
@@ -596,7 +616,7 @@ public sealed class DuetsPadServiceTests
                 // Read the initial snapshot so we know the subscriber is registered and streaming.
                 var sseStream = await sseResponse.Content.ReadAsStreamAsync();
                 var sseReader = new StreamReader(sseStream);
-                var snapshot = await ReadNextSseDataAsync(sseReader);
+                var snapshot = await ReadNextSseDataAsync(sseReader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Snapshot, snapshot.GetProperty("type").GetString());
                 Assert.True(session!.HasActiveSubscribers);
 
@@ -648,14 +668,14 @@ public sealed class DuetsPadServiceTests
                     string.IsNullOrWhiteSpace(evalPayload.GetProperty("error").GetString())
                 );
 
-                // A subsequent canvas-events request with the same id should also error (session was not created).
-                using var canvasResponse = await client.GetAsync(
-                    prefix + $"sessions/{unknownId}/canvas-events",
+                // A subsequent events request with the same id should also error (session was not created).
+                using var eventsResponse = await client.GetAsync(
+                    prefix + $"sessions/{unknownId}/events",
                     HttpCompletionOption.ResponseHeadersRead
                 );
-                var body = await canvasResponse.Content.ReadAsStringAsync();
+                var body = await eventsResponse.Content.ReadAsStringAsync();
                 // Either the response is an error JSON body or the headers indicate it is not SSE.
-                var contentType = canvasResponse.Content.Headers.ContentType?.MediaType ?? "";
+                var contentType = eventsResponse.Content.Headers.ContentType?.MediaType ?? "";
                 Assert.DoesNotContain(
                     "text/event-stream",
                     contentType,
@@ -722,11 +742,11 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
-                var first = await ReadNextSseDataAsync(reader);
+                var first = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
 
                 Assert.Equal(TimelineEventTypes.Reset, first.GetProperty("type").GetString());
                 Assert.Equal("initial", first.GetProperty("reason").GetString());
@@ -744,12 +764,12 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
                 // Consume the initial reset.
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
 
                 // Trigger a dump.
@@ -759,7 +779,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Next event must be a timeline.append.
-                var append = await ReadNextSseDataAsync(reader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
 
                 var entry = append.GetProperty("entry");
@@ -781,12 +801,12 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
                 // Consume the initial reset.
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
 
                 // POST with ?source=immediate.
@@ -796,7 +816,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Must receive a timeline.append event with reason "evaluation" and body text "3".
-                var append = await ReadNextSseDataAsync(reader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
 
                 var entry = append.GetProperty("entry");
@@ -825,11 +845,11 @@ public sealed class DuetsPadServiceTests
 
                 // Connect a fresh subscriber and verify the reset has no entries.
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
                 Assert.Empty(reset.GetProperty("entries").EnumerateArray());
             }
@@ -897,11 +917,11 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
-                var first = await ReadNextSseDataAsync(reader);
+                var first = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
 
                 Assert.Equal(CanvasEventTypes.Snapshot, first.GetProperty("type").GetString());
                 var state = first.GetProperty("state");
@@ -920,12 +940,12 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
                 // Consume the initial canvas.snapshot.
-                var initial = await ReadNextSseDataAsync(reader);
+                var initial = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Snapshot, initial.GetProperty("type").GetString());
 
                 // Trigger canvas.add.
@@ -935,7 +955,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Next event is canvas.replace with one child.
-                var replace = await ReadNextSseDataAsync(reader);
+                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
                 var children = replace.GetProperty("state").GetProperty("children");
                 Assert.Single(children.EnumerateArray());
@@ -951,21 +971,18 @@ public sealed class DuetsPadServiceTests
             {
                 var sessionId = await CreateSessionAsync(client, prefix);
 
-                await using var canvasStream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events"
+                await using var stream = await client.GetStreamAsync(
+                    prefix + $"sessions/{sessionId}/events"
                 );
-                using var canvasReader = new StreamReader(canvasStream);
-                var initialCanvas = await ReadNextSseDataAsync(canvasReader);
+                using var reader = new StreamReader(stream);
+
+                var initialCanvas = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(
                     CanvasEventTypes.Snapshot,
                     initialCanvas.GetProperty("type").GetString()
                 );
 
-                await using var timelineStream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
-                );
-                using var timelineReader = new StreamReader(timelineStream);
-                var initialTimeline = await ReadNextSseDataAsync(timelineReader);
+                var initialTimeline = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(
                     TimelineEventTypes.Reset,
                     initialTimeline.GetProperty("type").GetString()
@@ -981,7 +998,7 @@ public sealed class DuetsPadServiceTests
                 );
                 evalResponse.EnsureSuccessStatusCode();
 
-                var replace = await ReadNextSseDataAsync(canvasReader);
+                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
                 var interaction = Assert.Single(
                     replace.GetProperty("interactions").EnumerateArray()
@@ -997,7 +1014,7 @@ public sealed class DuetsPadServiceTests
                 var invokePayload = await invokeResponse.Content.ReadFromJsonAsync<JsonElement>();
                 Assert.True(invokePayload.GetProperty("ok").GetBoolean());
 
-                var append = await ReadNextSseDataAsync(timelineReader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
                 var entry = append.GetProperty("entry");
                 Assert.Equal("dump", entry.GetProperty("reason").GetString());
@@ -1009,7 +1026,7 @@ public sealed class DuetsPadServiceTests
     // SSE response headers
 
     [Fact]
-    public async Task Canvas_events_response_has_correct_headers()
+    public async Task Events_response_has_correct_headers()
     {
         await RunAsync(
             async (client, prefix) =>
@@ -1017,7 +1034,7 @@ public sealed class DuetsPadServiceTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 using var response = await client.GetAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events",
+                    prefix + $"sessions/{sessionId}/events",
                     HttpCompletionOption.ResponseHeadersRead
                 );
                 response.EnsureSuccessStatusCode();
@@ -1038,35 +1055,6 @@ public sealed class DuetsPadServiceTests
         );
     }
 
-    [Fact]
-    public async Task Timeline_events_response_has_correct_headers()
-    {
-        await RunAsync(
-            async (client, prefix) =>
-            {
-                var sessionId = await CreateSessionAsync(client, prefix);
-
-                using var response = await client.GetAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events",
-                    HttpCompletionOption.ResponseHeadersRead
-                );
-                response.EnsureSuccessStatusCode();
-
-                var contentType = response.Content.Headers.ContentType!.ToString();
-                Assert.Contains(
-                    "text/event-stream",
-                    contentType,
-                    StringComparison.OrdinalIgnoreCase
-                );
-
-                Assert.True(
-                    response.Headers.TryGetValues("Cache-Control", out var cc)
-                        && cc.Any(v => v.Contains("no-cache", StringComparison.OrdinalIgnoreCase))
-                );
-            }
-        );
-    }
-
     // Session isolation
 
     [Fact]
@@ -1078,20 +1066,20 @@ public sealed class DuetsPadServiceTests
                 var sessionA = await CreateSessionAsync(client, prefix);
                 var sessionB = await CreateSessionAsync(client, prefix);
 
-                // Open timeline streams for both sessions.
+                // Open event streams for both sessions.
                 await using var streamA = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionA}/timeline-events"
+                    prefix + $"sessions/{sessionA}/events"
                 );
                 await using var streamB = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionB}/timeline-events"
+                    prefix + $"sessions/{sessionB}/events"
                 );
                 using var readerA = new StreamReader(streamA);
                 using var readerB = new StreamReader(streamB);
 
                 // Consume initial resets.
-                var snapA = await ReadNextSseDataAsync(readerA);
+                var snapA = await ReadNextSseDataAsync(readerA, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, snapA.GetProperty("type").GetString());
-                var snapB = await ReadNextSseDataAsync(readerB);
+                var snapB = await ReadNextSseDataAsync(readerB, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, snapB.GetProperty("type").GetString());
 
                 // Dump in session A.
@@ -1101,7 +1089,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Session A should receive a timeline.append.
-                var appendA = await ReadNextSseDataAsync(readerA);
+                var appendA = await ReadNextSseDataAsync(readerA, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, appendA.GetProperty("type").GetString());
 
                 // Session B should NOT receive any event in a short window — verify with a timeout.
@@ -1135,20 +1123,20 @@ public sealed class DuetsPadServiceTests
                 var sessionB = await CreateSessionAsync(client, prefix);
 
                 await using var streamA = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionA}/canvas-events"
+                    prefix + $"sessions/{sessionA}/events"
                 );
                 await using var streamB = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionB}/canvas-events"
+                    prefix + $"sessions/{sessionB}/events"
                 );
                 using var readerA = new StreamReader(streamA);
                 using var readerB = new StreamReader(streamB);
 
                 // Consume initial canvas.snapshot events.
-                var snapA = await ReadNextSseDataAsync(readerA);
+                var snapA = await ReadNextSseDataAsync(readerA, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Snapshot, snapA.GetProperty("type").GetString());
                 Assert.Empty(snapA.GetProperty("state").GetProperty("children").EnumerateArray());
 
-                var snapB = await ReadNextSseDataAsync(readerB);
+                var snapB = await ReadNextSseDataAsync(readerB, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Snapshot, snapB.GetProperty("type").GetString());
                 Assert.Empty(snapB.GetProperty("state").GetProperty("children").EnumerateArray());
 
@@ -1159,7 +1147,7 @@ public sealed class DuetsPadServiceTests
                 );
 
                 // Session A receives a canvas.replace event.
-                var updateA = await ReadNextSseDataAsync(readerA);
+                var updateA = await ReadNextSseDataAsync(readerA, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Replace, updateA.GetProperty("type").GetString());
                 Assert.Single(
                     updateA.GetProperty("state").GetProperty("children").EnumerateArray()

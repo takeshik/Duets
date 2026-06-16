@@ -7,8 +7,9 @@ using Duets.Pad.Timeline;
 namespace Duets.Pad.Protocol;
 
 /// <summary>
-/// Serializes <see cref="CanvasEventMessage"/> and <see cref="TimelineEventMessage"/> to the JSON
-/// string placed on an SSE <c>data:</c> line (without the <c>data: </c> prefix).
+/// Serializes <see cref="CanvasEventMessage"/>, <see cref="TimelineEventMessage"/>, and
+/// <see cref="PadEventMessage"/> to the JSON string placed on an SSE <c>data:</c> line (without
+/// the <c>data: </c> prefix).
 /// </summary>
 internal static class SseSerializer
 {
@@ -68,6 +69,29 @@ internal static class SseSerializer
             ),
         };
     }
+
+    /// <summary>
+    /// Serializes a <see cref="PadEventMessage"/> to SSE data JSON by dispatching to the
+    /// appropriate typed overload.
+    /// </summary>
+    public static string Serialize(PadEventMessage m) =>
+        m switch
+        {
+            PadEventMessage.Canvas c => Serialize(c.Message),
+            PadEventMessage.Timeline t => Serialize(t.Message),
+            PadEventMessage.TypeDeclaration d => SerializeTypeDeclaration(d.Declaration),
+            _ => throw new InvalidOperationException(
+                $"Unrecognised PadEventMessage type '{m.GetType().Name}'."
+            ),
+        };
+
+    private static string SerializeTypeDeclaration(TypeDeclaration decl) =>
+        new JsonObject
+        {
+            ["type"] = TypeDeclarationEventTypes.Declaration,
+            ["fileName"] = decl.FileName,
+            ["content"] = decl.Content,
+        }.ToJsonString();
 
     private static string SerializeTimelineReset(
         string type,

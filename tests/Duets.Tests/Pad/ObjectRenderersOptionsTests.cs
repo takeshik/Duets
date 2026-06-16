@@ -175,7 +175,10 @@ public sealed class ObjectRenderersOptionsTests
         return payload.GetProperty("sessionId").GetString()!;
     }
 
-    private static async Task<JsonElement> ReadNextSseDataAsync(StreamReader reader)
+    private static async Task<JsonElement> ReadNextSseDataAsync(
+        StreamReader reader,
+        string? typePrefix = null
+    )
     {
         while (true)
         {
@@ -190,7 +193,19 @@ public sealed class ObjectRenderersOptionsTests
             }
 
             using var doc = JsonDocument.Parse(line["data: ".Length..]);
-            return doc.RootElement.Clone();
+            var element = doc.RootElement.Clone();
+
+            if (
+                typePrefix is null
+                || (
+                    element.TryGetProperty("type", out var typeProp)
+                    && typeProp.GetString()?.StartsWith(typePrefix, StringComparison.Ordinal)
+                        == true
+                )
+            )
+            {
+                return element;
+            }
         }
     }
 
@@ -204,12 +219,12 @@ public sealed class ObjectRenderersOptionsTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
                 // Consume the initial reset.
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
 
                 // Dump a value that the sentinel renderer handles.
@@ -219,7 +234,7 @@ public sealed class ObjectRenderersOptionsTests
                 );
 
                 // The timeline.append entry body must show the renderer's output, not the raw value.
-                var append = await ReadNextSseDataAsync(reader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
 
                 var entry = append.GetProperty("entry");
@@ -242,12 +257,12 @@ public sealed class ObjectRenderersOptionsTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/canvas-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
                 // Consume the initial canvas.snapshot.
-                var initial = await ReadNextSseDataAsync(reader);
+                var initial = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Snapshot, initial.GetProperty("type").GetString());
 
                 // Add a value that the sentinel renderer handles.
@@ -257,7 +272,7 @@ public sealed class ObjectRenderersOptionsTests
                 );
 
                 // The canvas.replace root's first child must be the renderer's text node.
-                var replace = await ReadNextSseDataAsync(reader);
+                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
                 Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
 
                 var children = replace.GetProperty("state").GetProperty("children");
@@ -285,11 +300,11 @@ public sealed class ObjectRenderersOptionsTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
 
                 await client.PostAsync(
@@ -297,7 +312,7 @@ public sealed class ObjectRenderersOptionsTests
                     new StringContent("dump(\"SENTINEL\")", Encoding.UTF8, "text/plain")
                 );
 
-                var append = await ReadNextSseDataAsync(reader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
 
                 var body = append.GetProperty("entry").GetProperty("body");
@@ -318,11 +333,11 @@ public sealed class ObjectRenderersOptionsTests
                 var sessionId = await CreateSessionAsync(client, prefix);
 
                 await using var stream = await client.GetStreamAsync(
-                    prefix + $"sessions/{sessionId}/timeline-events"
+                    prefix + $"sessions/{sessionId}/events"
                 );
                 using var reader = new StreamReader(stream);
 
-                var reset = await ReadNextSseDataAsync(reader);
+                var reset = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Reset, reset.GetProperty("type").GetString());
 
                 await client.PostAsync(
@@ -330,7 +345,7 @@ public sealed class ObjectRenderersOptionsTests
                     new StringContent("dump(\"plain\")", Encoding.UTF8, "text/plain")
                 );
 
-                var append = await ReadNextSseDataAsync(reader);
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
                 Assert.Equal(TimelineEventTypes.Append, append.GetProperty("type").GetString());
 
                 var body = append.GetProperty("entry").GetProperty("body");

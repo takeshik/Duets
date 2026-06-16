@@ -20,10 +20,11 @@ namespace Duets.Pad;
 /// </para>
 ///
 /// <para>
-/// Grouped sub-APIs are exposed as interface-typed properties: <see cref="Canvas"/>,
-/// <see cref="Timeline"/>, and <see cref="TypeDeclarations"/>. Each property returns
-/// <c>this</c> typed as the respective interface; the three interfaces are explicitly
-/// implemented by this class. The interfaces own no state and no locks.
+/// Grouped sub-APIs are exposed as interface-typed properties: <see cref="Canvas"/> and
+/// <see cref="Timeline"/>. Each property returns <c>this</c> typed as the respective
+/// interface; the interfaces are explicitly implemented by this class and own no state and
+/// no locks. Unified SSE subscription is managed via <see cref="SubscribeEvents"/> and
+/// <see cref="UnsubscribeEvents"/>.
 /// </para>
 ///
 /// <para>
@@ -45,21 +46,19 @@ namespace Duets.Pad;
 /// <b>Initial-event ordering</b><br/>
 /// When a new SSE subscriber connects, the initial event must reflect a state that is at least
 /// as new as any update the subscriber could subsequently receive. To guarantee this without a
-/// TOCTOU gap, <see cref="ICanvasSurface.Subscribe"/> and
-/// <see cref="ITimelineSurface.Subscribe"/> acquire <c>_stateLock</c> and, <em>while still
-/// holding it</em>, both register the writer and immediately enqueue the current-state initial
-/// event (<c>canvas.snapshot</c> / <c>timeline.reset</c>) to that writer. Subsequent mutations
-/// enqueue to all registered writers under the same lock. As a result a subscriber either
-/// (a) registers before a mutation and therefore sees the initial event followed by the update,
-/// or (b) registers after the mutation and sees the post-mutation initial event — neither can
-/// observe the post-mutation state first.
+/// TOCTOU gap, <see cref="SubscribeEvents"/> acquires <c>_stateLock</c> and, <em>while still
+/// holding it</em>, both registers the writer and immediately enqueues the current-state initial
+/// events (<c>canvas.snapshot</c>, <c>timeline.reset</c>, and any existing type declarations)
+/// to that writer. Subsequent mutations enqueue to all registered writers under the same lock.
+/// As a result a subscriber either (a) registers before a mutation and therefore sees the
+/// initial events followed by the update, or (b) registers after the mutation and sees the
+/// post-mutation initial events — neither can observe the post-mutation state first.
 /// </para>
 ///
 /// <para>
 /// All enqueues use <see cref="ChannelWriter{T}.TryWrite"/> (non-blocking). A slow or
 /// disconnected subscriber is silently dropped if its channel is full; it should be removed
-/// and its channel completed via <see cref="ICanvasSurface.Unsubscribe"/> /
-/// <see cref="ITimelineSurface.Unsubscribe"/>.
+/// and its channel completed via <see cref="UnsubscribeEvents"/>.
 /// </para>
 ///
 /// <para>
@@ -70,11 +69,7 @@ namespace Duets.Pad;
 /// and a DELETE or idle-eviction of the session affects all subscribers simultaneously.
 /// </para>
 /// </remarks>
-internal sealed class DuetsPadSession
-    : IDisposable,
-        ICanvasSurface,
-        ITimelineSurface,
-        ITypeDeclarationsSurface
+internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSurface
 {
     // Serializes public eval entry; NOT re-acquired by internal ops.
     private readonly SemaphoreSlim _evalSemaphore = new(1, 1);
@@ -94,20 +89,8 @@ internal sealed class DuetsPadSession
     // Last-activity timestamp stored as UTC ticks; updated via Interlocked for lock-free reads.
     private long _lastActivityTicks;
 
-    private readonly ConcurrentDictionary<
-        Guid,
-        ChannelWriter<CanvasEventMessage?>
-    > _canvasSubscribers = new();
-
-    private readonly ConcurrentDictionary<
-        Guid,
-        ChannelWriter<TimelineEventMessage?>
-    > _timelineSubscribers = new();
-
-    private readonly ConcurrentDictionary<
-        Guid,
-        ChannelWriter<TypeDeclaration?>
-    > _typeDeclarationSubscribers = new();
+    private readonly ConcurrentDictionary<Guid, ChannelWriter<PadEventMessage?>> _eventSubscribers =
+        new();
 
     private readonly DisplayRenderer _renderer;
     private readonly InteractionStore _interactionStore = new();
@@ -143,6 +126,9 @@ internal sealed class DuetsPadSession
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
         SessionBootstrap.Bootstrap(this, this._renderer);
 
+        // Forward new type declarations to all unified-event subscribers.
+        this.DuetsSession.Declarations.DeclarationChanged += this.OnDeclarationChanged;
+
         // Record creation as the first activity.
         this.Touch();
     }
@@ -151,14 +137,11 @@ internal sealed class DuetsPadSession
 
     public DuetsSession DuetsSession { get; }
 
-    /// <summary>Grouped canvas sub-API: state snapshot, mutation, and SSE subscriber registration.</summary>
+    /// <summary>Grouped canvas sub-API: state snapshot and mutation.</summary>
     internal ICanvasSurface Canvas => this;
 
-    /// <summary>Grouped timeline sub-API: state snapshot and SSE subscriber registration.</summary>
+    /// <summary>Grouped timeline sub-API: state snapshot.</summary>
     internal ITimelineSurface Timeline => this;
-
-    /// <summary>Grouped type-declaration SSE subscriber registration sub-API.</summary>
-    internal ITypeDeclarationsSurface TypeDeclarations => this;
 
     // Backing state fields; accessed directly by internal methods and returned via interface State getters.
     private CanvasState _canvasState = CanvasState.Empty;
@@ -192,14 +175,11 @@ internal sealed class DuetsPadSession
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> when at least one SSE subscriber (Canvas, Timeline, or
-    /// type-declaration) is currently registered. Used by the idle-eviction sweep to protect
-    /// sessions with live browser connections regardless of last-activity timestamp.
+    /// Returns <see langword="true"/> when at least one SSE subscriber is currently registered.
+    /// Used by the idle-eviction sweep to protect sessions with live browser connections
+    /// regardless of last-activity timestamp.
     /// </summary>
-    internal bool HasActiveSubscribers =>
-        !this._canvasSubscribers.IsEmpty
-        || !this._timelineSubscribers.IsEmpty
-        || !this._typeDeclarationSubscribers.IsEmpty;
+    internal bool HasActiveSubscribers => !this._eventSubscribers.IsEmpty;
 
     // Explicit ICanvasSurface implementation
 
@@ -271,118 +251,9 @@ internal sealed class DuetsPadSession
         }
     }
 
-    Guid ICanvasSurface.Subscribe(ChannelWriter<CanvasEventMessage?> writer)
-    {
-        if (writer is null)
-        {
-            throw new ArgumentNullException(nameof(writer));
-        }
-
-        this.Touch();
-        var key = Guid.NewGuid();
-        lock (this._stateLock)
-        {
-            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
-            // runs under the same lock): either this registration completes before the clear (and
-            // its writer is completed by the clear), or the clear runs first and this observes
-            // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
-            // the SSE read loop at once; its finally Canvas.Unsubscribe(Guid.Empty) is a
-            // harmless no-op.
-            if (this._disposed == 1)
-            {
-                writer.TryComplete();
-                return Guid.Empty;
-            }
-
-            this._canvasSubscribers[key] = writer;
-            writer.TryWrite(
-                CanvasEventMessage.Snapshot(
-                    this._canvasState,
-                    this._interactionStore.CanvasInteractions
-                )
-            );
-        }
-
-        return key;
-    }
-
-    void ICanvasSurface.Unsubscribe(Guid key) => this._canvasSubscribers.TryRemove(key, out _);
-
     // Explicit ITimelineSurface implementation
 
     TimelineState ITimelineSurface.State => this._timelineState;
-
-    Guid ITimelineSurface.Subscribe(ChannelWriter<TimelineEventMessage?> writer)
-    {
-        if (writer is null)
-        {
-            throw new ArgumentNullException(nameof(writer));
-        }
-
-        this.Touch();
-        var key = Guid.NewGuid();
-        lock (this._stateLock)
-        {
-            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
-            // runs under the same lock): either this registration completes before the clear (and
-            // its writer is completed by the clear), or the clear runs first and this observes
-            // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
-            // the SSE read loop at once; its finally Timeline.Unsubscribe(Guid.Empty) is a
-            // harmless no-op.
-            if (this._disposed == 1)
-            {
-                writer.TryComplete();
-                return Guid.Empty;
-            }
-
-            this._timelineSubscribers[key] = writer;
-            writer.TryWrite(
-                TimelineEventMessage.Reset(
-                    this._timelineState,
-                    "initial",
-                    this._interactionStore.TimelineInteractions
-                )
-            );
-        }
-
-        return key;
-    }
-
-    void ITimelineSurface.Unsubscribe(Guid key) => this._timelineSubscribers.TryRemove(key, out _);
-
-    // Explicit ITypeDeclarationsSurface implementation
-
-    Guid ITypeDeclarationsSurface.Subscribe(ChannelWriter<TypeDeclaration?> writer)
-    {
-        if (writer is null)
-        {
-            throw new ArgumentNullException(nameof(writer));
-        }
-
-        var key = Guid.NewGuid();
-        lock (this._stateLock)
-        {
-            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
-            // runs under the same lock): either this registration completes before the clear (and
-            // its writer is completed by the clear), or the clear runs first and this observes
-            // _disposed == 1 and self-completes the writer. There is no initial-snapshot enqueue
-            // here — the route enqueues existing declarations. If disposed, completing the writer
-            // ends the SSE read loop at once; its finally TypeDeclarations.Unsubscribe(Guid.Empty)
-            // is a harmless no-op.
-            if (this._disposed == 1)
-            {
-                writer.TryComplete();
-                return Guid.Empty;
-            }
-
-            this._typeDeclarationSubscribers[key] = writer;
-        }
-
-        return key;
-    }
-
-    void ITypeDeclarationsSurface.Unsubscribe(Guid key) =>
-        this._typeDeclarationSubscribers.TryRemove(key, out _);
 
     // Internal ops — called from the eval call stack; must not acquire _evalSemaphore
 
@@ -583,6 +454,7 @@ internal sealed class DuetsPadSession
         try
         {
             this.DuetsSession.ConsoleLogged -= this.OnConsoleLogged;
+            this.DuetsSession.Declarations.DeclarationChanged -= this.OnDeclarationChanged;
 
             // Complete + clear all subscriber channels under _stateLock so this teardown is
             // serialized against Subscribe calls (which test _disposed and insert under the same
@@ -594,26 +466,12 @@ internal sealed class DuetsPadSession
             lock (this._stateLock)
             {
                 // Complete all subscriber channels so readers can drain.
-                foreach (var (_, writer) in this._canvasSubscribers)
+                foreach (var (_, writer) in this._eventSubscribers)
                 {
                     writer.TryComplete();
                 }
 
-                this._canvasSubscribers.Clear();
-
-                foreach (var (_, writer) in this._timelineSubscribers)
-                {
-                    writer.TryComplete();
-                }
-
-                this._timelineSubscribers.Clear();
-
-                foreach (var (_, writer) in this._typeDeclarationSubscribers)
-                {
-                    writer.TryComplete();
-                }
-
-                this._typeDeclarationSubscribers.Clear();
+                this._eventSubscribers.Clear();
 
                 this._interactionStore.Clear();
             }
@@ -660,6 +518,25 @@ internal sealed class DuetsPadSession
                 OutputError.Create($"Render error: {ex.Message}")
             );
             return (errorContent, true);
+        }
+    }
+
+    /// <summary>
+    /// Forwards a new type declaration to all registered unified-event subscribers.
+    /// Called by the <c>DeclarationChanged</c> event. Never throws.
+    /// </summary>
+    internal void OnDeclarationChanged(TypeDeclaration decl)
+    {
+        try
+        {
+            lock (this._stateLock)
+            {
+                this.BroadcastTypeDeclaration(decl);
+            }
+        }
+        catch
+        {
+            // Swallow — must not disrupt the eval.
         }
     }
 
@@ -727,9 +604,10 @@ internal sealed class DuetsPadSession
             this._canvasState,
             this._interactionStore.CanvasInteractions
         );
-        foreach (var (_, writer) in this._canvasSubscribers)
+        var padMsg = new PadEventMessage.Canvas(msg);
+        foreach (var (_, writer) in this._eventSubscribers)
         {
-            writer.TryWrite(msg);
+            writer.TryWrite(padMsg);
         }
     }
 
@@ -739,9 +617,100 @@ internal sealed class DuetsPadSession
     /// </summary>
     private void BroadcastTimeline(TimelineEventMessage msg)
     {
-        foreach (var (_, writer) in this._timelineSubscribers)
+        var padMsg = new PadEventMessage.Timeline(msg);
+        foreach (var (_, writer) in this._eventSubscribers)
         {
-            writer.TryWrite(msg);
+            writer.TryWrite(padMsg);
         }
     }
+
+    /// <summary>
+    /// Enqueues <paramref name="decl"/> as a <c>type.declaration</c> event to all registered
+    /// unified-event subscribers. Must be called while <c>_stateLock</c> is held.
+    /// </summary>
+    private void BroadcastTypeDeclaration(TypeDeclaration decl)
+    {
+        var padMsg = new PadEventMessage.TypeDeclaration(decl);
+        foreach (var (_, writer) in this._eventSubscribers)
+        {
+            writer.TryWrite(padMsg);
+        }
+    }
+
+    /// <summary>
+    /// Registers a unified SSE subscriber that receives canvas, timeline, and type-declaration
+    /// events on a single channel. The initial snapshot is enqueued under <c>_stateLock</c> in
+    /// the order: <c>canvas.snapshot</c> → <c>timeline.reset</c> → <c>type.declaration</c>
+    /// (one per registered declaration).
+    /// </summary>
+    /// <param name="writer">The channel writer to receive <see cref="PadEventMessage"/> items.</param>
+    /// <param name="declarations">
+    /// The session's declaration collection, used to enqueue initial type declarations.
+    /// </param>
+    /// <returns>The registration key used to unregister via <see cref="UnsubscribeEvents"/>.</returns>
+    internal Guid SubscribeEvents(
+        ChannelWriter<PadEventMessage?> writer,
+        ITypeDeclarationProvider declarations
+    )
+    {
+        if (writer is null)
+        {
+            throw new ArgumentNullException(nameof(writer));
+        }
+
+        if (declarations is null)
+        {
+            throw new ArgumentNullException(nameof(declarations));
+        }
+
+        this.Touch();
+        var key = Guid.NewGuid();
+        lock (this._stateLock)
+        {
+            // The disposed-test and the insert are atomic with respect to Dispose's clear (which
+            // runs under the same lock): either this registration completes before the clear (and
+            // its writer is completed by the clear), or the clear runs first and this observes
+            // _disposed == 1 and self-completes the writer. If disposed, completing the writer ends
+            // the SSE read loop at once; its finally UnsubscribeEvents(Guid.Empty) is a harmless no-op.
+            if (this._disposed == 1)
+            {
+                writer.TryComplete();
+                return Guid.Empty;
+            }
+
+            this._eventSubscribers[key] = writer;
+
+            // Initial snapshot order: canvas.snapshot → timeline.reset → type.declaration(s).
+            writer.TryWrite(
+                new PadEventMessage.Canvas(
+                    CanvasEventMessage.Snapshot(
+                        this._canvasState,
+                        this._interactionStore.CanvasInteractions
+                    )
+                )
+            );
+
+            writer.TryWrite(
+                new PadEventMessage.Timeline(
+                    TimelineEventMessage.Reset(
+                        this._timelineState,
+                        "initial",
+                        this._interactionStore.TimelineInteractions
+                    )
+                )
+            );
+
+            foreach (var decl in declarations.GetDeclarations())
+            {
+                writer.TryWrite(new PadEventMessage.TypeDeclaration(decl));
+            }
+        }
+
+        return key;
+    }
+
+    /// <summary>
+    /// Removes the unified event subscriber identified by <paramref name="key"/>.
+    /// </summary>
+    internal void UnsubscribeEvents(Guid key) => this._eventSubscribers.TryRemove(key, out _);
 }

@@ -13,6 +13,7 @@
     timelineAppend: "timeline.append",
     timelineUpdate: "timeline.update",
     timelineTrim: "timeline.trim",
+    typeDeclaration: "type.declaration",
   };
 
   // URL helpers
@@ -443,22 +444,12 @@
         strictNullChecks: false,
       });
 
-      // Receive type declarations via SSE and register with Monaco.
-      // addExtraLib is incremental; the worker is not reset on each call.
-      const declEs = new EventSource(
-        padUrl(`type-declaration-events?sessionId=${encodeURIComponent(id)}`),
-      );
-      declEs.onmessage = (e) => {
-        try {
-          const decl = JSON.parse(e.data);
-          monaco.languages.typescript.typescriptDefaults.addExtraLib(
-            decl.content,
-            decl.fileName,
-          );
-        } catch (err) {
-          console.error("[DuetsPad] type-declaration-events parse error", err);
-        }
-      };
+      function addExtraLib(decl) {
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(
+          decl.content,
+          decl.fileName,
+        );
+      }
 
       function monacoThemeFromUi() {
         return document.documentElement.getAttribute("data-bs-theme") === "dark"
@@ -572,13 +563,23 @@
         }
       });
 
-      // Open canvas and timeline SSE streams.
-      // Drive the session-status indicator from the timeline stream's open/error events.
-      openSse(`sessions/${id}/canvas-events`, handleCanvasEvent);
-      openSse(`sessions/${id}/timeline-events`, handleTimelineEvent, {
-        onOpen: () => setSessionStatus(true),
-        onError: () => setSessionStatus(false),
-      });
+      // Open the unified event stream. Route each message to the appropriate handler by type prefix.
+      openSse(
+        `sessions/${id}/events`,
+        (msg) => {
+          if (msg.type.startsWith("canvas.")) {
+            handleCanvasEvent(msg);
+          } else if (msg.type.startsWith("timeline.")) {
+            handleTimelineEvent(msg);
+          } else if (msg.type === PAD_EVENTS.typeDeclaration) {
+            addExtraLib(msg);
+          }
+        },
+        {
+          onOpen: () => setSessionStatus(true),
+          onError: () => setSessionStatus(false),
+        },
+      );
 
       // Immediate Monaco editor
       // Single-line REPL editor sharing the page-global TS completion env.

@@ -73,11 +73,11 @@ internal sealed class BatchRunner(SandboxContext session)
         {"op":"types-dump"}
         {"op":"server-start","port":17375}
         {"op":"pad-session-create"}
-        {"op":"pad-sse-open","streamId":"canvas","sessionId":"...","stream":"canvas"}
-        {"op":"pad-sse-read","streamId":"canvas","maxRecords":1,"timeoutMs":1000}
+        {"op":"pad-sse-open","streamId":"events","sessionId":"...","stream":"events"}
+        {"op":"pad-sse-read","streamId":"events","maxRecords":1,"timeoutMs":1000}
         {"op":"pad-eval","sessionId":"...","code":"canvas.add(ui.button('hello', () => dump(Date())))"}
         {"op":"pad-interaction-invoke","sessionId":"...","handlerId":"..."}
-        {"op":"pad-sse-close","streamId":"canvas"}
+        {"op":"pad-sse-close","streamId":"events"}
         {"op":"server-stop"}
         {"op":"server-status"}
         {"op":"reset"}

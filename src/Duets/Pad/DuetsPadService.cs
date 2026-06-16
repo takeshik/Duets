@@ -33,7 +33,6 @@ public sealed class DuetsPadService : IDisposable
                         .MapGet("/tabler.css", this._assets.HandleTablerCssAsync)
                         .MapGet("/tabler-icons.css", this._assets.HandleTablerIconsCssAsync)
                         .MapGet("/tabler-icons.woff2", this._assets.HandleTablerIconsFontAsync)
-                        .MapGet("/type-declaration-events", this.HandleTypeDeclarationEventsAsync)
                         .MapPost("/sessions", this.HandlePostSessionAsync)
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
@@ -41,11 +40,7 @@ public sealed class DuetsPadService : IDisposable
                             "/sessions/{sessionId}/interactions/{handlerId}/invoke",
                             this.HandleInvokeInteractionAsync
                         )
-                        .MapGet("/sessions/{sessionId}/canvas-events", this.HandleCanvasEventsAsync)
-                        .MapGet(
-                            "/sessions/{sessionId}/timeline-events",
-                            this.HandleTimelineEventsAsync
-                        )
+                        .MapGet("/sessions/{sessionId}/events", this.HandleEventsAsync)
             )
             .UseEmbeddedResources(
                 typeof(DuetsPadService).Assembly,
@@ -213,105 +208,26 @@ public sealed class DuetsPadService : IDisposable
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
     }
 
-    // GET /sessions/{sessionId}/canvas-events
+    // GET /sessions/{sessionId}/events
 
-    private async Task HandleCanvasEventsAsync(HttpActionContext ctx)
+    private async Task HandleEventsAsync(HttpActionContext ctx)
     {
         var sessionId = ctx.Args["sessionId"];
 
         if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
-        {
-            return;
-        }
-
-        await SseTransport.RunAsync<CanvasEventMessage>(
-            ctx,
-            session,
-            this._options.KeepAliveInterval,
-            setup: session.Canvas.Subscribe,
-            teardown: session.Canvas.Unsubscribe,
-            formatData: SseSerializer.Serialize
-        );
-    }
-
-    // GET /sessions/{sessionId}/timeline-events
-
-    private async Task HandleTimelineEventsAsync(HttpActionContext ctx)
-    {
-        var sessionId = ctx.Args["sessionId"];
-
-        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
-        {
-            return;
-        }
-
-        await SseTransport.RunAsync<TimelineEventMessage>(
-            ctx,
-            session,
-            this._options.KeepAliveInterval,
-            setup: session.Timeline.Subscribe,
-            teardown: session.Timeline.Unsubscribe,
-            formatData: SseSerializer.Serialize
-        );
-    }
-
-    // GET /type-declaration-events?sessionId=...
-
-    private async Task HandleTypeDeclarationEventsAsync(HttpActionContext ctx)
-    {
-        var sessionIdStr = ctx.Request.QueryString["sessionId"];
-
-        if (await this.ResolveSessionOrRespondAsync(ctx, sessionIdStr) is not { } session)
         {
             return;
         }
 
         var declarations = session.DuetsSession.Declarations;
 
-        // Captured by both setup and teardown closures so the handler instance can be removed.
-        Action<TypeDeclaration>? handler = null;
-
-        await SseTransport.RunAsync<TypeDeclaration>(
+        await SseTransport.RunAsync<PadEventMessage>(
             ctx,
             session,
             this._options.KeepAliveInterval,
-            setup: writer =>
-            {
-                handler = decl => writer.TryWrite(decl);
-
-                // Subscribe before enumerating existing declarations so no declaration registered
-                // between the two steps is lost. A declaration added during this window may be
-                // delivered twice; that is harmless because Monaco addExtraLib is keyed by fileName
-                // and is therefore idempotent.
-                declarations.DeclarationChanged += handler;
-
-                // Register with the session so that Dispose() completes the channel, which
-                // terminates the read loop and allows the finally block to run.
-                var key = session.TypeDeclarations.Subscribe(writer);
-
-                foreach (var decl in declarations.GetDeclarations())
-                {
-                    writer.TryWrite(decl);
-                }
-
-                return key;
-            },
-            teardown: key =>
-            {
-                session.TypeDeclarations.Unsubscribe(key);
-                // Unhook after removing the session subscriber so that Dispose() completing
-                // the channel writer does not race with a final handler invocation.
-                if (handler is not null)
-                {
-                    declarations.DeclarationChanged -= handler;
-                }
-            },
-            formatData: decl =>
-                new JsonObject
-                {
-                    ["fileName"] = decl.FileName,
-                    ["content"] = decl.Content,
-                }.ToJsonString()
+            setup: writer => session.SubscribeEvents(writer, declarations),
+            teardown: session.UnsubscribeEvents,
+            formatData: SseSerializer.Serialize
         );
     }
 
