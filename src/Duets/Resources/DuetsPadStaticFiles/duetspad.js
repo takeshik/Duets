@@ -25,11 +25,18 @@
   // Session bootstrap
   // Reads sessionId from sessionStorage; POSTs to /sessions to reuse a live session
   // or obtain a fresh one; stores the returned id back into sessionStorage.
+  // A seeded tab (opened via pad.openText, carrying a "?seed" param) ignores the
+  // stored id so it always gets a fresh isolated session: window.open copies the
+  // opener's sessionStorage, and reusing that id would attach the new tab to the
+  // opener's session.
 
   let sessionId = null;
 
   async function initSession() {
-    const stored = sessionStorage.getItem("duetspad.sessionId");
+    const hasSeed = new URLSearchParams(window.location.search).has("seed");
+    const stored = hasSeed
+      ? null
+      : sessionStorage.getItem("duetspad.sessionId");
     const body = stored ? JSON.stringify({ sessionId: stored }) : "{}";
 
     const res = await fetch(padUrl("sessions"), {
@@ -592,7 +599,8 @@
   /**
    * Shows a non-blocking toast notification with an action link.
    * The toast is appended to #toast-container and auto-dismisses after 8 s.
-   * Relies on Bootstrap's Toast component bundled with Tabler.
+   * This is intentionally implemented without Bootstrap JS; DuetsPad only
+   * serves Tabler/Bootstrap CSS.
    * @param {string} message - Body text for the toast.
    * @param {string} linkLabel - Label for the action link inside the toast.
    * @param {string} href - URL the action link opens (in a new tab).
@@ -627,19 +635,19 @@
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "btn-close me-2 m-auto";
-    closeBtn.setAttribute("data-bs-dismiss", "toast");
     closeBtn.setAttribute("aria-label", "Close");
     body.appendChild(closeBtn);
 
     toastEl.appendChild(body);
     container.appendChild(toastEl);
+    toastEl.classList.add("show");
 
-    const toast = new bootstrap.Toast(toastEl, { delay: 8000 });
-    toast.show();
-
-    toastEl.addEventListener("hidden.bs.toast", () => {
+    const closeToast = () => {
       toastEl.remove();
-    });
+    };
+
+    closeBtn.addEventListener("click", closeToast, { once: true });
+    window.setTimeout(closeToast, 8000);
   }
 
   controlHandlers.set("openText", (msg) => {

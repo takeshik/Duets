@@ -124,8 +124,8 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
         var records = new JsonArray();
         var commentsSkipped = 0;
         var deadline = Task.Delay(TimeSpan.FromMilliseconds(timeoutMs));
-        var dataLines = new List<string>();
-        string? eventName = null;
+        var dataLines = stream.TakePendingDataLines();
+        var eventName = stream.TakePendingEventName();
 
         while (records.Count < maxRecords)
         {
@@ -146,6 +146,7 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
                 {
                     // Timed out: hand the in-flight read to the next call instead of cancelling it.
                     stream.SetPendingRead(readTask);
+                    stream.SetPendingRecord(eventName, dataLines);
                     return new JsonObject
                     {
                         ["ok"] = true,
@@ -318,6 +319,8 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
         // cancelled (that would break the HttpClient response stream), so the in-flight task
         // is carried here and resumed by the next call to avoid dropping a line.
         private Task<string?>? _pendingRead;
+        private List<string> _pendingDataLines = [];
+        private string? _pendingEventName;
 
         /// <summary>
         /// Returns the in-flight read carried over from a previous timed-out call, clearing it,
@@ -334,6 +337,35 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
         /// Stores an in-flight read so the next call can resume it instead of starting a new one.
         /// </summary>
         public void SetPendingRead(Task<string?> readTask) => this._pendingRead = readTask;
+
+        /// <summary>
+        /// Returns data lines parsed before a timeout, clearing the stored partial record.
+        /// </summary>
+        public List<string> TakePendingDataLines()
+        {
+            var lines = this._pendingDataLines;
+            this._pendingDataLines = [];
+            return lines;
+        }
+
+        /// <summary>
+        /// Returns the event name parsed before a timeout, clearing the stored value.
+        /// </summary>
+        public string? TakePendingEventName()
+        {
+            var eventName = this._pendingEventName;
+            this._pendingEventName = null;
+            return eventName;
+        }
+
+        /// <summary>
+        /// Stores the partial SSE record parsed before a timed-out read.
+        /// </summary>
+        public void SetPendingRecord(string? eventName, List<string> dataLines)
+        {
+            this._pendingEventName = eventName;
+            this._pendingDataLines = dataLines;
+        }
 
         public void Dispose()
         {

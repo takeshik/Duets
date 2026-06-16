@@ -906,6 +906,50 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    [Fact]
+    public async Task DuetsPadJs_open_text_fallback_does_not_depend_on_bootstrap_js()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains("toastEl.classList.add(\"show\")", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "window.setTimeout(closeToast, 8000)",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.DoesNotContain("bootstrap.Toast", js, StringComparison.Ordinal);
+                Assert.DoesNotContain("data-bs-dismiss", js, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_seeded_tab_creates_fresh_session()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains(
+                    "const hasSeed = new URLSearchParams(window.location.search).has(\"seed\");",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains("const stored = hasSeed", js, StringComparison.Ordinal);
+                Assert.Contains("? null", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    ": sessionStorage.getItem(\"duetspad.sessionId\")",
+                    js,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
     // Canvas SSE
 
     [Fact]

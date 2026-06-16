@@ -132,4 +132,71 @@ public sealed class DuetsPadProtocolClientSseTests
             }
         );
     }
+
+    [Fact]
+    public async Task ReadSse_after_timeout_preserves_partial_data_record()
+    {
+        await DuetsServerFixture.RunAsync(
+            server =>
+            {
+                server.UseSimpleRouting(
+                    "/",
+                    routes =>
+                        routes.MapGet(
+                            "/sessions/{sessionId}/events",
+                            async ctx =>
+                            {
+                                ctx.Response.ContentType = "text/event-stream; charset=utf-8";
+                                ctx.Response.SendChunked = true;
+
+                                await ctx.Response.OutputStream.WriteAsync(
+                                    Encoding.UTF8.GetBytes("""data: {"value":1}""" + "\n")
+                                );
+                                await ctx.Response.OutputStream.FlushAsync();
+
+                                await Task.Delay(500);
+
+                                await ctx.Response.OutputStream.WriteAsync(
+                                    Encoding.UTF8.GetBytes("\n")
+                                );
+                                await ctx.Response.OutputStream.FlushAsync();
+                                ctx.Response.Close();
+                            }
+                        )
+                );
+            },
+            async (_, prefix) =>
+            {
+                var baseUri = new Uri(prefix);
+                using var padClient = new DuetsPadProtocolClient(baseUri);
+
+                var open = await padClient.OpenSseAsync("s1", Guid.NewGuid().ToString(), "events");
+                Assert.True(open["ok"]!.GetValue<bool>());
+
+                var timedOut = await padClient.ReadSseAsync(
+                    "s1",
+                    maxRecords: 1,
+                    timeoutMs: 100,
+                    includeComments: false
+                );
+                Assert.True(timedOut["ok"]!.GetValue<bool>());
+                Assert.True(timedOut["timedOut"]!.GetValue<bool>());
+                Assert.Empty(timedOut["records"]!.AsArray());
+
+                var completed = await padClient.ReadSseAsync(
+                    "s1",
+                    maxRecords: 1,
+                    timeoutMs: 2000,
+                    includeComments: false
+                );
+
+                Assert.True(completed["ok"]!.GetValue<bool>());
+                Assert.False(completed["timedOut"]!.GetValue<bool>());
+                var record = Assert.IsType<JsonObject>(
+                    Assert.Single(completed["records"]!.AsArray())
+                );
+                Assert.Equal("""{"value":1}""", record["data"]!.GetValue<string>());
+            }
+        );
+    }
 }
