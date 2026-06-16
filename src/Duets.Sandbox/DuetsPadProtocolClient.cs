@@ -123,28 +123,41 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
 
         var records = new JsonArray();
         var commentsSkipped = 0;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
+        var deadline = Task.Delay(TimeSpan.FromMilliseconds(timeoutMs));
         var dataLines = new List<string>();
         string? eventName = null;
 
         while (records.Count < maxRecords)
         {
+            // Reuse a read started by a previous timed-out call, if any, so no line is dropped.
+            // The read task is never cancelled: cancelling it would tear down the underlying
+            // HttpClient response stream and make every later read on this stream fail.
+            var readTask = stream.TakePendingRead() ?? stream.Reader.ReadLineAsync();
+
             string? line;
-            try
+            if (readTask.IsCompleted)
             {
-                line = await stream.Reader.ReadLineAsync(timeout.Token);
+                line = await readTask;
             }
-            catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+            else
             {
-                return new JsonObject
+                var completed = await Task.WhenAny(readTask, deadline);
+                if (completed != readTask)
                 {
-                    ["ok"] = true,
-                    ["streamId"] = streamId,
-                    ["stream"] = stream.Stream,
-                    ["timedOut"] = true,
-                    ["commentsSkipped"] = commentsSkipped,
-                    ["records"] = records,
-                };
+                    // Timed out: hand the in-flight read to the next call instead of cancelling it.
+                    stream.SetPendingRead(readTask);
+                    return new JsonObject
+                    {
+                        ["ok"] = true,
+                        ["streamId"] = streamId,
+                        ["stream"] = stream.Stream,
+                        ["timedOut"] = true,
+                        ["commentsSkipped"] = commentsSkipped,
+                        ["records"] = records,
+                    };
+                }
+
+                line = await readTask;
             }
 
             if (line is null)
@@ -301,8 +314,34 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
 
         public StreamReader Reader { get; } = reader;
 
+        // A read started by a timed-out ReadSseAsync call. The underlying read is never
+        // cancelled (that would break the HttpClient response stream), so the in-flight task
+        // is carried here and resumed by the next call to avoid dropping a line.
+        private Task<string?>? _pendingRead;
+
+        /// <summary>
+        /// Returns the in-flight read carried over from a previous timed-out call, clearing it,
+        /// or <see langword="null"/> when no read is pending.
+        /// </summary>
+        public Task<string?>? TakePendingRead()
+        {
+            var pending = this._pendingRead;
+            this._pendingRead = null;
+            return pending;
+        }
+
+        /// <summary>
+        /// Stores an in-flight read so the next call can resume it instead of starting a new one.
+        /// </summary>
+        public void SetPendingRead(Task<string?> readTask) => this._pendingRead = readTask;
+
         public void Dispose()
         {
+            // Observe any in-flight read so its eventual failure (e.g. the disposed-stream
+            // exception this Dispose triggers) does not surface as an unobserved task exception.
+            this._pendingRead?.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            this._pendingRead = null;
+
             this.Reader.Dispose();
             response.Dispose();
         }
