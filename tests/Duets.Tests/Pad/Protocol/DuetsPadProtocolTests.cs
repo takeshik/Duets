@@ -259,4 +259,62 @@ public sealed class DuetsPadProtocolTests
         Assert.Contains($"\"{TimelineEventTypes.Trim}\"", json, StringComparison.Ordinal);
         Assert.Contains("\"trim-marker\"", json, StringComparison.Ordinal);
     }
+
+    // Serializer: Control events
+
+    [Fact]
+    public void Serializer_control_event_emits_control_namespaced_type()
+    {
+        var msg = new PadEventMessage.Control("reset", new Dictionary<string, object?>());
+
+        var json = SseSerializer.Serialize(msg);
+
+        Assert.Contains("\"control.reset\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_control_event_merges_payload_fields_into_top_level()
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["reason"] = "user-requested",
+            ["count"] = 42,
+        };
+        var msg = new PadEventMessage.Control("openText", payload);
+
+        var json = SseSerializer.Serialize(msg);
+
+        Assert.Contains("\"control.openText\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"reason\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"user-requested\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"count\"", json, StringComparison.Ordinal);
+        Assert.Contains("42", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_control_event_with_empty_payload_emits_only_type()
+    {
+        var msg = new PadEventMessage.Control("ping", new Dictionary<string, object?>());
+
+        var json = SseSerializer.Serialize(msg);
+
+        Assert.Contains("\"control.ping\"", json, StringComparison.Ordinal);
+        // Only the "type" key should be present.
+        Assert.Contains("\"type\"", json, StringComparison.Ordinal);
+    }
+
+    // ControlEventTypes helpers
+
+    [Fact]
+    public void ControlEventTypes_Make_prepends_control_prefix()
+    {
+        Assert.Equal("control.reset", ControlEventTypes.Make("reset"));
+        Assert.Equal("control.openText", ControlEventTypes.Make("openText"));
+    }
+
+    [Fact]
+    public void ControlEventTypes_Prefix_is_control_dot()
+    {
+        Assert.Equal("control.", ControlEventTypes.Prefix);
+    }
 }

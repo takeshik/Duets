@@ -407,6 +407,56 @@
     }
   }
 
+  // Control channel
+
+  /**
+   * Map of control op names to handler functions. Populate this map to handle
+   * specific ops received from the server; unknown ops fall through to the default
+   * console.warn branch.
+   * @type {Map<string, function(object): void>}
+   */
+  const controlHandlers = new Map();
+
+  /**
+   * Replaces the editor content with the text supplied by the server.
+   * @param {object} msg - Control message with a `text` field.
+   */
+  controlHandlers.set("setEditorText", (msg) => {
+    if (activeEditor && typeof msg.text === "string") {
+      activeEditor.setValue(msg.text);
+    }
+  });
+
+  // TODO: implement no-reload session swap when the server-side session reset lands.
+  controlHandlers.set("reset", (msg) => {
+    console.info("[DuetsPad] control.reset received", msg);
+  });
+
+  // TODO: implement open-text (toast fallback + new-tab seed) in the next step.
+  controlHandlers.set("openText", (msg) => {
+    console.info("[DuetsPad] control.openText received", msg);
+  });
+
+  /**
+   * Dispatches a control event received from the server. Strips the "control."
+   * prefix from msg.type to derive the op name, then delegates to the registered
+   * handler in controlHandlers, or warns for unknown ops.
+   * @param {object} msg - The parsed SSE message with a "control.<op>" type field.
+   */
+  function handleControlEvent(msg) {
+    const op = msg.type.slice("control.".length);
+    const handler = controlHandlers.get(op);
+    if (handler) {
+      try {
+        handler(msg);
+      } catch (err) {
+        console.error(`[DuetsPad] control handler for "${op}" threw`, err);
+      }
+    } else {
+      console.warn(`[DuetsPad] unknown control op: "${op}"`, msg);
+    }
+  }
+
   // SSE helpers
 
   function openSse(path, handler, { onOpen, onError } = {}) {
@@ -573,6 +623,8 @@
             handleTimelineEvent(msg);
           } else if (msg.type === PAD_EVENTS.typeDeclaration) {
             addExtraLib(msg);
+          } else if (msg.type.startsWith("control.")) {
+            handleControlEvent(msg);
           }
         },
         {

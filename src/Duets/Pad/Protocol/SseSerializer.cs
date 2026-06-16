@@ -80,10 +80,22 @@ internal static class SseSerializer
             PadEventMessage.Canvas c => Serialize(c.Message),
             PadEventMessage.Timeline t => Serialize(t.Message),
             PadEventMessage.TypeDeclaration d => SerializeTypeDeclaration(d.Declaration),
+            PadEventMessage.Control ctrl => SerializeControl(ctrl.Op, ctrl.Payload),
             _ => throw new InvalidOperationException(
                 $"Unrecognised PadEventMessage type '{m.GetType().Name}'."
             ),
         };
+
+    private static string SerializeControl(string op, IReadOnlyDictionary<string, object?> payload)
+    {
+        var obj = new JsonObject { ["type"] = ControlEventTypes.Make(op) };
+        foreach (var (key, value) in payload)
+        {
+            obj[key] = JsonValue.Create(value);
+        }
+
+        return obj.ToJsonString();
+    }
 
     private static string SerializeTypeDeclaration(TypeDeclaration decl) =>
         new JsonObject

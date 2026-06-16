@@ -1224,4 +1224,237 @@ public sealed class DuetsPadSessionTests
         var lowestRetainedId = session.Timeline.State[0].Id;
         Assert.All(reset.State, e => Assert.True(e.Id >= lowestRetainedId));
     }
+
+    // Control channel: EnqueueControl / FlushPendingControl
+
+    private static async Task<List<PadEventMessage.Control>> CollectControlEventsAsync(
+        ChannelReader<PadEventMessage?> reader
+    )
+    {
+        var controls = new List<PadEventMessage.Control>();
+        while (reader.TryRead(out var msg))
+        {
+            if (msg is PadEventMessage.Control ctrl)
+            {
+                controls.Add(ctrl);
+            }
+        }
+        return controls;
+    }
+
+    [Fact]
+    public async Task EnqueueControl_before_eval_does_not_immediately_broadcast_to_subscriber()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        // Drain the initial snapshot burst.
+        while (channel.Reader.TryRead(out _)) { }
+
+        // Enqueue a control command without running eval.
+        session.EnqueueControl("ping", new Dictionary<string, object?>());
+
+        // The control event must NOT have been broadcast yet.
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        Assert.Empty(controls);
+    }
+
+    [Fact]
+    public async Task EnqueueControl_flushed_after_EvaluateAsync_delivers_control_event_to_subscriber()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        session.EnqueueControl("ping", new Dictionary<string, object?>());
+
+        // The pending command should be flushed once EvaluateAsync completes.
+        await session.EvaluateAsync("void 0");
+
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("ping", ctrl.Op);
+    }
+
+    [Fact]
+    public async Task Multiple_EnqueueControl_calls_are_flushed_in_order_after_EvaluateAsync()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        session.EnqueueControl("first", new Dictionary<string, object?>());
+        session.EnqueueControl("second", new Dictionary<string, object?>());
+        session.EnqueueControl("third", new Dictionary<string, object?>());
+
+        await session.EvaluateAsync("void 0");
+
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        Assert.Equal(3, controls.Count);
+        Assert.Equal("first", controls[0].Op);
+        Assert.Equal("second", controls[1].Op);
+        Assert.Equal("third", controls[2].Op);
+    }
+
+    [Fact]
+    public async Task EnqueueControl_flushed_even_when_EvaluateAsync_fails()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        session.EnqueueControl("ping", new Dictionary<string, object?>());
+
+        // Eval with a syntax error — the eval itself fails but flush must still happen.
+        var result = await session.EvaluateAsync("throw new Error('deliberate')");
+
+        Assert.False(result.Ok);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("ping", ctrl.Op);
+    }
+
+    [Fact]
+    public async Task EnqueueControl_flushed_after_InvokeInteractionAsync()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        // Drain the initial snapshot burst.
+        while (channel.Reader.TryRead(out _)) { }
+
+        // Register a button whose handler enqueues a control command by way of a
+        // CLR closure that calls EnqueueControl directly (simulating a future JS global).
+        var capturedHandlerId = Guid.Empty;
+        var eval = await session.EvaluateAsync("""canvas.add(ui.button("Go", () => {}))""");
+        Assert.True(eval.Ok, eval.Error);
+
+        // Fish out the handler id from the canvas.replace event.
+        while (channel.Reader.TryRead(out var msg))
+        {
+            if (msg is PadEventMessage.Canvas c && c.Message.Interactions.Count > 0)
+            {
+                capturedHandlerId = c.Message.Interactions[0].HandlerId;
+            }
+        }
+        Assert.NotEqual(Guid.Empty, capturedHandlerId);
+
+        // Enqueue a control command (simulating what a handler would do) then invoke.
+        session.EnqueueControl("ack", new Dictionary<string, object?>());
+        var invoke = await session.InvokeInteractionAsync(capturedHandlerId);
+
+        Assert.True(invoke.Ok, invoke.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("ack", ctrl.Op);
+    }
+
+    // pad global — resetSession / openText / setEditorText
+
+    [Fact]
+    public async Task Pad_resetSession_delivers_one_control_reset_event_after_eval()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync("pad.resetSession()");
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("reset", ctrl.Op);
+    }
+
+    [Fact]
+    public async Task Pad_resetSession_called_twice_delivers_only_one_event_last_wins()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync("pad.resetSession(); pad.resetSession()");
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        // Last-wins: only one reset event must be delivered.
+        Assert.Single(controls);
+        Assert.Equal("reset", controls[0].Op);
+    }
+
+    [Fact]
+    public async Task Pad_setEditorText_delivers_control_event_with_text_payload()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync("""pad.setEditorText("x")""");
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("setEditorText", ctrl.Op);
+        Assert.Equal("x", ctrl.Payload["text"]);
+    }
+
+    [Fact]
+    public async Task Pad_setEditorText_called_twice_delivers_only_last_text_last_wins()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync(
+            """pad.setEditorText("first"); pad.setEditorText("second")"""
+        );
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        // Last-wins: only the last text must be delivered.
+        var ctrl = Assert.Single(controls);
+        Assert.Equal("setEditorText", ctrl.Op);
+        Assert.Equal("second", ctrl.Payload["text"]);
+    }
+
+    [Fact]
+    public async Task Pad_openText_called_twice_delivers_two_events_append_semantics()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync("""pad.openText("a"); pad.openText("b")""");
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        // Append semantics: both events must be delivered in order.
+        Assert.Equal(2, controls.Count);
+        Assert.Equal("openText", controls[0].Op);
+        Assert.Equal("a", controls[0].Payload["text"]);
+        Assert.Equal("openText", controls[1].Op);
+        Assert.Equal("b", controls[1].Payload["text"]);
+    }
+
+    [Fact]
+    public async Task Declarations_contain_pad_global()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var declarations = session.DuetsSession.Declarations.GetDeclarations();
+        var allContent = string.Join("\n", declarations.Select(d => d.Content));
+
+        Assert.Contains("declare const pad", allContent, StringComparison.Ordinal);
+        Assert.Contains("resetSession", allContent, StringComparison.Ordinal);
+        Assert.Contains("openText", allContent, StringComparison.Ordinal);
+        Assert.Contains("setEditorText", allContent, StringComparison.Ordinal);
+    }
 }

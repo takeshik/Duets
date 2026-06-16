@@ -26,4 +26,19 @@ internal abstract class PadEventMessage
     {
         public global::Duets.TypeDeclaration Declaration { get; } = declaration;
     }
+
+    /// <summary>
+    /// Carries a control command from the server to the browser. Serialised as
+    /// <c>{ "type": "control.&lt;Op&gt;", ...Payload }</c>.
+    /// </summary>
+    internal sealed class Control(string op, IReadOnlyDictionary<string, object?> payload)
+        : PadEventMessage
+    {
+        /// <summary>The operation name (e.g. <c>"reset"</c>), without the <c>control.</c> prefix.</summary>
+        public string Op { get; } = op ?? throw new ArgumentNullException(nameof(op));
+
+        /// <summary>Arbitrary key-value payload attached to this control command.</summary>
+        public IReadOnlyDictionary<string, object?> Payload { get; } =
+            payload ?? throw new ArgumentNullException(nameof(payload));
+    }
 }

@@ -92,6 +92,10 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     private readonly ConcurrentDictionary<Guid, ChannelWriter<PadEventMessage?>> _eventSubscribers =
         new();
 
+    // Pending control commands queued during eval; flushed after eval/handler completes.
+    // Accessed only under _stateLock.
+    private readonly List<PadEventMessage.Control> _pendingControl = [];
+
     private readonly DisplayRenderer _renderer;
     private readonly InteractionStore _interactionStore = new();
 
@@ -341,6 +345,9 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
         finally
         {
+            // Flush any control commands queued during eval before releasing the semaphore,
+            // so subscribers receive them in the same logical "turn" as the eval output.
+            this.FlushPendingControl();
             this._evalSemaphore.Release();
         }
     }
@@ -408,7 +415,108 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
         finally
         {
+            // Flush any control commands queued by the handler before releasing the semaphore.
+            this.FlushPendingControl();
             this._evalSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Queues a control command to be broadcast to all subscribers after the current eval or
+    /// interaction handler completes. Must be called from within the eval call stack (i.e. while
+    /// <c>_evalSemaphore</c> is held). The command is not broadcast immediately; it is held in
+    /// <c>_pendingControl</c> and flushed by <see cref="FlushPendingControl"/> once all eval
+    /// side effects have run.
+    /// </summary>
+    /// <param name="op">The operation name, without the <c>control.</c> prefix.</param>
+    /// <param name="payload">Arbitrary key-value payload to attach to the command.</param>
+    /// <param name="replace">
+    /// When <see langword="true"/>, any existing pending entry with the same <paramref name="op"/>
+    /// is replaced by this one (last-wins collapse). When <see langword="false"/> (the default),
+    /// the entry is appended unconditionally.
+    /// </param>
+    internal void EnqueueControl(
+        string op,
+        IReadOnlyDictionary<string, object?> payload,
+        bool replace = false
+    )
+    {
+        lock (this._stateLock)
+        {
+            if (replace)
+            {
+                var existing = this._pendingControl.FindIndex(c => c.Op == op);
+                if (existing >= 0)
+                {
+                    this._pendingControl[existing] = new PadEventMessage.Control(op, payload);
+                    return;
+                }
+            }
+
+            this._pendingControl.Add(new PadEventMessage.Control(op, payload));
+        }
+    }
+
+    /// <summary>
+    /// Enqueues a <c>reset</c> control command with last-wins collapse semantics.
+    /// Multiple calls within the same eval are coalesced into a single command.
+    /// </summary>
+    internal void RequestResetSession()
+    {
+        this.EnqueueControl(
+            ControlEventTypes.Reset,
+            new Dictionary<string, object?>(),
+            replace: true
+        );
+    }
+
+    /// <summary>
+    /// Enqueues an <c>openText</c> control command. Every call is delivered; there is no collapse.
+    /// </summary>
+    /// <param name="text">The seed text for the new tab.</param>
+    internal void RequestOpenText(string text)
+    {
+        this.EnqueueControl(
+            ControlEventTypes.OpenText,
+            new Dictionary<string, object?> { ["text"] = text }
+        );
+    }
+
+    /// <summary>
+    /// Enqueues a <c>setEditorText</c> control command with last-wins collapse semantics.
+    /// Multiple calls within the same eval retain only the last value.
+    /// </summary>
+    /// <param name="text">The text to place in the editor.</param>
+    internal void RequestSetEditorText(string text)
+    {
+        this.EnqueueControl(
+            ControlEventTypes.SetEditorText,
+            new Dictionary<string, object?> { ["text"] = text },
+            replace: true
+        );
+    }
+
+    /// <summary>
+    /// Broadcasts all pending control commands to subscribers in the order they were enqueued,
+    /// then clears the pending list. Called after eval or interaction-handler completion (in
+    /// <c>finally</c>) so commands are sent regardless of success or failure.
+    /// Must NOT be called while <c>_stateLock</c> is already held.
+    /// </summary>
+    private void FlushPendingControl()
+    {
+        lock (this._stateLock)
+        {
+            if (this._pendingControl.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var ctrl in this._pendingControl)
+            {
+                this.BroadcastControl(ctrl);
+            }
+
+            this._pendingControl.Clear();
         }
     }
 
@@ -621,6 +729,18 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         foreach (var (_, writer) in this._eventSubscribers)
         {
             writer.TryWrite(padMsg);
+        }
+    }
+
+    /// <summary>
+    /// Enqueues <paramref name="ctrl"/> as a <c>control.*</c> event to all registered
+    /// unified-event subscribers. Must be called while <c>_stateLock</c> is held.
+    /// </summary>
+    private void BroadcastControl(PadEventMessage.Control ctrl)
+    {
+        foreach (var (_, writer) in this._eventSubscribers)
+        {
+            writer.TryWrite(ctrl);
         }
     }
 

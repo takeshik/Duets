@@ -45,11 +45,12 @@ internal static class SessionBootstrap
         );
         duetsSession.Execute("var dump = function (v, opts) { __padDump__(v, opts); return v; };");
 
-        // Bind canvas and ui globals.
+        // Bind canvas, ui, and pad globals.
         duetsSession.SetValue("canvas", new CanvasGlobal(padSession));
         duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions));
+        duetsSession.SetValue("pad", new PadGlobal(padSession));
 
-        // Register per-session d.ts declarations for canvas, ui, and dump.
+        // Register per-session d.ts declarations for canvas, ui, dump, and pad.
         duetsSession.Declarations.RegisterDeclaration(
             """
             // DuetsPad per-session globals
@@ -77,6 +78,15 @@ internal static class SessionBootstrap
                 button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
+            };
+
+            declare const pad: {
+                /** Resets the current session (engine + canvas + timeline). Eventually-consistent: takes effect after the current run completes. */
+                resetSession(): void;
+                /** Opens a new tab seeded with the given text. */
+                openText(text: string): void;
+                /** Replaces the editor content with the given text. */
+                setEditorText(text: string): void;
             };
 
             /**
