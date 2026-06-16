@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR-32](32_duetspad-supersede-replservice-with-new-output-model.md)
+
+The Monaco editor decision remains in force: Monaco is the browser editor used
+by DuetsPad's Editor surface. The browser-based REPL UI shape and the
+`ReplService` framing are superseded by ADR-32, which introduces DuetsPad as the
+successor browser debug pad with Editor, Canvas, Timeline, and Immediate
+surfaces.
 
 ## Context
 

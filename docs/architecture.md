@@ -22,11 +22,11 @@ The main library consists of the following components:
 - **JsDocProviders / IJsDocProvider** — Composite registry of documentation providers ([ADR-29](decisions/29_jsdoc-provider-abstraction.md)). Tries registered providers in order and returns the first non-null result; isolates per-provider exceptions. Raises `ProviderAdded` so that `DuetsSession` can trigger `TypeDeclarations.RefreshDeclarations` when new documentation becomes available.
 - **XmlDocumentationProvider** — `IJsDocProvider` backed by a .NET XML documentation file ([ADR-29](decisions/29_jsdoc-provider-abstraction.md)). Can download and cache a NuGet nupkg to extract the XML file, selecting the best TFM match and a specific assembly name in multi-assembly packages.
 - **ITranspiler** — Engine-neutral transpilation boundary ([ADR-10](decisions/10_extract-itranspiler-interface-for-scriptengine.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)). Concrete implementations may be hosted by different JavaScript runtimes or replaced by future wasm-backed approaches.
-- **IScriptEngine** — Runtime-neutral execution contract ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md), [ADR-31](decisions/31_scriptengine-generic-backend-base-and-iscriptengine.md)). Interface held by callers (`DuetsSession`, `ReplService`, factory delegates). `Execute` and `Evaluate` always transpile before running, track `$_` and `$exception`, expose console events, and surface runtime values through `ScriptValue` instead of engine-specific value types. Backend packages implement `ScriptEngine<TValue>`, not `IScriptEngine` directly.
+- **IScriptEngine** — Runtime-neutral execution contract ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md), [ADR-31](decisions/31_scriptengine-generic-backend-base-and-iscriptengine.md)). Interface held by callers (`DuetsSession`, `DuetsPadSession`, factory delegates). `Execute` and `Evaluate` always transpile before running, track `$_` and `$exception`, expose console events, and surface runtime values through `ScriptValue` instead of engine-specific value types. Backend packages implement `ScriptEngine<TValue>`, not `IScriptEngine` directly.
 - **ScriptEngine&lt;TValue&gt;** — Generic abstract base for backend implementations ([ADR-31](decisions/31_scriptengine-generic-backend-base-and-iscriptengine.md)). Holds an `IScriptValueConverter<TValue>` and uses it to implement `SetValue(string, ScriptValue)` and `Evaluate*` result wrapping concretely; backends only implement the engine-specific hooks (`SetValue(string, TValue)`, `EvaluateJs`, `ExecuteJs`, etc.).
 - **IScriptValueConverter&lt;T&gt;** — Bidirectional converter between `ScriptValue` and a backend's internal value type ([ADR-31](decisions/31_scriptengine-generic-backend-base-and-iscriptengine.md)). `Wrap(T)` produces a `ScriptValue`; `Unwrap(ScriptValue)` recovers the internal value. The two directions are kept in one interface because `T` is fixed per backend and variance provides no practical benefit.
 - **ScriptValue** — Runtime-neutral wrapper around a JavaScript value ([ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md), [ADR-30](decisions/30_scriptvalue-redesign-abstract-class-and-jstype.md)). Abstract class; backend packages provide concrete subclasses (e.g. `JintScriptValue`). Exposes `ToObject` and `ToString`. `==`/`!=` operators work correctly across sentinel (`ScriptValue.Undefined`, `ScriptValue.Null`) and engine-backed values; cross-backend comparisons throw.
-- **ReplService** — Wires everything together into a web-based REPL ([ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). Serves the Monaco editor UI as embedded resources, provides an SSE endpoint for live type declaration updates, and a `POST /eval` endpoint that transpiles and executes code. Depends on `ITypeDeclarationProvider` for the declaration SSE stream, not on a specific runtime backend.
+- **DuetsPad** (`Duets.Pad` namespace) — Browser debug pad that supersedes `ReplService`, reuses the Monaco and TypeScript infrastructure from the browser REPL, and provides the top-level surfaces defined by ADR-32 ([ADR-32](decisions/32_duetspad-supersede-replservice-with-new-output-model.md), [ADR-7](decisions/7_use-monaco-editor-as-the-browser-based-repl-ui.md)). `DuetsPadService` is a thin HTTP router that attaches to an `HttpServer` via `UseDuetsPad` and delegates to three collaborators: **`SessionRegistry`** owns the session table, server-issued identifiers, create/lookup/delete, disposal, and idle reclamation (cleanup timer + idle sweep); **`AssetProvider`** owns static-asset acquisition, caching, serving, and the Tabler Icons CSS rewrite; and **`SseTransport`** is the single SSE streaming primitive behind the one multiplexed per-session event stream (`GET /sessions/{sessionId}/events`) that carries the canvas, timeline, type-declaration, and control events, rather than one stream per surface ([ADR-36](decisions/36_duetspad-server-canonical-output-protocol.md)). Each `DuetsPadSession` is slimmed to the eval gate, state nucleus, and subscriber fan-out: it wraps one `DuetsSession` and owns its Canvas, Timeline, object renderers, script globals, SSE subscribers, and a per-session interaction store, while construction-time script-global wiring is performed by **`SessionBootstrap`** and rendering funnels through a single `TryRenderContent` entry point ([ADR-34](decisions/34_duetspad-session-ownership-and-isolation.md)). Sessions are disposed explicitly via `DELETE /sessions/{sessionId}` and reclaimed by the registry after a configurable idle timeout (evaluation and SSE keepalive/stream activity count as activity); disposed identifiers are never reused and browser disconnect alone does not dispose a session ([ADR-38](decisions/38_duetspad-session-lifecycle.md)). Canvas and Timeline state is authoritative on the server, represented as reduced render nodes, and projected to the browser over namespaced SSE protocol events ([ADR-35](decisions/35_duetspad-rendering-model.md), [ADR-36](decisions/36_duetspad-server-canonical-output-protocol.md)). CLR values are rendered through a `RenderContext` that carries per-call dump options (`DumpOptions` — `MaxDepth`=5/`MaxItems`=1000 limits) and centralizes depth limiting and cycle detection in the dispatch step; rendering produces `DisplayContent` (a terminal body plus its interactions), keeping the stored render-node tree display-only; `dump` is a DuetsPad-only global (core Duets surfaces values as the evaluation result plus `console`/`util.inspect`) ([ADR-35](decisions/35_duetspad-rendering-model.md)). `ui.button` and similar attach server-side handlers that the browser triggers by opaque handler id via `POST /sessions/{sessionId}/interactions/{handlerId}/invoke` (answered `stale` when the handler's output has already been retired), and the interaction store releases handlers when their Canvas/Timeline output is replaced, trimmed, or the session is disposed ([ADR-41](decisions/41_duetspad-interaction-model.md)). A `pad` script global lets scripts operate the pad itself: `pad.resetSession`, `pad.openText`, and `pad.setEditorText` enqueue `control.*` commands buffered during a run and flushed afterward under the eval gate, over the same multiplexed stream; reset is browser-driven as a no-reload session swap, and `openText` presents an open action (the text handed off out-of-band via a one-shot key, never in the URL) with a popup-block toast fallback ([ADR-42](decisions/42_duetspad-pad-control-surface-and-command-channel.md)). The Timeline is bounded by an opt-in entry-count quota (`TimelineEntryLimit`, `null` = unlimited): the server drops oldest entries after an append and emits `timeline.append` then `timeline.trim`, preserving entry-id monotonicity so the browser projection converges ([ADR-39](decisions/39_duetspad-timeline-quota-policy.md)).
 
 ### Duets.Jint
 
@@ -54,7 +54,7 @@ It is not intended for end users or as a deliverable ([ADR-11](decisions/11_sand
 |---|---|---|
 | `repl` | *(default)* | Interactive REPL; TypeScript lines are evaluated, `:commands` manage state |
 | `complete` | `complete <src> [--position n]` | One-shot completions at position; outputs a JSON object |
-| `serve` | `serve [--port n]` | Starts the web REPL server; blocks until Ctrl+C |
+| `serve` | `serve [--port n]` | Starts the DuetsPad web server; blocks until Ctrl+C |
 | `batch` | `batch` | JSONL in → JSONL out; agent-friendly stateful session |
 
 The batch mode is designed for use by AI coding agents: the agent writes a sequence of JSON operation objects to stdin and reads JSON results from stdout, with no background process management required.
@@ -65,24 +65,24 @@ Runnable file-based app examples (`.cs` files at repository root level) showing 
 
 ## Data Flow
 
-### Eval (`POST /eval`)
+### Eval (`POST /sessions/{sessionId}/eval`)
 
 ```mermaid
 flowchart LR
     U["User\n(Monaco Editor)"]
-    RS[ReplService]
+    PS[DuetsPadService]
     TS["ITranspiler\n(runtime-hosted)"]
     SE["IScriptEngine\n(runtime backend)"]
 
-    U -->|"POST /eval\nTypeScript source"| RS
-    RS -->|Transpile| TS
-    TS -->|JavaScript source| RS
-    RS -->|Evaluate| SE
-    SE -->|result / error| RS
-    RS -->|"JSON { result, ok }"| U
+    U -->|"POST /sessions/{id}/eval\nTypeScript source"| PS
+    PS -->|Transpile| TS
+    TS -->|JavaScript source| PS
+    PS -->|Evaluate| SE
+    SE -->|result / error| PS
+    PS -->|"JSON { result, ok }"| U
 ```
 
-### Type Registration (`SSE /type-declaration-events`)
+### Type Registration (`type.declaration` events on `SSE /sessions/{sessionId}/events`)
 
 ```mermaid
 flowchart LR
@@ -102,11 +102,11 @@ This avoids bundling large JS files in the library assembly. `lib.es5.d.ts` is o
 
 ## Versioning and CI
 
-Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) ([ADR-17](decisions/17_versioning-strategy-and-ci.md)). Releases are triggered by `v{major}.{minor}.{patch}` Git tags and publish a NuGet package to GitHub Packages. Development builds carry a `-dev.{height}+g{commit}` prerelease suffix (SemVer 2.0).
+Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) ([ADR-23](decisions/23_ci-and-package-publishing.md)). Releases are triggered by `v{major}.{minor}.{patch}` Git tags and publish a NuGet package to GitHub Packages. Development builds carry a `-dev.{height}+g{commit}` prerelease suffix (SemVer 2.0).
 
 ## Key Dependencies
 
 | Package | Role |
 |---|---|
 | [Jint](https://github.com/sebastienros/jint) | JavaScript runtime backend used by `Duets.Jint` ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)) |
-| [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated versioning from Git history and tags ([ADR-17](decisions/17_versioning-strategy-and-ci.md)) |
+| [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated versioning from Git history and tags ([ADR-23](decisions/23_ci-and-package-publishing.md)) |

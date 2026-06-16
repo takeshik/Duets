@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Partially superseded by [ADR-35](35_duetspad-rendering-model.md)
+
+The decision to expose `dump` as a generic global function `dump<T>(value): T`
+(rather than an `Object.prototype` extension), and its completion/return-type
+rationale, remain in force. ADR-35 supersedes the ownership and options: `dump` is
+removed from core Duets and becomes DuetsPad-only, and its options change from the
+console-inspect `{ depth, compact }` to the render `{ maxDepth, maxItems }`.
 
 ## Context
 
