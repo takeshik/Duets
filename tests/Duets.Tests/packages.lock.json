@@ -146,7 +146,7 @@
         "type": "Project",
         "dependencies": {
           "Duets": "[1.0.0, )",
-          "Jint": "[4.9.2, )"
+          "Jint": "[4.10.0, )"
         }
       },
       "duets.sandbox": {
@@ -161,9 +161,9 @@
       },
       "Jint": {
         "type": "CentralTransitive",
-        "requested": "[4.9.2, )",
-        "resolved": "4.9.2",
-        "contentHash": "dEBge1IXsWrNefhc9mwYKQPmvzGhO9n/L7aMHobiXVkkvmeyPVYuthZ0i0hXy+JXJSP3K75hu/F51y5fXjtLzg==",
+        "requested": "[4.10.0, )",
+        "resolved": "4.10.0",
+        "contentHash": "0quB/4E0FpYmKTTYMGriYOcb0LT6xmKtaZG6SFAbnypJzPJ17G6QLIFWmD4MdjLCtdh+h77GZDaC7i7v+cQaeA==",
         "dependencies": {
           "Acornima": "1.6.2"
         }
