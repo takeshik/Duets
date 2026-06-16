@@ -23,52 +23,78 @@ internal sealed class InteractionStore
 
     // Canvas interactions
 
-    // Committed interactions currently displayed on the canvas.
+    // Committed interactions keyed by canvas name.
+    private readonly Dictionary<string, IReadOnlyList<CommittedInteraction>> _canvasInteractions =
+        new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Returns the current canvas interactions.
+    /// Returns the committed interactions for the canvas with the given <paramref name="name"/>,
+    /// or an empty list if no interactions have been committed for that canvas.
     /// </summary>
-    public IReadOnlyList<CommittedInteraction> CanvasInteractions { get; private set; } = [];
+    public IReadOnlyList<CommittedInteraction> GetCanvasInteractions(string name) =>
+        this._canvasInteractions.TryGetValue(name, out var interactions) ? interactions : [];
 
     /// <summary>
-    /// Commits <paramref name="pending"/> interactions as the new canvas interaction set,
-    /// replacing (and unregistering) any previous canvas interactions.
+    /// Commits <paramref name="pending"/> interactions as the new canvas interaction set for the
+    /// canvas named <paramref name="name"/>, replacing (and unregistering) any previous interactions
+    /// for that canvas.
     /// </summary>
+    /// <param name="name">The canvas name.</param>
     /// <param name="pending">Pending interactions produced by the rendered content.</param>
     /// <param name="childIndex">
     /// When non-null, each interaction target is prepended with this segment index (used when
     /// appending a child to an existing canvas root rather than replacing it).
     /// </param>
-    public void SetCanvasInteractions(PendingInteractions pending, int? childIndex = null)
+    public void SetCanvasInteractions(
+        string name,
+        PendingInteractions pending,
+        int? childIndex = null
+    )
     {
-        this.Release(this.CanvasInteractions);
-        this.CanvasInteractions = this.Commit(pending, childIndex);
-    }
+        if (this._canvasInteractions.TryGetValue(name, out var existing))
+        {
+            this.Release(existing);
+        }
 
-    /// <summary>
-    /// Appends committed interactions for <paramref name="pending"/> to the existing canvas
-    /// interaction set without releasing the old ones.
-    /// </summary>
-    /// <param name="pending">Pending interactions produced by the appended content.</param>
-    /// <param name="childIndex">
-    /// Segment index prepended to each target (the index of the newly appended child).
-    /// </param>
-    public void AppendCanvasInteractions(PendingInteractions pending, int childIndex)
-    {
         var committed = this.Commit(pending, childIndex);
         if (committed.Count > 0)
         {
-            this.CanvasInteractions = [.. this.CanvasInteractions, .. committed];
+            this._canvasInteractions[name] = committed;
+        }
+        else
+        {
+            this._canvasInteractions.Remove(name);
         }
     }
 
     /// <summary>
-    /// Clears all canvas interactions, unregistering their handlers.
+    /// Appends committed interactions for <paramref name="pending"/> to the existing canvas
+    /// interaction set for the canvas named <paramref name="name"/> without releasing the old ones.
     /// </summary>
-    public void ClearCanvasInteractions()
+    /// <param name="name">The canvas name.</param>
+    /// <param name="pending">Pending interactions produced by the appended content.</param>
+    /// <param name="childIndex">
+    /// Segment index prepended to each target (the index of the newly appended child).
+    /// </param>
+    public void AppendCanvasInteractions(string name, PendingInteractions pending, int childIndex)
     {
-        this.Release(this.CanvasInteractions);
-        this.CanvasInteractions = [];
+        var committed = this.Commit(pending, childIndex);
+        if (committed.Count > 0)
+        {
+            var existing = this.GetCanvasInteractions(name);
+            this._canvasInteractions[name] = [.. existing, .. committed];
+        }
+    }
+
+    /// <summary>
+    /// Clears the interactions for the canvas named <paramref name="name"/>, unregistering their handlers.
+    /// </summary>
+    public void ClearCanvasInteractions(string name)
+    {
+        if (this._canvasInteractions.Remove(name, out var interactions))
+        {
+            this.Release(interactions);
+        }
     }
 
     // Timeline interactions
@@ -130,7 +156,7 @@ internal sealed class InteractionStore
     public void Clear()
     {
         this._registry.Clear();
-        this.CanvasInteractions = [];
+        this._canvasInteractions.Clear();
         this._timelineInteractions.Clear();
     }
 

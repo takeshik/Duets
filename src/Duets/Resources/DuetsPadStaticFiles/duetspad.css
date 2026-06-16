@@ -522,19 +522,79 @@ html[data-bs-theme="light"] .immediate-console {
 }
 
 /* Canvas pane */
-#canvas-content {
+#canvas-panels {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.canvas-panel {
     flex: 1 1 0;
     min-height: 0;
     overflow: auto;
     padding: 14px 16px 20px;
+    display: none;
+}
+
+.canvas-panel.active {
+    display: block;
 }
 
 /* Disabled canvas pane — dims the pane while keeping content visible/readable.
    pointer-events:none on the content prevents accidental interaction; the pane
    header is not covered so the pane remains navigable. */
-.pane-disabled #canvas-content {
+.pane-disabled .canvas-panel {
     opacity: 0.55;
     pointer-events: none;
+}
+
+/* Canvas sub-tabs inside the pane header — flat underline style, no Tabler box */
+.canvas-tabbar {
+    display: none;
+    margin: 0 0 0 8px;
+    padding: 0;
+    list-style: none;
+    align-self: stretch;
+    align-items: stretch;
+}
+
+.canvas-tabbar.multi {
+    display: flex;
+}
+
+/* In tabs view the canvases are promoted to top-level tabs, so the in-header
+   sub-tabbar is redundant and is hidden regardless of the .multi state. */
+.app[data-view="tabs"] .canvas-tabbar {
+    display: none;
+}
+
+.canvas-tab {
+    display: flex;
+    align-items: stretch;
+}
+
+.canvas-tab-link {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--common-text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+}
+
+.canvas-tab-link:hover {
+    color: var(--common-text);
+}
+
+.canvas-tab-link.active {
+    color: var(--common-accent-text);
+    border-bottom-color: var(--common-accent-text);
 }
 
 /* Timeline pane — append-only log with a left rail */

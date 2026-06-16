@@ -20,10 +20,12 @@ namespace Duets.Pad;
 /// </para>
 ///
 /// <para>
-/// Grouped sub-APIs are exposed as interface-typed properties: <see cref="Canvas"/> and
-/// <see cref="Timeline"/>. Each property returns <c>this</c> typed as the respective
-/// interface; the interfaces are explicitly implemented by this class and own no state and
-/// no locks. Unified SSE subscription is managed via <see cref="SubscribeEvents"/> and
+/// Canvas state is maintained per named canvas in a dictionary; the <c>"default"</c> canvas is
+/// always present. The <see cref="Canvas"/> property returns <c>this</c> typed as
+/// <see cref="ICanvasSurface"/> and routes to the <c>"default"</c> canvas. Named-canvas
+/// access for future multi-canvas support uses the internal <c>CanvasAdd</c>/<c>CanvasSet</c>/
+/// <c>CanvasClear</c> methods directly. Timeline is exposed via <see cref="Timeline"/>.
+/// Unified SSE subscription is managed via <see cref="SubscribeEvents"/> and
 /// <see cref="UnsubscribeEvents"/>.
 /// </para>
 ///
@@ -141,14 +143,20 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
     public DuetsSession DuetsSession { get; }
 
-    /// <summary>Grouped canvas sub-API: state snapshot and mutation.</summary>
+    /// <summary>
+    /// Grouped canvas sub-API for the default canvas. Routes to the <c>"default"</c> canvas name.
+    /// </summary>
     internal ICanvasSurface Canvas => this;
 
     /// <summary>Grouped timeline sub-API: state snapshot.</summary>
     internal ITimelineSurface Timeline => this;
 
     // Backing state fields; accessed directly by internal methods and returned via interface State getters.
-    private CanvasState _canvasState = CanvasState.Empty;
+    // Canvas state is keyed by name; the "default" canvas is always present.
+    private readonly Dictionary<string, CanvasState> _canvasStates = new(StringComparer.Ordinal)
+    {
+        ["default"] = CanvasState.Empty,
+    };
     private TimelineState _timelineState = TimelineState.Empty;
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; }
@@ -185,12 +193,31 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     /// </summary>
     internal bool HasActiveSubscribers => !this._eventSubscribers.IsEmpty;
 
-    // Explicit ICanvasSurface implementation
+    // Explicit ICanvasSurface implementation — routes to the "default" canvas
 
-    CanvasState ICanvasSurface.State => this._canvasState;
+    string ICanvasSurface.Name => "default";
 
-    void ICanvasSurface.Add(object? value)
+    CanvasState ICanvasSurface.State => this._canvasStates["default"];
+
+    void ICanvasSurface.Add(object? value) => this.CanvasAdd("default", value);
+
+    void ICanvasSurface.Set(object? value) => this.CanvasSet("default", value);
+
+    void ICanvasSurface.Clear() => this.CanvasClear("default");
+
+    // Internal name-aware canvas mutation methods
+
+    /// <summary>
+    /// Renders <paramref name="value"/> and appends it to the canvas named <paramref name="name"/>.
+    /// Creates the canvas if it does not yet exist. Never throws.
+    /// </summary>
+    internal void CanvasAdd(string name, object? value)
     {
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new ArgumentException("The argument cannot be null or empty.", nameof(name));
+        }
+
         try
         {
             var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
@@ -202,10 +229,19 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
             lock (this._stateLock)
             {
-                var childIndex = this._canvasState.Root.Children.Count;
-                this._canvasState = this._canvasState.Append(content.Body);
-                this._interactionStore.AppendCanvasInteractions(content.Interactions, childIndex);
-                this.BroadcastCanvas();
+                if (!this._canvasStates.TryGetValue(name, out var state))
+                {
+                    state = CanvasState.Empty;
+                }
+
+                var childIndex = state.Root.Children.Count;
+                this._canvasStates[name] = state.Append(content.Body);
+                this._interactionStore.AppendCanvasInteractions(
+                    name,
+                    content.Interactions,
+                    childIndex
+                );
+                this.BroadcastCanvas(name);
             }
         }
         catch
@@ -214,8 +250,17 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
-    void ICanvasSurface.Set(object? value)
+    /// <summary>
+    /// Renders <paramref name="value"/> and replaces the entire canvas named <paramref name="name"/>
+    /// with it. Creates the canvas if it does not yet exist. Never throws.
+    /// </summary>
+    internal void CanvasSet(string name, object? value)
     {
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new ArgumentException("The argument cannot be null or empty.", nameof(name));
+        }
+
         try
         {
             var (content, isError) = this.TryRenderContent(value, this.DumpOptions);
@@ -227,9 +272,18 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
             lock (this._stateLock)
             {
-                this._canvasState = this._canvasState.Set(new ElementChildren(content.Body));
-                this._interactionStore.SetCanvasInteractions(content.Interactions, childIndex: 0);
-                this.BroadcastCanvas();
+                if (!this._canvasStates.TryGetValue(name, out var state))
+                {
+                    state = CanvasState.Empty;
+                }
+
+                this._canvasStates[name] = state.Set(new ElementChildren(content.Body));
+                this._interactionStore.SetCanvasInteractions(
+                    name,
+                    content.Interactions,
+                    childIndex: 0
+                );
+                this.BroadcastCanvas(name);
             }
         }
         catch
@@ -238,15 +292,24 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
-    void ICanvasSurface.Clear()
+    /// <summary>
+    /// Clears the canvas named <paramref name="name"/> and enqueues a snapshot event.
+    /// Creates the canvas if it does not yet exist. Never throws.
+    /// </summary>
+    internal void CanvasClear(string name)
     {
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new ArgumentException("The argument cannot be null or empty.", nameof(name));
+        }
+
         try
         {
             lock (this._stateLock)
             {
-                this._canvasState = CanvasState.Empty;
-                this._interactionStore.ClearCanvasInteractions();
-                this.BroadcastCanvas();
+                this._canvasStates[name] = CanvasState.Empty;
+                this._interactionStore.ClearCanvasInteractions(name);
+                this.BroadcastCanvas(name);
             }
         }
         catch
@@ -581,6 +644,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
                 this._eventSubscribers.Clear();
 
+                this._canvasStates.Clear();
                 this._interactionStore.Clear();
             }
 
@@ -703,14 +767,16 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     }
 
     /// <summary>
-    /// Enqueues a <c>canvas.replace</c> event to all registered subscribers.
-    /// Must be called while <c>_stateLock</c> is held.
+    /// Enqueues a <c>canvas.replace</c> event for the canvas named <paramref name="name"/> to all
+    /// registered subscribers. Must be called while <c>_stateLock</c> is held.
     /// </summary>
-    private void BroadcastCanvas()
+    private void BroadcastCanvas(string name)
     {
+        var state = this._canvasStates.TryGetValue(name, out var s) ? s : CanvasState.Empty;
         var msg = CanvasEventMessage.Replace(
-            this._canvasState,
-            this._interactionStore.CanvasInteractions
+            name,
+            state,
+            this._interactionStore.GetCanvasInteractions(name)
         );
         var padMsg = new PadEventMessage.Canvas(msg);
         foreach (var (_, writer) in this._eventSubscribers)
@@ -800,15 +866,19 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
             this._eventSubscribers[key] = writer;
 
-            // Initial snapshot order: canvas.snapshot → timeline.reset → type.declaration(s).
-            writer.TryWrite(
-                new PadEventMessage.Canvas(
-                    CanvasEventMessage.Snapshot(
-                        this._canvasState,
-                        this._interactionStore.CanvasInteractions
+            // Initial snapshot order: canvas.snapshot (one per canvas) → timeline.reset → type.declaration(s).
+            foreach (var (canvasName, canvasState) in this._canvasStates)
+            {
+                writer.TryWrite(
+                    new PadEventMessage.Canvas(
+                        CanvasEventMessage.Snapshot(
+                            canvasName,
+                            canvasState,
+                            this._interactionStore.GetCanvasInteractions(canvasName)
+                        )
                     )
-                )
-            );
+                );
+            }
 
             writer.TryWrite(
                 new PadEventMessage.Timeline(

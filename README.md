@@ -78,7 +78,7 @@ More examples in [`samples/`](samples/).
 Output goes to DuetsPad's structured surfaces, not back into the editor:
 
 - `dump(value)`, `console.*`, and rendering errors append to the **Timeline**.
-- `canvas.add(...)`, `canvas.set(...)`, and `canvas.clear()` update the **Canvas**.
+- `canvas.add(...)`, `canvas.set(...)`, and `canvas.clear()` update the **Canvas**. `canvas` is the default canvas; `canvases.get(name)` returns a named canvas (created on first access) with the same surface, each shown as its own Canvas tab.
 - The **Immediate** bar evaluates a single line on <kbd>Enter</kbd> and shows that result in the Timeline; it keeps no result of its own.
 
 The editor's final evaluation result is **not** automatically appended to the Timeline — use `dump(value)` to record a value there.

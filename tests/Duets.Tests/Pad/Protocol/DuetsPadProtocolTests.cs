@@ -15,7 +15,7 @@ public sealed class DuetsPadProtocolTests
     {
         var state = CanvasState.Empty.Append(new Text("hello"));
 
-        var message = CanvasEventMessage.Snapshot(state, []);
+        var message = CanvasEventMessage.Snapshot("default", state, []);
 
         Assert.Equal(CanvasEventTypes.Snapshot, message.Type);
         Assert.Same(state, message.State);
@@ -23,15 +23,35 @@ public sealed class DuetsPadProtocolTests
     }
 
     [Fact]
+    public void Canvas_snapshot_carries_name()
+    {
+        var message = CanvasEventMessage.Snapshot("default", CanvasState.Empty, []);
+        Assert.Equal("default", message.Name);
+
+        var messageNamed = CanvasEventMessage.Snapshot("myCanvas", CanvasState.Empty, []);
+        Assert.Equal("myCanvas", messageNamed.Name);
+    }
+
+    [Fact]
     public void Canvas_replace_event_type_is_canvas_replace_and_carries_state()
     {
         var state = CanvasState.Empty.Append(new Text("world"));
 
-        var message = CanvasEventMessage.Replace(state, []);
+        var message = CanvasEventMessage.Replace("default", state, []);
 
         Assert.Equal(CanvasEventTypes.Replace, message.Type);
         Assert.Same(state, message.State);
         Assert.Empty(message.Interactions);
+    }
+
+    [Fact]
+    public void Canvas_replace_carries_name()
+    {
+        var message = CanvasEventMessage.Replace("default", CanvasState.Empty, []);
+        Assert.Equal("default", message.Name);
+
+        var messageNamed = CanvasEventMessage.Replace("myCanvas", CanvasState.Empty, []);
+        Assert.Equal("myCanvas", messageNamed.Name);
     }
 
     // Timeline events
@@ -123,7 +143,7 @@ public sealed class DuetsPadProtocolTests
     public void Serializer_canvas_snapshot_emits_namespaced_type()
     {
         var state = CanvasState.Empty;
-        var message = CanvasEventMessage.Snapshot(state, []);
+        var message = CanvasEventMessage.Snapshot("default", state, []);
 
         var json = SseSerializer.Serialize(message);
 
@@ -134,11 +154,31 @@ public sealed class DuetsPadProtocolTests
     public void Serializer_canvas_replace_emits_namespaced_type()
     {
         var state = CanvasState.Empty;
-        var message = CanvasEventMessage.Replace(state, []);
+        var message = CanvasEventMessage.Replace("default", state, []);
 
         var json = SseSerializer.Serialize(message);
 
         Assert.Contains($"\"{CanvasEventTypes.Replace}\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_canvas_snapshot_emits_name_field()
+    {
+        var message = CanvasEventMessage.Snapshot("myCanvas", CanvasState.Empty, []);
+
+        var json = SseSerializer.Serialize(message);
+
+        Assert.Contains("\"name\":\"myCanvas\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_canvas_replace_emits_name_field()
+    {
+        var message = CanvasEventMessage.Replace("myCanvas", CanvasState.Empty, []);
+
+        var json = SseSerializer.Serialize(message);
+
+        Assert.Contains("\"name\":\"myCanvas\"", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -151,7 +191,7 @@ public sealed class DuetsPadProtocolTests
             handlerId,
             InteractionState.Stale
         );
-        var message = CanvasEventMessage.Replace(CanvasState.Empty, [interaction]);
+        var message = CanvasEventMessage.Replace("default", CanvasState.Empty, [interaction]);
 
         var json = SseSerializer.Serialize(message);
 

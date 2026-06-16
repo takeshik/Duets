@@ -29,6 +29,7 @@ internal static class SseSerializer
         return new JsonObject
         {
             ["type"] = m.Type,
+            ["name"] = m.Name,
             ["state"] = _canvasSerializer.Serialize(m.State),
             ["interactions"] = SerializeInteractions(m.Interactions),
         }.ToJsonString();

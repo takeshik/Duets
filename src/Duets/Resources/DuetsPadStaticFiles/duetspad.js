@@ -487,17 +487,122 @@
 
   // Canvas state
 
+  // Maps canvas name → <div class="canvas-panel"> element.
+  const canvasPanelMap = new Map();
+
+  // Tracks which canvas is currently displayed (name string).
+  let activeCanvasName = "default";
+
+  // Callback registered by the UI layer; called when a new canvas name appears.
+  let onCanvasCreatedCallback = null;
+
+  // Cached reference to the #canvas-panels container. The UI layer detaches the
+  // canvas pane (via .remove()) when it is not the active tab or is hidden;
+  // a detached element is not reachable through document.getElementById, so
+  // looking it up afresh on each event would return null and silently drop the
+  // canvas update. The pane element is never recreated — only detached and
+  // re-attached — so a once-captured reference stays valid across those moves,
+  // letting canvas mutations keep updating the (possibly detached) subtree.
+  let canvasPanelsRoot = null;
+
+  /**
+   * Returns the cached <div id="canvas-panels"> container, capturing it on first
+   * use. Returns null only if the element has never existed in the document.
+   * @returns {HTMLElement|null}
+   */
+  function getCanvasPanelsRoot() {
+    if (!canvasPanelsRoot) {
+      canvasPanelsRoot = document.getElementById("canvas-panels");
+    }
+    return canvasPanelsRoot;
+  }
+
+  /**
+   * Ensures a canvas panel div exists for the given name. Creates it (and
+   * appends it to #canvas-panels) if it did not exist before.
+   * Returns the panel element.
+   * @param {string} name - Canvas name.
+   * @returns {HTMLElement|null}
+   */
+  function ensureCanvasPanel(name) {
+    if (canvasPanelMap.has(name)) {
+      return canvasPanelMap.get(name);
+    }
+    const root = getCanvasPanelsRoot();
+    if (!root) return null;
+
+    const panel = document.createElement("div");
+    panel.className = "canvas-panel";
+    panel.dataset.canvas = name;
+    root.appendChild(panel);
+    canvasPanelMap.set(name, panel);
+
+    // Notify the UI layer that a new canvas name has appeared.
+    if (onCanvasCreatedCallback) {
+      try {
+        onCanvasCreatedCallback(name);
+      } catch (err) {
+        console.error("[DuetsPad] onCanvasCreated callback threw", err);
+      }
+    }
+
+    return panel;
+  }
+
+  /**
+   * Makes the named canvas panel visible and hides all others. Also updates
+   * the module-level activeCanvasName.
+   * @param {string} name - Canvas name to activate.
+   */
+  function activateCanvasPanel(name) {
+    activeCanvasName = name;
+    for (const [panelName, panel] of canvasPanelMap) {
+      panel.classList.toggle("active", panelName === name);
+    }
+  }
+
   function handleCanvasEvent(msg) {
     if (
       msg.type === PAD_EVENTS.canvasSnapshot ||
       msg.type === PAD_EVENTS.canvasReplace
     ) {
-      const content = document.getElementById("canvas-content");
-      if (!content) return;
-      content.textContent = "";
+      const name = typeof msg.name === "string" ? msg.name : "default";
+      const isNew = !canvasPanelMap.has(name);
+      const panel = ensureCanvasPanel(name);
+      if (!panel) return;
+
+      // If this is the first event for this name (or the only canvas),
+      // make it active so content is visible immediately.
+      if (isNew || canvasPanelMap.size === 1) {
+        activateCanvasPanel(name);
+      }
+
+      panel.textContent = "";
       const body = projectNode(msg.state);
-      content.appendChild(body);
+      panel.appendChild(body);
       applyInteractions(body, msg.interactions);
+    }
+  }
+
+  /**
+   * Resets all canvas panels: clears and removes them from the DOM, clears the
+   * map, resets activeCanvasName. Called by swapSession().
+   */
+  function resetCanvases() {
+    const root = getCanvasPanelsRoot();
+    if (root) {
+      root.textContent = "";
+    }
+    canvasPanelMap.clear();
+    activeCanvasName = "default";
+
+    // Notify the UI layer so it can rebuild canvas tabs.
+    if (onCanvasCreatedCallback) {
+      try {
+        onCanvasCreatedCallback(null);
+      } catch {
+        // Ignore.
+      }
     }
   }
 
@@ -563,8 +668,7 @@
 
     // Step 5: clear Canvas and Timeline panes before the new stream arrives
     // so the old content does not persist during the brief gap.
-    const canvasContent = document.getElementById("canvas-content");
-    if (canvasContent) canvasContent.textContent = "";
+    resetCanvases();
     resetTimeline();
 
     // Step 6: open the new EventSource.
@@ -1202,6 +1306,40 @@
      */
     resetSession: () => {
       void swapSession();
+    },
+    /**
+     * Registers a callback that is invoked when a new canvas name appears for
+     * the first time (first SSE event for that name). Pass null to
+     * indicate a full canvas reset. Only one callback is supported; registering
+     * again replaces the previous one.
+     * @param {function(string|null): void} callback
+     */
+    onCanvasCreated: (callback) => {
+      onCanvasCreatedCallback = callback;
+    },
+    /**
+     * Returns the current list of canvas names in creation order.
+     * @returns {string[]}
+     */
+    getCanvasNames: () => {
+      return Array.from(canvasPanelMap.keys());
+    },
+    /**
+     * Returns the name of the currently active (visible) canvas.
+     * @returns {string}
+     */
+    getActiveCanvasName: () => {
+      return activeCanvasName;
+    },
+    /**
+     * Switches the visible canvas to the one with the given name.
+     * No-ops if the name is not known.
+     * @param {string} name
+     */
+    setActiveCanvasName: (name) => {
+      if (canvasPanelMap.has(name)) {
+        activateCanvasPanel(name);
+      }
     },
   };
 

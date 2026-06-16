@@ -9,6 +9,11 @@ namespace Duets.Pad;
 internal interface ICanvasSurface
 {
     /// <summary>
+    /// The name identifying this canvas within the session.
+    /// </summary>
+    public string Name { get; }
+
+    /// <summary>
     /// The current immutable snapshot of the canvas. Updated by canvas mutation operations under
     /// <c>_stateLock</c>.
     /// </summary>

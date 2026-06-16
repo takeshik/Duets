@@ -13,6 +13,7 @@
   const state = {
     layout: "vertical",
     view: "split",
+    // In tabs view, activeTab may be "canvas:default", "canvas:myName", etc.
     activeTab: "editor",
     visible: { editor: true, canvas: true, timeline: true },
   };
@@ -61,6 +62,83 @@
       return Boolean(panes[name]);
     }
     return state.visible[name] && Boolean(panes[name]);
+  }
+
+  /**
+   * Returns the canvas name portion of a "canvas:name" tab key, or null if the
+   * key is not a canvas tab key.
+   * @param {string} tabKey
+   * @returns {string|null}
+   */
+  function canvasNameFromTabKey(tabKey) {
+    if (typeof tabKey === "string" && tabKey.startsWith("canvas:")) {
+      return tabKey.slice("canvas:".length);
+    }
+    return null;
+  }
+
+  /**
+   * Returns the tab key for a given canvas name ("canvas:name").
+   * @param {string} name
+   * @returns {string}
+   */
+  function canvasTabKey(name) {
+    return `canvas:${name}`;
+  }
+
+  /**
+   * Returns the display label for a canvas sub-tab: the canvas name as-is.
+   * @param {string} name
+   * @returns {string}
+   */
+  function canvasTabLabel(name) {
+    return name;
+  }
+
+  /**
+   * Returns the display label for a top-level canvas tab (tabs view). When only
+   * the default canvas exists the bare word "Canvas" is shown; once there are
+   * multiple canvases each is disambiguated as "Canvas(name)".
+   * @param {string} name
+   * @returns {string}
+   */
+  function canvasTopTabLabel(name) {
+    const names = window.DuetsPad ? window.DuetsPad.getCanvasNames() : [];
+    return names.length > 1 ? `Canvas(${name})` : "Canvas";
+  }
+
+  /**
+   * Updates the canvas sub-tabbar (#canvas-tabbar) inside the canvas pane
+   * header to reflect the current list of canvas names. Only shown when there
+   * are two or more canvases.
+   */
+  function syncCanvasTabbar() {
+    const tabbar = document.getElementById("canvas-tabbar");
+    if (!tabbar) return;
+
+    const names = window.DuetsPad ? window.DuetsPad.getCanvasNames() : [];
+    const activeName = window.DuetsPad
+      ? window.DuetsPad.getActiveCanvasName()
+      : "default";
+
+    tabbar.replaceChildren();
+    tabbar.classList.toggle("multi", names.length > 1);
+
+    for (const name of names) {
+      const item = document.createElement("li");
+      item.className = "canvas-tab";
+      const link = document.createElement("a");
+      link.className = `canvas-tab-link${name === activeName ? " active" : ""}`;
+      link.href = "#";
+      link.textContent = canvasTabLabel(name);
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        window.DuetsPad?.setActiveCanvasName(name);
+        syncCanvasTabbar();
+      });
+      item.appendChild(link);
+      tabbar.appendChild(item);
+    }
   }
 
   function createContainer(className) {
@@ -214,13 +292,25 @@
     workspace.style.flexDirection = "column";
   }
 
-  function createTab(name) {
-    const label = TAB_LABELS[name];
+  /**
+   * Creates a workspace-level tab item for the given tab key. The key is either
+   * a plain pane name ("editor", "timeline") or a canvas composite key
+   * ("canvas:default", "canvas:myCanvas").
+   * @param {string} key - Tab key.
+   * @returns {HTMLLIElement}
+   */
+  function createTab(key) {
+    const canvasName = canvasNameFromTabKey(key);
+    const label =
+      canvasName !== null
+        ? { icon: TAB_LABELS.canvas.icon, text: canvasTopTabLabel(canvasName) }
+        : TAB_LABELS[key];
+
     const item = document.createElement("li");
     const link = document.createElement("a");
 
     item.className = "nav-item";
-    link.className = `nav-link${state.activeTab === name ? " active" : ""}`;
+    link.className = `nav-link${state.activeTab === key ? " active" : ""}`;
     link.href = "#";
     link.append(
       createIcon(label.icon, "me-1"),
@@ -228,7 +318,7 @@
     );
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      state.activeTab = name;
+      state.activeTab = key;
       render();
     });
 
@@ -236,20 +326,79 @@
     return item;
   }
 
+  /**
+   * Determines whether the given tab key is "visible" (has a backing pane and,
+   * for canvas tabs, an existing canvas name).
+   * @param {string} key
+   * @returns {boolean}
+   */
+  function isTabVisible(key) {
+    const canvasName = canvasNameFromTabKey(key);
+    if (canvasName !== null) {
+      if (!panes.canvas) return false;
+      const names = window.DuetsPad ? window.DuetsPad.getCanvasNames() : [];
+      return names.includes(canvasName);
+    }
+    return isVisible(key);
+  }
+
+  /**
+   * Returns the ordered list of tab keys for tabs view, expanding "canvas" into
+   * one key per canvas name.
+   * @returns {string[]}
+   */
+  function getTabKeys() {
+    const keys = [];
+    for (const name of PANE_NAMES) {
+      if (name === "canvas") {
+        const canvasNames = window.DuetsPad
+          ? window.DuetsPad.getCanvasNames()
+          : [];
+        if (canvasNames.length === 0) {
+          // No canvas yet — include a placeholder "canvas:default" so the tab
+          // exists before the first SSE event arrives.
+          keys.push(canvasTabKey("default"));
+        } else {
+          for (const cn of canvasNames) {
+            keys.push(canvasTabKey(cn));
+          }
+        }
+      } else {
+        keys.push(name);
+      }
+    }
+    return keys;
+  }
+
   function buildTabsLayout() {
-    if (!isVisible(state.activeTab)) {
-      state.activeTab = PANE_NAMES.find(isVisible) ?? "editor";
+    const tabKeys = getTabKeys();
+
+    // Normalise activeTab: if it no longer exists (e.g., after a session reset),
+    // or was a plain "canvas" key from an older state, fall back to the first
+    // visible key.
+    if (!tabKeys.includes(state.activeTab) || !isTabVisible(state.activeTab)) {
+      state.activeTab = tabKeys.find(isTabVisible) ?? tabKeys[0] ?? "editor";
     }
 
     tabbar.replaceChildren();
-    for (const name of PANE_NAMES) {
-      if (isVisible(name)) {
-        tabbar.appendChild(createTab(name));
+    for (const key of tabKeys) {
+      if (isTabVisible(key)) {
+        tabbar.appendChild(createTab(key));
       }
     }
 
-    const activePane = panes[state.activeTab];
-    if (activePane && isVisible(state.activeTab)) {
+    // Determine which pane to show and which canvas name to activate.
+    const activeCanvasName = canvasNameFromTabKey(state.activeTab);
+    let activePane;
+    if (activeCanvasName !== null) {
+      activePane = panes.canvas;
+      // Tell duetspad.js which canvas panel should be visible.
+      window.DuetsPad?.setActiveCanvasName(activeCanvasName);
+    } else {
+      activePane = panes[state.activeTab];
+    }
+
+    if (activePane) {
       setGrow(activePane, true);
       workspace.appendChild(activePane);
     }
@@ -273,8 +422,10 @@
       buildTabsLayout();
     } else if (state.layout === "horizontal") {
       buildHorizontalLayout();
+      syncCanvasTabbar();
     } else {
       buildVerticalLayout();
+      syncCanvasTabbar();
     }
 
     syncToolbar();
@@ -429,6 +580,19 @@
 
     for (const name of PANE_NAMES) {
       panes[name] = queryRequired(`#pane-${name}`);
+    }
+
+    // Register with the canvas state module so we hear about new canvas names.
+    // The callback receives the new name (string) on creation, or null on a full
+    // canvas reset (session swap). Either way, re-render to update tabs.
+    if (window.DuetsPad) {
+      window.DuetsPad.onCanvasCreated((_nameOrNull) => {
+        if (state.view === "tabs") {
+          render();
+        } else {
+          syncCanvasTabbar();
+        }
+      });
     }
 
     wireToolbar();

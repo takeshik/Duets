@@ -45,22 +45,37 @@ internal static class SessionBootstrap
         );
         duetsSession.Execute("var dump = function (v, opts) { __padDump__(v, opts); return v; };");
 
-        // Bind canvas, ui, and pad globals.
-        duetsSession.SetValue("canvas", new CanvasGlobal(padSession));
+        // Bind canvases, canvas, ui, and pad globals.
+        var canvasesGlobal = new CanvasesGlobal(padSession);
+        duetsSession.SetValue("canvases", canvasesGlobal);
+        duetsSession.SetValue("canvas", canvasesGlobal.Get("default"));
         duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions));
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
-        // Register per-session d.ts declarations for canvas, ui, dump, and pad.
+        // Register per-session d.ts declarations for canvases, canvas, ui, dump, and pad.
         duetsSession.Declarations.RegisterDeclaration(
             """
             // DuetsPad per-session globals
-            declare const canvas: {
+
+            interface DuetsPadCanvas {
                 /** Renders value and appends it as a new child of the canvas root. */
                 add(value: any): void;
                 /** Renders value and replaces all canvas children with it. */
                 set(value: any): void;
                 /** Clears all canvas children. */
                 clear(): void;
+            }
+
+            /** The default canvas. Equivalent to `canvases.get("default")`. */
+            declare const canvas: DuetsPadCanvas;
+
+            /**
+             * Named canvas collection. Use `canvases.get(name)` to obtain a canvas by name.
+             * The first call for a given name creates the canvas; subsequent calls return the same instance.
+             */
+            declare const canvases: {
+                /** Returns the canvas with the given name, creating it on first access. */
+                get(name: string): DuetsPadCanvas;
             };
 
             declare const ui: {
