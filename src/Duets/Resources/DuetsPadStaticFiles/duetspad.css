@@ -783,6 +783,18 @@ html[data-bs-theme="light"] .immediate-console {
     white-space: nowrap;
 }
 
+/* Toast notifications — theme-aligned surface/border tokens fed into Tabler's
+   .toast component variables so they blend with the app shell. */
+#toast-container .toast {
+    --tblr-toast-bg: var(--common-elevated);
+    --tblr-toast-border-color: var(--common-border);
+    --tblr-toast-color: var(--common-text);
+    font-size: 13px;
+}
+#toast-container .toast a {
+    color: var(--common-accent-text);
+}
+
 /* Responsive — narrow viewports stack */
 @media (max-width: 720px) {
     .brand-tag {

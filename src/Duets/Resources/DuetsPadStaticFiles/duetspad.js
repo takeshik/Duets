@@ -257,6 +257,79 @@
 
   const EDITOR_CONTENT_KEY = "duetspad.editor.content";
 
+  // Seed key utilities for one-shot localStorage text transfer across tabs.
+  // A seed key stores text that a newly opened tab reads exactly once, then
+  // deletes. The key name embeds a UUID so concurrent openText calls do not
+  // collide.
+
+  const SEED_KEY_PREFIX = "duetspad.seed.";
+  const SEED_MAX_KEYS = 20;
+
+  /**
+   * Writes text under a fresh seed key and returns the UUID portion so the
+   * caller can embed it in the target URL.
+   * Old surplus seed keys (beyond SEED_MAX_KEYS) are pruned to prevent
+   * unbounded growth in case they are never consumed.
+   * @param {string} text - The seed content to store.
+   * @returns {string} The UUID identifying this seed key.
+   */
+  function writeSeed(text) {
+    const uuid = crypto.randomUUID();
+    try {
+      localStorage.setItem(SEED_KEY_PREFIX + uuid, text);
+      pruneSeedKeys();
+    } catch {
+      // localStorage unavailable; best-effort only.
+    }
+    return uuid;
+  }
+
+  /**
+   * Reads and immediately deletes the seed for the given UUID.
+   * Returns the stored text, or null if the key is absent or storage is
+   * unavailable. The one-shot delete ensures a second caller gets nothing.
+   * @param {string} uuid - The UUID from the URL ?seed= parameter.
+   * @returns {string|null} The stored text, or null.
+   */
+  function consumeSeed(uuid) {
+    try {
+      const key = SEED_KEY_PREFIX + uuid;
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        localStorage.removeItem(key);
+      }
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Removes the oldest surplus seed keys so at most SEED_MAX_KEYS remain.
+   * Keys are sorted lexicographically; since UUIDs are random (v4) this is not
+   * truly FIFO, but it keeps storage bounded in pathological cases.
+   */
+  function pruneSeedKeys() {
+    try {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        // biome-ignore lint/complexity/useOptionalChain: k?.startsWith() returns undefined (not false) when k is null, which is not safe in boolean context here
+        if (k && k.startsWith(SEED_KEY_PREFIX)) {
+          keys.push(k);
+        }
+      }
+      if (keys.length > SEED_MAX_KEYS) {
+        keys.sort();
+        for (const k of keys.slice(0, keys.length - SEED_MAX_KEYS)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {
+      // Best-effort; ignore storage errors.
+    }
+  }
+
   /** Persists the editor content; silently ignores storage errors. */
   function saveEditorContent(text) {
     try {
@@ -516,9 +589,72 @@
     void swapSession();
   });
 
-  // TODO: implement open-text (toast fallback + new-tab seed) in the next step.
+  /**
+   * Shows a non-blocking toast notification with an action link.
+   * The toast is appended to #toast-container and auto-dismisses after 8 s.
+   * Relies on Bootstrap's Toast component bundled with Tabler.
+   * @param {string} message - Body text for the toast.
+   * @param {string} linkLabel - Label for the action link inside the toast.
+   * @param {string} href - URL the action link opens (in a new tab).
+   */
+  function showOpenTextToast(message, linkLabel, href) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+
+    const toastEl = document.createElement("div");
+    toastEl.className = "toast align-items-center";
+    toastEl.setAttribute("role", "alert");
+    toastEl.setAttribute("aria-live", "assertive");
+    toastEl.setAttribute("aria-atomic", "true");
+
+    const body = document.createElement("div");
+    body.className = "d-flex";
+
+    const bodyInner = document.createElement("div");
+    bodyInner.className = "toast-body";
+    bodyInner.textContent = `${message} `;
+
+    const link = document.createElement("a");
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    // textContent is safe — no user-supplied HTML
+    link.textContent = linkLabel;
+
+    bodyInner.appendChild(link);
+    body.appendChild(bodyInner);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "btn-close me-2 m-auto";
+    closeBtn.setAttribute("data-bs-dismiss", "toast");
+    closeBtn.setAttribute("aria-label", "Close");
+    body.appendChild(closeBtn);
+
+    toastEl.appendChild(body);
+    container.appendChild(toastEl);
+
+    const toast = new bootstrap.Toast(toastEl, { delay: 8000 });
+    toast.show();
+
+    toastEl.addEventListener("hidden.bs.toast", () => {
+      toastEl.remove();
+    });
+  }
+
   controlHandlers.set("openText", (msg) => {
-    console.info("[DuetsPad] control.openText received", msg);
+    if (typeof msg.text !== "string") return;
+
+    const uuid = writeSeed(msg.text);
+    const targetUrl = new URL(document.location.href);
+    targetUrl.search = "";
+    targetUrl.searchParams.set("seed", uuid);
+    const href = targetUrl.href;
+
+    const newTab = window.open(href, "_blank");
+    if (!newTab) {
+      showOpenTextToast("New script ready.", "Open in new tab", href);
+    }
   });
 
   /**
@@ -622,10 +758,24 @@
         }
       }
 
-      // Restore previously saved content (overrides the empty initial value).
-      const savedContent = loadEditorContent();
-      if (savedContent) {
-        editor.setValue(savedContent);
+      // Seed: if the URL carries ?seed=<uuid>, consume it from localStorage
+      // and use it as the initial content (one-shot; key is deleted on read).
+      // Otherwise fall back to the last persisted editor content.
+      const seedParam = new URLSearchParams(window.location.search).get("seed");
+      const seedContent = seedParam ? consumeSeed(seedParam) : null;
+      if (seedContent !== null) {
+        editor.setValue(seedContent);
+        // Remove the ?seed= parameter from the URL without reloading so
+        // the next time the user refreshes they get a fresh empty editor.
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("seed");
+        window.history.replaceState(null, "", cleanUrl.href);
+      } else {
+        // Restore previously saved content (overrides the empty initial value).
+        const savedContent = loadEditorContent();
+        if (savedContent) {
+          editor.setValue(savedContent);
+        }
       }
 
       new MutationObserver(() => {
