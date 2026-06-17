@@ -21,6 +21,8 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
     public string BabelVersion { get; private set; } = null!;
     public string TypeScriptJs { get; private set; } = null!;
     public string TypeScriptVersion { get; private set; } = null!;
+    private BabelTranspiler? _sharedBabelTranspiler;
+    private TypeScriptService? _sharedTypeScriptService;
 
     public Task<BabelTranspiler> CreateBabelTranspilerAsync()
     {
@@ -57,8 +59,24 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
         );
     }
 
+    public async Task<BabelTranspiler> GetSharedBabelTranspilerAsync()
+    {
+        this._sharedBabelTranspiler ??= await this.CreateBabelTranspilerAsync();
+        return this._sharedBabelTranspiler;
+    }
+
+    public async Task<TypeScriptService> GetSharedTypeScriptServiceAsync()
+    {
+        this._sharedTypeScriptService ??= await this.CreateTypeScriptServiceAsync(
+            new TypeDeclarations()
+        );
+        return this._sharedTypeScriptService;
+    }
+
     public ValueTask DisposeAsync()
     {
+        this._sharedBabelTranspiler?.Dispose();
+        this._sharedTypeScriptService?.Dispose();
         return ValueTask.CompletedTask;
     }
 

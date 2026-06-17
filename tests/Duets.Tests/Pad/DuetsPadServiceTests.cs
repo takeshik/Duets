@@ -34,7 +34,7 @@ public sealed class DuetsPadServiceTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -264,7 +264,7 @@ public sealed class DuetsPadServiceTests
 
         var opts = new DuetsPadServiceOptions
         {
-            SessionFactory = () => DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr())),
+            SessionFactory = () => JintTestRuntime.CreateSessionAsync(o => o.AllowClr()),
             Clock = () => current,
             // IdleTimeout intentionally not set — remains null.
         };
@@ -316,7 +316,7 @@ public sealed class DuetsPadServiceTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -388,7 +388,7 @@ public sealed class DuetsPadServiceTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -481,7 +481,7 @@ public sealed class DuetsPadServiceTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -576,7 +576,7 @@ public sealed class DuetsPadServiceTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -591,7 +591,7 @@ public sealed class DuetsPadServiceTests
                             );
                             // Short keepalive so the write-driven disconnect detector fires
                             // promptly: the dead client is only observed on the next keepalive write.
-                            opts.KeepAliveInterval = TimeSpan.FromMilliseconds(200);
+                            opts.KeepAliveInterval = TimeSpan.FromMilliseconds(50);
                         }
                     );
             },
@@ -633,7 +633,7 @@ public sealed class DuetsPadServiceTests
                 var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
                 while (session.HasActiveSubscribers && DateTime.UtcNow < deadline)
                 {
-                    await Task.Delay(50);
+                    await Task.Delay(10);
                 }
 
                 Assert.False(

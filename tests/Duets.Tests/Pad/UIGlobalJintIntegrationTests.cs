@@ -1,6 +1,7 @@
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Rendering;
+using Duets.Tests.TestSupport;
 using Jint;
 
 namespace Duets.Tests.Pad;
@@ -15,7 +16,7 @@ public sealed class UIGlobalJintIntegrationTests
 {
     private static async Task<DuetsSession> CreateSessionAsync()
     {
-        return await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        return await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
     }
 
     [Fact]

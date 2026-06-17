@@ -29,7 +29,7 @@ public sealed class DuetsPadProtocolClientSseTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
@@ -90,7 +90,7 @@ public sealed class DuetsPadProtocolClientSseTests
                 var timedOut = await padClient.ReadSseAsync(
                     "s1",
                     maxRecords: 1,
-                    timeoutMs: 200,
+                    timeoutMs: 50,
                     includeComments: false
                 );
                 Assert.True(timedOut["ok"]!.GetValue<bool>());
@@ -106,10 +106,11 @@ public sealed class DuetsPadProtocolClientSseTests
                 );
                 evalResponse.EnsureSuccessStatusCode();
 
-                // (c) Reading the same stream again must surface the event, not a dead stream.
+                // (c) Reading the same stream again must surface the next event, not a dead stream.
+                // This eval emits one data record; reading one record avoids waiting for timeout.
                 var afterTimeout = await padClient.ReadSseAsync(
                     "s1",
-                    maxRecords: 16,
+                    maxRecords: 1,
                     timeoutMs: 2000,
                     includeComments: false
                 );

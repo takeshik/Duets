@@ -12,6 +12,8 @@ public abstract class TranspilerCompatibilityTests : IAsyncLifetime
 
     protected ITranspiler Transpiler => this._transpiler!;
 
+    protected virtual bool DisposeTranspiler => true;
+
     protected abstract Task<ITranspiler> CreateTranspilerAsync();
 
     public async ValueTask InitializeAsync()
@@ -21,7 +23,11 @@ public abstract class TranspilerCompatibilityTests : IAsyncLifetime
 
     public ValueTask DisposeAsync()
     {
-        (this._transpiler as IDisposable)?.Dispose();
+        if (this.DisposeTranspiler)
+        {
+            (this._transpiler as IDisposable)?.Dispose();
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -144,9 +150,11 @@ public sealed class BabelTranspilerCompatibilityTests(
     private readonly TranspilerAssetsFixture _assets = assets;
     private readonly ITestOutputHelper _output = output;
 
+    protected override bool DisposeTranspiler => false;
+
     protected override async Task<ITranspiler> CreateTranspilerAsync()
     {
-        var transpiler = await this._assets.CreateBabelTranspilerAsync();
+        var transpiler = await this._assets.GetSharedBabelTranspilerAsync();
         this._output.WriteLine($"Babel {transpiler.Version}");
         return transpiler;
     }
@@ -161,9 +169,11 @@ public sealed class TypeScriptServiceCompatibilityTests(
     private readonly TranspilerAssetsFixture _assets = assets;
     private readonly ITestOutputHelper _output = output;
 
+    protected override bool DisposeTranspiler => false;
+
     protected override async Task<ITranspiler> CreateTranspilerAsync()
     {
-        var service = await this._assets.CreateTypeScriptServiceAsync(new TypeDeclarations());
+        var service = await this._assets.GetSharedTypeScriptServiceAsync();
         this._output.WriteLine($"TypeScript {service.Version}");
         return service;
     }

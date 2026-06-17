@@ -1,5 +1,6 @@
 using Duets.Jint;
 using Duets.Tests.TestSupport;
+using Duets.Tests.TestTypes.Extensions;
 using Jint;
 
 namespace Duets.Tests;
@@ -194,37 +195,36 @@ public sealed class DuetsSessionTests
     }
 
     [Fact]
-    public async Task Extension_method_array_augmentations_do_not_break_array_completions()
+    public async Task Registered_array_extension_declarations_do_not_break_array_completions()
     {
-        using var session = await DuetsSession.CreateAsync(config =>
-            config
-                .UseTranspiler(async declarations =>
-                    await this._assets.CreateTypeScriptServiceAsync(declarations, true)
-                )
-                .UseJint(opts => opts.AllowClr())
-        );
-        session.Execute(
+        var declarations = new TypeDeclarations();
+        declarations.RegisterExtensionMethodContainer(typeof(ArrayExtensions));
+        declarations.RegisterDeclaration(
             """
-            typings.usingNamespace('System.Linq');
-            typings.addExtensionMethods(Enumerable);
+            declare namespace System.Linq {
+                class Enumerable {
+                    static Range(start: number, count: number): number[];
+                }
+            }
+            declare var Enumerable: typeof System.Linq.Enumerable;
             """
         );
 
-        var transpiler = (TypeScriptService)session.Transpiler;
+        using var transpiler = await this._assets.CreateTypeScriptServiceAsync(declarations, true);
 
         var arrayLiteralCompletions = transpiler.GetCompletions(
             "const xs = [1,2,3]; xs.",
             "const xs = [1,2,3]; xs.".Length
         );
         Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "map");
-        Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "Select");
+        Assert.Contains(arrayLiteralCompletions, entry => entry.Name == "HeadOr");
 
         var rangeCompletions = transpiler.GetCompletions(
             "Enumerable.Range(1, 10).",
             "Enumerable.Range(1, 10).".Length
         );
         Assert.Contains(rangeCompletions, entry => entry.Name == "map");
-        Assert.Contains(rangeCompletions, entry => entry.Name == "Select");
+        Assert.Contains(rangeCompletions, entry => entry.Name == "HeadOr");
     }
 
     [Fact]

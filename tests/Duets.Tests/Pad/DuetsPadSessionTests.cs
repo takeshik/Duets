@@ -6,6 +6,7 @@ using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
 using Duets.Pad.Timeline;
+using Duets.Tests.TestSupport;
 using Jint;
 
 namespace Duets.Tests.Pad;
@@ -18,7 +19,7 @@ public sealed class DuetsPadSessionTests
 {
     private static async Task<DuetsPadSession> CreatePadSessionAsync()
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
         return new DuetsPadSession(Guid.NewGuid(), duetsSession);
     }
 
@@ -26,7 +27,7 @@ public sealed class DuetsPadSessionTests
         IReadOnlyList<IObjectRenderer> renderers
     )
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
         return new DuetsPadSession(Guid.NewGuid(), duetsSession, renderers);
     }
 
@@ -174,7 +175,7 @@ public sealed class DuetsPadSessionTests
     [Fact]
     public async Task Session_DumpOptions_property_reflects_value_passed_to_constructor()
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
         var customOptions = new DumpOptions { MaxDepth = 7, MaxItems = 42 };
         using var session = new DuetsPadSession(
             Guid.NewGuid(),
@@ -688,7 +689,7 @@ public sealed class DuetsPadSessionTests
         Func<DateTimeOffset> clock
     )
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
         return new DuetsPadSession(Guid.NewGuid(), duetsSession, clock: clock);
     }
 
@@ -1022,14 +1023,14 @@ public sealed class DuetsPadSessionTests
 
     private static async Task<DuetsPadSession> CreatePadSessionWithLimitAsync(int? limit)
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
         return new DuetsPadSession(Guid.NewGuid(), duetsSession, timelineEntryLimit: limit);
     }
 
     [Fact]
     public async Task TimelineEntryLimit_zero_or_negative_throws_ArgumentOutOfRangeException()
     {
-        var duetsSession = await DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new DuetsPadSession(Guid.NewGuid(), duetsSession, timelineEntryLimit: 0)

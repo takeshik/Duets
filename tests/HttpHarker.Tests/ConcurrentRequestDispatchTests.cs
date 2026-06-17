@@ -15,12 +15,13 @@ public sealed class ConcurrentRequestDispatchTests
     {
         // Block long-lived handlers until the test releases them, so they stay open exactly like
         // an SSE stream awaiting a channel that never completes.
-        using var release = new ManualResetEventSlim(false);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Open more concurrent long-lived requests than the default worker count (8). Before the
         // fix, the accept loop awaited each handler, so workersCount open streams pinned every
         // worker and no further connection could be accepted.
         const int longLivedCount = 16;
+        var started = new RequestStartGate(longLivedCount);
 
         await ServerFixture.RunAsync(
             s =>
@@ -31,8 +32,9 @@ public sealed class ConcurrentRequestDispatchTests
                         if (path == "/stream")
                         {
                             ctx.Response.SendChunked = true;
+                            started.MarkStarted();
                             // Hold the response open without spinning a thread.
-                            await Task.Run(() => release.Wait(TimeSpan.FromSeconds(20)));
+                            await release.Task.WaitAsync(TimeSpan.FromSeconds(20));
                             ctx.Response.Close();
                             return;
                         }
@@ -66,8 +68,7 @@ public sealed class ConcurrentRequestDispatchTests
                     )
                     .ToArray();
 
-                // Give the server time to accept and begin handling all of them.
-                await Task.Delay(500);
+                await started.WaitAsync();
 
                 // A fresh request must still be accepted and answered promptly.
                 using var probeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -75,7 +76,7 @@ public sealed class ConcurrentRequestDispatchTests
                 Assert.Equal("pong", body);
 
                 // Let the long-lived handlers complete so the server can shut down cleanly.
-                release.Set();
+                release.SetResult();
                 streamCts.Cancel();
                 foreach (var stream in streams)
                 {
@@ -100,7 +101,8 @@ public sealed class ConcurrentRequestDispatchTests
     public async Task Requests_beyond_cap_receive_503_immediately()
     {
         const int cap = 2;
-        using var release = new ManualResetEventSlim(false);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new RequestStartGate(cap);
 
         void ConfigureServer(HttpServer s) =>
             s.Use(
@@ -110,7 +112,8 @@ public sealed class ConcurrentRequestDispatchTests
                     if (path == "/stream")
                     {
                         ctx.Response.SendChunked = true;
-                        await Task.Run(() => release.Wait(TimeSpan.FromSeconds(20)));
+                        started.MarkStarted();
+                        await release.Task.WaitAsync(TimeSpan.FromSeconds(20));
                         ctx.Response.Close();
                         return;
                     }
@@ -146,8 +149,7 @@ public sealed class ConcurrentRequestDispatchTests
                     )
                     .ToArray();
 
-                // Give the server time to accept all of them.
-                await Task.Delay(500);
+                await started.WaitAsync();
 
                 // The next request must be rejected with 503 promptly — not hang.
                 using var probeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -155,7 +157,7 @@ public sealed class ConcurrentRequestDispatchTests
                 Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
 
                 // Release the long-lived handlers so the server shuts down cleanly.
-                release.Set();
+                release.SetResult();
                 streamCts.Cancel();
                 foreach (var stream in streams)
                 {
@@ -182,8 +184,9 @@ public sealed class ConcurrentRequestDispatchTests
     {
         const int cap = 1;
 
-        // Two separate gate objects: one to hold the first stream open, one to release it.
+        // Use separate gates for observing handler entry and releasing the held stream.
         using var gate = new SemaphoreSlim(0, 1);
+        var started = new RequestStartGate(expectedCount: 1);
 
         void ConfigureServer(HttpServer s) =>
             s.Use(
@@ -193,6 +196,7 @@ public sealed class ConcurrentRequestDispatchTests
                     if (path == "/stream")
                     {
                         ctx.Response.SendChunked = true;
+                        started.MarkStarted();
                         // Wait until the test signals release.
                         await gate.WaitAsync(TimeSpan.FromSeconds(20));
                         ctx.Response.Close();
@@ -221,7 +225,7 @@ public sealed class ConcurrentRequestDispatchTests
                     prefix + "stream",
                     HttpCompletionOption.ResponseHeadersRead
                 );
-                await Task.Delay(300);
+                await started.WaitAsync();
 
                 // While the slot is occupied the next request must get 503.
                 using var overflowCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -242,15 +246,58 @@ public sealed class ConcurrentRequestDispatchTests
                     /* ignore */
                 }
 
-                // Give the server time to process the teardown and decrement the counter.
-                await Task.Delay(300);
-
-                // A new request must now succeed.
+                // A new request must succeed once the server task that owns the handler returns
+                // through HttpServer.HandleAsync's finally block and releases the in-flight slot.
                 using var retryCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                var body = await client.GetStringAsync(prefix + "ping", retryCts.Token);
+                var body = await GetStringWhenAcceptedAsync(
+                    client,
+                    prefix + "ping",
+                    retryCts.Token
+                );
                 Assert.Equal("pong", body);
             },
             maxConcurrentRequests: cap
         );
+    }
+
+    private static async Task<string> GetStringWhenAcceptedAsync(
+        HttpClient client,
+        string requestUri,
+        CancellationToken cancellationToken
+    )
+    {
+        while (true)
+        {
+            using var response = await client.GetAsync(requestUri, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            {
+                await Task.Delay(10, cancellationToken);
+                continue;
+            }
+
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+    }
+
+    private sealed class RequestStartGate(int expectedCount)
+    {
+        private readonly TaskCompletionSource _started = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _count;
+
+        public void MarkStarted()
+        {
+            if (Interlocked.Increment(ref this._count) >= expectedCount)
+            {
+                this._started.TrySetResult();
+            }
+        }
+
+        public async Task WaitAsync()
+        {
+            await this._started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 }

@@ -33,7 +33,7 @@ public sealed class ObjectRenderersOptionsTests
     // Helper: create a real Jint-backed DuetsSession
 
     private static Task<DuetsSession> CreateDuetsSessionAsync() =>
-        DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+        JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
 
     // Session-constructor-level tests
 
@@ -140,7 +140,7 @@ public sealed class ObjectRenderersOptionsTests
                         opts =>
                         {
                             opts.SessionFactory = () =>
-                                DuetsSession.CreateAsync(c => c.UseJint(o => o.AllowClr()));
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
                             opts.MonacoLoader = AssetSources.From(_ =>
                                 Task.FromResult("// monaco")
                             );
