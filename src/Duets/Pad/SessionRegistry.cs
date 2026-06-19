@@ -79,7 +79,15 @@ internal sealed class SessionRegistry : IDisposable
 
         foreach (var (_, session) in this._sessions)
         {
-            session.Dispose();
+            try
+            {
+                session.Dispose();
+            }
+            catch
+            {
+                // Swallow: one session's teardown failure must not prevent the registry from
+                // disposing the remaining sessions.
+            }
         }
 
         this._sessions.Clear();
