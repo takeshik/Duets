@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Duets.Completions;
 using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
@@ -76,6 +77,9 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     // Serializes public eval entry; NOT re-acquired by internal ops.
     private readonly SemaphoreSlim _evalSemaphore = new(1, 1);
 
+    // Serializes tagged-template completion callbacks independently from eval.
+    private readonly SemaphoreSlim _completionSemaphore = new(1, 1);
+
     // Guards state mutation and subscriber enqueue. Never held across I/O.
     private readonly object _stateLock = new();
 
@@ -102,6 +106,12 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     private readonly InteractionStore _interactionStore = new();
 
     private readonly int? _timelineEntryLimit;
+    private readonly bool _taggedTemplateSnapshotsEnabled;
+    private readonly int _taggedTemplateCompletionRateLimitPerSecond;
+    private readonly TimeSpan _taggedTemplateCompletionTimeout;
+    private readonly object _completionLock = new();
+    private readonly Queue<DateTimeOffset> _completionRequestTimes = new();
+    private CancellationTokenSource? _activeCompletionCancellation;
 
     public DuetsPadSession(
         Guid id,
@@ -109,7 +119,10 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         IReadOnlyList<IObjectRenderer>? objectRenderers = null,
         Func<DateTimeOffset>? clock = null,
         int? timelineEntryLimit = null,
-        DumpOptions? dumpOptions = null
+        DumpOptions? dumpOptions = null,
+        bool taggedTemplateSnapshotsEnabled = true,
+        int taggedTemplateCompletionRateLimitPerSecond = 30,
+        TimeSpan? taggedTemplateCompletionTimeout = null
     )
     {
         this.Id =
@@ -124,6 +137,18 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
                 nameof(timelineEntryLimit),
                 "Timeline entry limit must be positive."
             );
+        this._taggedTemplateSnapshotsEnabled = taggedTemplateSnapshotsEnabled;
+        this._taggedTemplateCompletionRateLimitPerSecond =
+            taggedTemplateCompletionRateLimitPerSecond > 0
+                ? taggedTemplateCompletionRateLimitPerSecond
+                : throw new ArgumentOutOfRangeException(
+                    nameof(taggedTemplateCompletionRateLimitPerSecond),
+                    "Tagged-template completion rate limit must be positive."
+                );
+        this._taggedTemplateCompletionTimeout =
+            taggedTemplateCompletionTimeout is { } timeout && timeout > TimeSpan.Zero
+                ? timeout
+                : TimeSpan.FromSeconds(2);
 
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._renderer = new DisplayRenderer(this.ObjectRenderers);
@@ -134,6 +159,10 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
         // Forward new type declarations to all unified-event subscribers.
         this.DuetsSession.Declarations.DeclarationChanged += this.OnDeclarationChanged;
+        if (this._taggedTemplateSnapshotsEnabled)
+        {
+            this.DuetsSession.TaggedTemplates.Changed += this.OnTaggedTemplateRegistryChanged;
+        }
 
         // Record creation as the first activity.
         this.Touch();
@@ -484,6 +513,128 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
+    internal async Task<TaggedTemplateCompletionDispatchResult> CompleteTaggedTemplateAsync(
+        TemplateCompletionContext context,
+        CancellationToken cancellationToken = default
+    )
+    {
+        this.Touch();
+
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return TaggedTemplateCompletionDispatchResult.Failed("Session has been disposed.");
+        }
+
+        if (!this.DuetsSession.TaggedTemplates.TryGet(context.Tag, out var registration))
+        {
+            return TaggedTemplateCompletionDispatchResult.Empty();
+        }
+
+        if (!this.TryEnterCompletionRateLimit())
+        {
+            return TaggedTemplateCompletionDispatchResult.Failed(
+                "Tagged-template completion rate limit exceeded."
+            );
+        }
+
+        var requestCancellation = new CancellationTokenSource();
+        this.ReplaceActiveCompletionCancellation(requestCancellation);
+
+        try
+        {
+            await this._completionSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            this.ClearActiveCompletionCancellation(requestCancellation);
+            requestCancellation.Dispose();
+            return TaggedTemplateCompletionDispatchResult.Superseded();
+        }
+
+        var releaseInFinally = true;
+        var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            requestCancellation.Token,
+            cancellationToken
+        );
+        var delayCancellation = new CancellationTokenSource();
+        try
+        {
+            if (requestCancellation.IsCancellationRequested)
+            {
+                return TaggedTemplateCompletionDispatchResult.Superseded();
+            }
+
+            var completionTask = registration.Complete(context, timeoutCancellation.Token).AsTask();
+            var delayTask = Task.Delay(
+                this._taggedTemplateCompletionTimeout,
+                delayCancellation.Token
+            );
+            var completed = await Task.WhenAny(completionTask, delayTask).ConfigureAwait(false);
+
+            if (completed == delayTask)
+            {
+                requestCancellation.Cancel();
+                timeoutCancellation.Cancel();
+                releaseInFinally = false;
+                _ = completionTask.ContinueWith(
+                    task =>
+                    {
+                        _ = task.Exception;
+                        this.ClearActiveCompletionCancellation(requestCancellation);
+                        timeoutCancellation.Dispose();
+                        delayCancellation.Dispose();
+                        requestCancellation.Dispose();
+                        this._completionSemaphore.Release();
+                    },
+                    TaskScheduler.Default
+                );
+                return TaggedTemplateCompletionDispatchResult.Timeout();
+            }
+
+            delayCancellation.Cancel();
+            var items = await completionTask.ConfigureAwait(false);
+            if (requestCancellation.IsCancellationRequested)
+            {
+                return TaggedTemplateCompletionDispatchResult.Superseded();
+            }
+
+            var valid = items
+                .Where(item =>
+                    TaggedTemplateRegistry.Validate(item)
+                    && (
+                        item.ReplacementSpan is null
+                        || TaggedTemplateRegistry.IsSpanWithinSegment(
+                            item.ReplacementSpan.Value,
+                            context.CurrentSegmentRaw.Length
+                        )
+                    )
+                )
+                .ToList();
+            return TaggedTemplateCompletionDispatchResult.Success(
+                TaggedTemplateRegistry.Cap(valid)
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            return TaggedTemplateCompletionDispatchResult.Superseded();
+        }
+        catch (Exception ex)
+        {
+            return TaggedTemplateCompletionDispatchResult.Failed(ex.Message);
+        }
+        finally
+        {
+            if (releaseInFinally)
+            {
+                this.ClearActiveCompletionCancellation(requestCancellation);
+                timeoutCancellation.Dispose();
+                delayCancellation.Dispose();
+                requestCancellation.Dispose();
+                this._completionSemaphore.Release();
+            }
+        }
+    }
+
     /// <summary>
     /// Queues a control command to be broadcast to all subscribers after the current eval or
     /// interaction handler completes. Must be called from within the eval call stack (i.e. while
@@ -622,10 +773,20 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         // Dispose is only ever called from the service layer (DELETE handler, idle sweep, service
         // Dispose), never from the eval call stack, so this synchronous wait cannot deadlock.
         this._evalSemaphore.Wait();
+        var completionSemaphoreHeld = false;
         try
         {
             this.DuetsSession.ConsoleLogged -= this.OnConsoleLogged;
             this.DuetsSession.Declarations.DeclarationChanged -= this.OnDeclarationChanged;
+            if (this._taggedTemplateSnapshotsEnabled)
+            {
+                this.DuetsSession.TaggedTemplates.Changed -= this.OnTaggedTemplateRegistryChanged;
+            }
+
+            this.CancelActiveCompletion();
+
+            this._completionSemaphore.Wait();
+            completionSemaphoreHeld = true;
 
             // Complete + clear all subscriber channels under _stateLock so this teardown is
             // serialized against Subscribe calls (which test _disposed and insert under the same
@@ -652,8 +813,14 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
         finally
         {
+            if (completionSemaphoreHeld)
+            {
+                this._completionSemaphore.Release();
+            }
+
             this._evalSemaphore.Release();
             this._evalSemaphore.Dispose();
+            this._completionSemaphore.Dispose();
         }
     }
 
@@ -709,6 +876,26 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         catch
         {
             // Swallow — must not disrupt the eval.
+        }
+    }
+
+    internal void OnTaggedTemplateRegistryChanged(TaggedTemplateRegistrySnapshot snapshot)
+    {
+        if (!this._taggedTemplateSnapshotsEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            lock (this._stateLock)
+            {
+                this.BroadcastTaggedTemplateSnapshot(snapshot);
+            }
+        }
+        catch
+        {
+            // Swallow — must not disrupt registration.
         }
     }
 
@@ -823,6 +1010,15 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
+    private void BroadcastTaggedTemplateSnapshot(TaggedTemplateRegistrySnapshot snapshot)
+    {
+        var padMsg = new PadEventMessage.TaggedTemplateSnapshot(snapshot);
+        foreach (var (_, writer) in this._eventSubscribers)
+        {
+            writer.TryWrite(padMsg);
+        }
+    }
+
     /// <summary>
     /// Registers a unified SSE subscriber that receives canvas, timeline, and type-declaration
     /// events on a single channel. The initial snapshot is enqueued under <c>_stateLock</c> in
@@ -894,6 +1090,15 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
             {
                 writer.TryWrite(new PadEventMessage.TypeDeclaration(decl));
             }
+
+            if (this._taggedTemplateSnapshotsEnabled)
+            {
+                writer.TryWrite(
+                    new PadEventMessage.TaggedTemplateSnapshot(
+                        this.DuetsSession.TaggedTemplates.GetSnapshot()
+                    )
+                );
+            }
         }
 
         return key;
@@ -903,4 +1108,78 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     /// Removes the unified event subscriber identified by <paramref name="key"/>.
     /// </summary>
     internal void UnsubscribeEvents(Guid key) => this._eventSubscribers.TryRemove(key, out _);
+
+    private bool TryEnterCompletionRateLimit()
+    {
+        var now = this._clock();
+        var windowStart = now - TimeSpan.FromSeconds(1);
+        lock (this._completionLock)
+        {
+            while (
+                this._completionRequestTimes.Count > 0
+                && this._completionRequestTimes.Peek() < windowStart
+            )
+            {
+                this._completionRequestTimes.Dequeue();
+            }
+
+            if (
+                this._completionRequestTimes.Count
+                >= this._taggedTemplateCompletionRateLimitPerSecond
+            )
+            {
+                return false;
+            }
+
+            this._completionRequestTimes.Enqueue(now);
+            return true;
+        }
+    }
+
+    private void ReplaceActiveCompletionCancellation(CancellationTokenSource requestCancellation)
+    {
+        CancellationTokenSource? previous;
+        lock (this._completionLock)
+        {
+            previous = this._activeCompletionCancellation;
+            this._activeCompletionCancellation = requestCancellation;
+        }
+
+        CancelIgnoringDisposed(previous);
+    }
+
+    private void ClearActiveCompletionCancellation(CancellationTokenSource requestCancellation)
+    {
+        lock (this._completionLock)
+        {
+            if (ReferenceEquals(this._activeCompletionCancellation, requestCancellation))
+            {
+                this._activeCompletionCancellation = null;
+            }
+        }
+    }
+
+    private void CancelActiveCompletion()
+    {
+        CancellationTokenSource? active;
+        lock (this._completionLock)
+        {
+            active = this._activeCompletionCancellation;
+            this._activeCompletionCancellation = null;
+        }
+
+        CancelIgnoringDisposed(active);
+    }
+
+    private static void CancelIgnoringDisposed(CancellationTokenSource? source)
+    {
+        try
+        {
+            source?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Cancellation and disposal race during timeout cleanup; disposal already wins.
+        }
+    }
 }

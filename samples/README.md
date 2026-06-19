@@ -19,6 +19,7 @@ dotnet run samples/<file>.cs
 | `with-type-registration.cs` | Expose .NET types to scripts via `AllowClr` and the `typings` built-in |
 | `extension-methods.cs` | Register and call CLR extension methods; convert CLR arrays to native JS arrays with `util.toJsArray()` |
 | `duetspad.cs` | DuetsPad browser debug pad (Editor / Canvas / Timeline / Immediate) served over HTTP |
+| `tagged-template-completion.cs` | Register a host-backed `path` tagged template with DuetsPad completions |
 | `console.cs` | Route script `console.log/warn/error` output via the `ConsoleLogged` event |
 | `inspect-and-dump.cs` | Format values with `util.inspect`; use a local `tap` helper for non-breaking chain inspection |
 | `repl-special-vars.cs` | REPL conveniences: `$_` (last result), `$exception`, and `GetGlobalVariables` |

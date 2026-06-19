@@ -74,6 +74,24 @@ public sealed class DuetsPadServiceOptions
     public TimeSpan KeepAliveInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// Enables tagged-template completion registration snapshots and the
+    /// <c>/sessions/{id}/complete</c> endpoint.
+    /// </summary>
+    public bool EnableTaggedTemplateCompletions { get; set; } = true;
+
+    /// <summary>Maximum accepted tagged-template completion request body size in bytes.</summary>
+    public int TaggedTemplateCompletionMaxRequestBytes { get; set; } = 64 * 1024;
+
+    /// <summary>Maximum accepted tagged-template completion text field length in UTF-16 code units.</summary>
+    public int TaggedTemplateCompletionMaxFieldLength { get; set; } = 16 * 1024;
+
+    /// <summary>Maximum tagged-template completion requests per session per one-second window.</summary>
+    public int TaggedTemplateCompletionRateLimitPerSecond { get; set; } = 30;
+
+    /// <summary>Maximum time allowed for one tagged-template completion callback.</summary>
+    public TimeSpan TaggedTemplateCompletionTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// How long a session may be idle before it is automatically reclaimed.
     /// When <see langword="null"/> or non-positive, idle cleanup is disabled.
     /// </summary>
@@ -119,6 +137,38 @@ public sealed class DuetsPadServiceOptions
             throw new ArgumentOutOfRangeException(
                 nameof(this.TimelineEntryLimit),
                 "Timeline entry limit must be positive."
+            );
+        }
+
+        if (this.TaggedTemplateCompletionMaxRequestBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.TaggedTemplateCompletionMaxRequestBytes),
+                "Tagged-template completion request byte limit must be positive."
+            );
+        }
+
+        if (this.TaggedTemplateCompletionMaxFieldLength <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.TaggedTemplateCompletionMaxFieldLength),
+                "Tagged-template completion field length limit must be positive."
+            );
+        }
+
+        if (this.TaggedTemplateCompletionRateLimitPerSecond <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.TaggedTemplateCompletionRateLimitPerSecond),
+                "Tagged-template completion rate limit must be positive."
+            );
+        }
+
+        if (this.TaggedTemplateCompletionTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.TaggedTemplateCompletionTimeout),
+                "Tagged-template completion timeout must be positive."
             );
         }
     }

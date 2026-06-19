@@ -129,7 +129,10 @@ internal sealed class SessionRegistry : IDisposable
             this._options.ObjectRenderers,
             this._options.Clock,
             this._options.TimelineEntryLimit,
-            this._options.DumpOptions
+            this._options.DumpOptions,
+            this._options.EnableTaggedTemplateCompletions,
+            this._options.TaggedTemplateCompletionRateLimitPerSecond,
+            this._options.TaggedTemplateCompletionTimeout
         );
         this._sessions[newId] = session;
         return (session, newId);

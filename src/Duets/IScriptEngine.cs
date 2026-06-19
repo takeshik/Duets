@@ -20,3 +20,16 @@ public interface IScriptEngine : IDisposable
         CancellationToken cancellationToken = default
     );
 }
+
+/// <summary>Optional backend contract for installing runtime tagged-template functions.</summary>
+public interface ITaggedTemplateScriptEngine
+{
+    /// <summary>Registers or replaces a script global tagged-template function.</summary>
+    public void RegisterTaggedTemplate(
+        string tag,
+        Duets.Completions.TemplateEvaluationCallback evaluate
+    );
+
+    /// <summary>Removes a script global tagged-template function if present.</summary>
+    public void UnregisterTaggedTemplate(string tag);
+}

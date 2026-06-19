@@ -1,3 +1,4 @@
+using Duets.Completions;
 using Jint;
 using Jint.Native;
 using Jint.Runtime;
@@ -6,7 +7,7 @@ using Jint.Runtime.Interop;
 namespace Duets.Jint;
 
 /// <summary>Jint-backed <see cref="IScriptEngine"/> implementation.</summary>
-internal sealed class JintScriptEngine : ScriptEngine<JsValue>
+internal sealed class JintScriptEngine : ScriptEngine<JsValue>, ITaggedTemplateScriptEngine
 {
     public JintScriptEngine(Action<Options>? configure, ITranspiler transpiler)
         : base(transpiler, JintScriptValueConverter.Instance)
@@ -117,6 +118,46 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
         );
 
         declarations.RegisterDeclaration(ScriptEngineResources.LoadScriptEngineInitDts());
+    }
+
+    public void RegisterTaggedTemplate(string tag, TemplateEvaluationCallback evaluate)
+    {
+        TaggedTemplateRegistry.ValidateTag(tag);
+        if (evaluate is null)
+        {
+            throw new ArgumentNullException(nameof(evaluate));
+        }
+
+        var adapterName = GetTaggedTemplateAdapterName(tag);
+        var code =
+            $"globalThis.{adapterName} = globalThis.{adapterName} || undefined;\n"
+            + $"globalThis.{tag} = function(strings, ...values) {{\n"
+            + $"  return globalThis.{adapterName}.invoke(\n"
+            + "    Array.prototype.slice.call(strings),\n"
+            + "    Array.prototype.slice.call(strings.raw),\n"
+            + "    values\n"
+            + "  );\n"
+            + "};";
+
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            this._jintEngine.SetValue(adapterName, new TaggedTemplateRuntimeAdapter(evaluate));
+            this._jintEngine.Execute(code);
+        }
+    }
+
+    public void UnregisterTaggedTemplate(string tag)
+    {
+        TaggedTemplateRegistry.ValidateTag(tag);
+
+        var adapterName = GetTaggedTemplateAdapterName(tag);
+        var code = $"delete globalThis.{tag}; delete globalThis.{adapterName};";
+        lock (this._sync)
+        {
+            this.ThrowIfDisposed();
+            this._jintEngine.Execute(code);
+        }
     }
 
     protected override void ExecuteJs(string code)
@@ -233,6 +274,9 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
         this._jintEngine.Execute(ScriptEngineResources.LoadScriptEngineInitJs());
     }
 
+    private static string GetTaggedTemplateAdapterName(string tag) =>
+        $"__duetsTaggedTemplate_{tag}";
+
     private void ThrowIfDisposed()
     {
 #if NETSTANDARD2_1
@@ -268,6 +312,16 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>
                 _ when value == ScriptValue.Null => JsValue.Null,
                 _ => throw new ArgumentException("ScriptValue from incompatible backend."),
             };
+        }
+    }
+
+    private sealed class TaggedTemplateRuntimeAdapter(TemplateEvaluationCallback evaluate)
+    {
+        private readonly TemplateEvaluationCallback _evaluate = evaluate;
+
+        public object? Invoke(string[] strings, string[] raw, object?[] values)
+        {
+            return this._evaluate(new TemplateInvocation(strings, raw, values));
         }
     }
 }

@@ -1,5 +1,7 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Duets.Completions;
 using Duets.Pad.Protocol;
 using HttpHarker;
 
@@ -36,6 +38,7 @@ public sealed class DuetsPadService : IDisposable
                         .MapPost("/sessions", this.HandlePostSessionAsync)
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
+                        .MapPost("/sessions/{sessionId}/complete", this.HandleCompleteAsync)
                         .MapPost(
                             "/sessions/{sessionId}/interactions/{handlerId}/invoke",
                             this.HandleInvokeInteractionAsync
@@ -47,6 +50,88 @@ public sealed class DuetsPadService : IDisposable
                 "Duets.Resources.DuetsPadStaticFiles",
                 root
             );
+    }
+
+    // POST /sessions/{sessionId}/complete
+
+    private async Task HandleCompleteAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+
+        if (!this._options.EnableTaggedTemplateCompletions)
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Tagged-template completions are disabled.",
+                    ["sessionId"] = sessionId ?? "",
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
+        {
+            return;
+        }
+
+        if (ctx.Request.ContentLength64 > this._options.TaggedTemplateCompletionMaxRequestBytes)
+        {
+            await this.RespondCompleteErrorAsync(
+                ctx,
+                session.Id,
+                "Tagged-template completion request is too large."
+            );
+            return;
+        }
+
+        var body = await ReadRequestBodyWithinLimitAsync(
+            ctx.Request.InputStream,
+            ctx.Request.ContentEncoding,
+            this._options.TaggedTemplateCompletionMaxRequestBytes
+        );
+        if (body is null)
+        {
+            await this.RespondCompleteErrorAsync(
+                ctx,
+                session.Id,
+                "Tagged-template completion request is too large."
+            );
+            return;
+        }
+
+        CompleteRequest? request;
+        try
+        {
+            request = ParseCompleteRequest(body);
+        }
+        catch (JsonException)
+        {
+            await this.RespondCompleteErrorAsync(
+                ctx,
+                session.Id,
+                "Malformed tagged-template completion request."
+            );
+            return;
+        }
+
+        if (request is null || !this.TryBuildCompletionContext(request, out var context))
+        {
+            await this.RespondCompleteErrorAsync(
+                ctx,
+                session.Id,
+                "Invalid tagged-template completion request."
+            );
+            return;
+        }
+
+        var result = await session.CompleteTaggedTemplateAsync(context);
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            SerializeCompleteResponse(session.Id, result).ToJsonString()
+        );
     }
 
     /// <inheritdoc/>
@@ -258,5 +343,210 @@ public sealed class DuetsPadService : IDisposable
             }.ToJsonString()
         );
         return null;
+    }
+
+    private bool TryBuildCompletionContext(
+        CompleteRequest request,
+        out TemplateCompletionContext context
+    )
+    {
+        context = null!;
+        if (
+            request.Tag is null
+            || request.TextBeforeCaret is null
+            || request.TextAfterCaret is null
+            || request.CurrentSegmentRaw is null
+            || !TaggedTemplateRegistry.IsValidTag(request.Tag)
+        )
+        {
+            return false;
+        }
+
+        if (
+            IsTooLong(request.Tag)
+            || IsTooLong(request.TextBeforeCaret)
+            || IsTooLong(request.TextAfterCaret)
+            || IsTooLong(request.CurrentSegmentRaw)
+        )
+        {
+            return false;
+        }
+
+        if (
+            request.SegmentIndex != 0
+            || request.CaretOffsetInSegment < 0
+            || request.CaretOffsetInSegment > request.CurrentSegmentRaw.Length
+        )
+        {
+            return false;
+        }
+
+        context = new TemplateCompletionContext(
+            request.Tag,
+            request.TextBeforeCaret,
+            request.TextAfterCaret,
+            request.CurrentSegmentRaw,
+            SegmentIndex: 0,
+            request.CaretOffsetInSegment,
+            [request.CurrentSegmentRaw]
+        );
+        return true;
+
+        bool IsTooLong(string value) =>
+            value.Length > this._options.TaggedTemplateCompletionMaxFieldLength;
+    }
+
+    private static CompleteRequest? ParseCompleteRequest(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new CompleteRequest
+        {
+            Tag = GetString(root, "tag"),
+            TextBeforeCaret = GetString(root, "textBeforeCaret"),
+            TextAfterCaret = GetString(root, "textAfterCaret"),
+            CurrentSegmentRaw = GetString(root, "currentSegmentRaw"),
+            SegmentIndex = GetInt32(root, "segmentIndex"),
+            CaretOffsetInSegment = GetInt32(root, "caretOffsetInSegment"),
+        };
+    }
+
+    private static string? GetString(JsonElement root, string propertyName) =>
+        TryGetProperty(root, propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static int GetInt32(JsonElement root, string propertyName) =>
+        TryGetProperty(root, propertyName, out var value)
+        && value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt32(out var result)
+            ? result
+            : 0;
+
+    private static bool TryGetProperty(JsonElement root, string propertyName, out JsonElement value)
+    {
+        if (root.TryGetProperty(propertyName, out value))
+        {
+            return true;
+        }
+
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static JsonObject SerializeCompleteResponse(
+        Guid sessionId,
+        TaggedTemplateCompletionDispatchResult result
+    )
+    {
+        var items = new JsonArray();
+        foreach (var item in result.Items)
+        {
+            var itemObj = new JsonObject
+            {
+                ["label"] = item.Label,
+                ["insertText"] = item.InsertText,
+                ["kind"] = item.Kind.ToString(),
+                ["filterText"] = item.FilterText,
+                ["sortText"] = item.SortText,
+                ["detail"] = item.Detail,
+                ["documentation"] = item.Documentation,
+            };
+            if (item.ReplacementSpan is { } span)
+            {
+                itemObj["replacementSpan"] = new JsonObject
+                {
+                    ["start"] = span.Start,
+                    ["length"] = span.Length,
+                };
+            }
+
+            items.Add(itemObj);
+        }
+
+        return new JsonObject
+        {
+            ["ok"] = result.Ok,
+            ["items"] = items,
+            ["error"] = result.Error,
+            ["stale"] = result.Stale,
+            ["timedOut"] = result.TimedOut,
+            ["sessionId"] = sessionId.ToString(),
+        };
+    }
+
+    private static async Task<string?> ReadRequestBodyWithinLimitAsync(
+        Stream stream,
+        Encoding encoding,
+        int maxBytes
+    )
+    {
+        var buffer = new byte[Math.Min(8192, maxBytes + 1)];
+        using var memory = new MemoryStream(capacity: Math.Min(maxBytes, 8192));
+        var total = 0;
+
+        while (true)
+        {
+            var remainingBeforeLimit = maxBytes - total;
+            var readSize = Math.Min(buffer.Length, remainingBeforeLimit + 1);
+            var read = await stream.ReadAsync(buffer, 0, readSize);
+            if (read == 0)
+            {
+                return encoding.GetString(memory.ToArray());
+            }
+
+            total += read;
+            if (total > maxBytes)
+            {
+                return null;
+            }
+
+            memory.Write(buffer, 0, read);
+        }
+    }
+
+    private async Task RespondCompleteErrorAsync(
+        HttpActionContext ctx,
+        Guid sessionId,
+        string error
+    )
+    {
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = false,
+                ["items"] = new JsonArray(),
+                ["error"] = error,
+                ["stale"] = false,
+                ["timedOut"] = false,
+                ["sessionId"] = sessionId.ToString(),
+            }.ToJsonString()
+        );
+    }
+
+    private sealed record CompleteRequest
+    {
+        public string? Tag { get; init; }
+        public string? TextBeforeCaret { get; init; }
+        public string? TextAfterCaret { get; init; }
+        public string? CurrentSegmentRaw { get; init; }
+        public int SegmentIndex { get; init; }
+        public int CaretOffsetInSegment { get; init; }
+        public IReadOnlyList<string>? RawSegments { get; init; }
     }
 }

@@ -1,7 +1,9 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Duets.Completions;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Protocol;
@@ -115,6 +117,22 @@ public sealed class DuetsPadServiceTests
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("sessionId").GetString()!;
+    }
+
+    private sealed class UnknownLengthStringContent(string content) : HttpContent
+    {
+        private readonly byte[] _bytes = Encoding.UTF8.GetBytes(content);
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return stream.WriteAsync(this._bytes, 0, this._bytes.Length);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     // POST /sessions
@@ -1418,6 +1436,332 @@ public sealed class DuetsPadServiceTests
             {
                 using var response = await client.GetAsync(prefix + "tabler.css");
                 Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+            }
+        );
+    }
+
+    // POST /sessions/{sessionId}/complete
+
+    [Fact]
+    public async Task Complete_returns_items_for_registered_tag_without_source_parsing()
+    {
+        await RunAsync(
+            "/",
+            opts =>
+            {
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        complete: (context, _) =>
+                            new ValueTask<IReadOnlyList<TemplateCompletionItem>>([
+                                new TemplateCompletionItem(
+                                    "/foo/bar",
+                                    ReplacementSpan: new TextSpan(
+                                        0,
+                                        context.CurrentSegmentRaw.Length
+                                    ),
+                                    Kind: TemplateCompletionKind.Folder
+                                ),
+                            ])
+                    );
+                    return session;
+                };
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"/foo/ba\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"/foo/ba\",\"caretOffsetInSegment\":7}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.True(payload.GetProperty("ok").GetBoolean());
+                var item = Assert.Single(payload.GetProperty("items").EnumerateArray());
+                Assert.Equal("/foo/bar", item.GetProperty("label").GetString());
+                Assert.Equal("Folder", item.GetProperty("kind").GetString());
+                Assert.Equal(
+                    0,
+                    item.GetProperty("replacementSpan").GetProperty("start").GetInt32()
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_returns_unknown_session_for_missing_session()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = Guid.NewGuid();
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", payload.GetProperty("error").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_returns_disabled_error_when_feature_is_disabled()
+    {
+        await RunAsync(
+            "/",
+            opts => opts.EnableTaggedTemplateCompletions = false,
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal(
+                    "Tagged-template completions are disabled.",
+                    payload.GetProperty("error").GetString()
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_rejects_oversize_body_without_requiring_content_length()
+    {
+        await RunAsync(
+            "/",
+            opts => opts.TaggedTemplateCompletionMaxRequestBytes = 16,
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                using var content = new UnknownLengthStringContent(new string('x', 128));
+                content.Headers.ContentType = new("application/json");
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    content
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal(
+                    "Tagged-template completion request is too large.",
+                    payload.GetProperty("error").GetString()
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_enforces_rate_limit_after_registered_tag_check()
+    {
+        await RunAsync(
+            "/",
+            opts =>
+            {
+                opts.TaggedTemplateCompletionRateLimitPerSecond = 1;
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        complete: (_, _) => new ValueTask<IReadOnlyList<TemplateCompletionItem>>([])
+                    );
+                    return session;
+                };
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var first = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                first.EnsureSuccessStatusCode();
+
+                using var second = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                var payload = await second.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.Equal(
+                    "Tagged-template completion rate limit exceeded.",
+                    payload.GetProperty("error").GetString()
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_returns_timeout_when_callback_exceeds_timeout()
+    {
+        await RunAsync(
+            "/",
+            opts =>
+            {
+                opts.TaggedTemplateCompletionTimeout = TimeSpan.FromMilliseconds(50);
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        complete: async (_, cancellationToken) =>
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+                            return [];
+                        }
+                    );
+                    return session;
+                };
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.False(payload.GetProperty("ok").GetBoolean());
+                Assert.True(payload.GetProperty("timedOut").GetBoolean());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_returns_empty_items_for_unknown_tag()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"missing\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                response.EnsureSuccessStatusCode();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.True(payload.GetProperty("ok").GetBoolean());
+                Assert.Empty(payload.GetProperty("items").EnumerateArray());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Complete_filters_items_with_out_of_segment_replacement_span()
+    {
+        await RunAsync(
+            "/",
+            opts =>
+            {
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        complete: (_, _) =>
+                            new ValueTask<IReadOnlyList<TemplateCompletionItem>>([
+                                new TemplateCompletionItem(
+                                    "valid",
+                                    ReplacementSpan: new TextSpan(0, 1)
+                                ),
+                                new TemplateCompletionItem(
+                                    "invalid",
+                                    ReplacementSpan: new TextSpan(10, 1)
+                                ),
+                            ])
+                    );
+                    return session;
+                };
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                var request =
+                    "{\"tag\":\"path\",\"textBeforeCaret\":\"x\",\"textAfterCaret\":\"\",\"currentSegmentRaw\":\"x\",\"caretOffsetInSegment\":1}";
+
+                using var response = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/complete",
+                    new StringContent(request, Encoding.UTF8, "application/json")
+                );
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                var item = Assert.Single(payload.GetProperty("items").EnumerateArray());
+                Assert.Equal("valid", item.GetProperty("label").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Events_initial_burst_includes_tagged_template_snapshot()
+    {
+        await RunAsync(
+            "/",
+            opts =>
+            {
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        complete: (_, _) => new ValueTask<IReadOnlyList<TemplateCompletionItem>>([])
+                    );
+                    return session;
+                };
+            },
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                using var response = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/events",
+                    HttpCompletionOption.ResponseHeadersRead
+                );
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                var snapshot = await ReadNextSseDataAsync(reader, "taggedTemplate.");
+
+                Assert.Equal("taggedTemplate.snapshot", snapshot.GetProperty("type").GetString());
+                Assert.Contains(
+                    snapshot.GetProperty("tags").EnumerateArray(),
+                    tag => tag.GetString() == "path"
+                );
             }
         );
     }

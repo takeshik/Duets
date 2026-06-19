@@ -181,6 +181,39 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
         }
     }
 
+    internal void RegisterTaggedTemplateDeclaration(string tag)
+    {
+        TypeDeclaration? changed;
+        lock (this._sync)
+        {
+            changed = this.RegisterTaggedTemplateDeclarationCore(tag);
+        }
+
+        if (changed != null)
+        {
+            this.DeclarationChanged?.Invoke(changed);
+        }
+    }
+
+    internal void UnregisterTaggedTemplateDeclaration(string tag)
+    {
+        TypeDeclaration? changed = null;
+        lock (this._sync)
+        {
+            var fileName = GetTaggedTemplateDeclarationFileName(tag);
+            if (this._declarations.ContainsKey(fileName))
+            {
+                changed = new TypeDeclaration(fileName, string.Empty);
+                this._declarations[fileName] = changed;
+            }
+        }
+
+        if (changed != null)
+        {
+            this.DeclarationChanged?.Invoke(changed);
+        }
+    }
+
     /// <inheritdoc/>
     public void RegisterExtensionMethodContainer(Type containerType)
     {
@@ -299,6 +332,26 @@ public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclaratio
             $"clr-ext-{ComputeSha1Hex(containerType.AssemblyQualifiedName ?? containerType.ToString())}.d.ts",
             content
         );
+        this._declarations[declaration.FileName] = declaration;
+        return declaration;
+    }
+
+    private static string GetTaggedTemplateDeclarationFileName(string tag) =>
+        $"tagged-template-{ComputeSha1Hex($"tag:{tag}")}.d.ts";
+
+    private TypeDeclaration? RegisterTaggedTemplateDeclarationCore(string tag)
+    {
+        var content =
+            $"declare function {tag}(strings: TemplateStringsArray, ...values: unknown[]): any;\n";
+        var declaration = new TypeDeclaration(GetTaggedTemplateDeclarationFileName(tag), content);
+        if (
+            this._declarations.TryGetValue(declaration.FileName, out var existing)
+            && existing.Content == declaration.Content
+        )
+        {
+            return null;
+        }
+
         this._declarations[declaration.FileName] = declaration;
         return declaration;
     }

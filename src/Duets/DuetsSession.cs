@@ -1,3 +1,5 @@
+using Duets.Completions;
+
 namespace Duets;
 
 /// <summary>
@@ -28,6 +30,7 @@ public sealed class DuetsSession : IDisposable
         this.Declarations = declarations;
         this.Transpiler = transpiler;
         this.Engine = engine;
+        this.TaggedTemplates = new TaggedTemplateRegistry();
         engine.ConsoleLogged += this.OnConsoleLogged;
     }
 
@@ -45,6 +48,9 @@ public sealed class DuetsSession : IDisposable
 
     /// <summary>The active transpiler for this session.</summary>
     public ITranspiler Transpiler { get; }
+
+    /// <summary>The tagged-template completion registry for this session.</summary>
+    public TaggedTemplateRegistry TaggedTemplates { get; }
 
     /// <summary>The script execution engine for this session.</summary>
     internal IScriptEngine Engine { get; }
@@ -116,6 +122,66 @@ public sealed class DuetsSession : IDisposable
         using var _ = this.EnterOperation();
         this.ThrowIfDisposed();
         this.Engine.SetValue(name, value);
+    }
+
+    /// <summary>
+    /// Registers or replaces a tagged-template function and its optional completion provider.
+    /// </summary>
+    /// <remarks>
+    /// The runtime evaluator and completion provider are independent. Supplying
+    /// <paramref name="evaluate"/> installs a callable script global and a callable TypeScript
+    /// declaration. Omitting it removes any previous runtime global and declaration for the tag.
+    /// Supplying <paramref name="complete"/> records a completion provider. Omitting it removes
+    /// any previous completion provider for the tag.
+    /// </remarks>
+    /// <param name="tag">A simple ASCII identifier such as <c>path</c>.</param>
+    /// <param name="evaluate">Optional runtime evaluator for tagged-template execution.</param>
+    /// <param name="complete">Optional completion callback for DuetsPad.</param>
+    /// <param name="defaultCompletionKind">Default candidate kind used by clients when an item does not specify a kind.</param>
+    public void RegisterTaggedTemplate(
+        string tag,
+        TemplateEvaluationCallback? evaluate = null,
+        TemplateCompletionCallback? complete = null,
+        TemplateCompletionKind defaultCompletionKind = TemplateCompletionKind.Value
+    )
+    {
+        using var _ = this.EnterOperation();
+        this.ThrowIfDisposed();
+        TaggedTemplateRegistry.ValidateTag(tag);
+
+        ITaggedTemplateScriptEngine? taggedTemplateEngine = null;
+        if (evaluate is not null)
+        {
+            taggedTemplateEngine =
+                this.Engine as ITaggedTemplateScriptEngine
+                ?? throw new NotSupportedException(
+                    "The configured script engine does not support runtime tagged-template registration."
+                );
+        }
+        else if (this.Engine is ITaggedTemplateScriptEngine supportedEngine)
+        {
+            taggedTemplateEngine = supportedEngine;
+        }
+
+        if (complete is not null)
+        {
+            this.TaggedTemplates.Register(tag, complete, defaultCompletionKind);
+        }
+        else
+        {
+            this.TaggedTemplates.Unregister(tag);
+        }
+
+        if (evaluate is not null)
+        {
+            taggedTemplateEngine!.RegisterTaggedTemplate(tag, evaluate);
+            this.Declarations.RegisterTaggedTemplateDeclaration(tag);
+        }
+        else
+        {
+            taggedTemplateEngine?.UnregisterTaggedTemplate(tag);
+            this.Declarations.UnregisterTaggedTemplateDeclaration(tag);
+        }
     }
 
     public void Dispose()

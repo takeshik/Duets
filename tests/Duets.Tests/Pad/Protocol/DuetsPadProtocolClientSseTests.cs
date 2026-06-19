@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Duets.Completions;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Sandbox;
@@ -17,7 +18,10 @@ namespace Duets.Tests.Pad.Protocol;
 /// </summary>
 public sealed class DuetsPadProtocolClientSseTests
 {
-    private static Task RunWithServerAsync(Func<HttpClient, string, Uri, Task> test)
+    private static Task RunWithServerAsync(
+        Func<HttpClient, string, Uri, Task> test,
+        Action<DuetsPadServiceOptions>? configure = null
+    )
     {
         return DuetsServerFixture.RunAsync(
             server =>
@@ -45,6 +49,7 @@ public sealed class DuetsPadProtocolClientSseTests
                             // Long keepalive so the timeout under test is not satisfied by a
                             // keepalive comment arriving on the stream.
                             opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
+                            configure?.Invoke(opts);
                         }
                     );
             },
@@ -61,6 +66,61 @@ public sealed class DuetsPadProtocolClientSseTests
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("sessionId").GetString()!;
+    }
+
+    [Fact]
+    public async Task ReadSse_with_tagged_template_registration_keeps_stream_open_after_initial_burst()
+    {
+        await RunWithServerAsync(
+            async (client, prefix, baseUri) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                using var padClient = new DuetsPadProtocolClient(baseUri);
+
+                var open = await padClient.OpenSseAsync("s1", sessionId, "events");
+                Assert.True(open["ok"]!.GetValue<bool>());
+
+                var initial = await padClient.ReadSseAsync(
+                    "s1",
+                    maxRecords: 64,
+                    timeoutMs: 1000,
+                    includeComments: false
+                );
+                Assert.True(initial["ok"]!.GetValue<bool>());
+                var initialRecords = initial["records"]!.AsArray();
+                Assert.True(
+                    initialRecords.Any(record =>
+                        record?["json"]?["type"]?.GetValue<string>() == "taggedTemplate.snapshot"
+                    ),
+                    $"Expected tagged-template snapshot in initial SSE records: {initial.ToJsonString()}"
+                );
+
+                var timedOut = await padClient.ReadSseAsync(
+                    "s1",
+                    maxRecords: 1,
+                    timeoutMs: 50,
+                    includeComments: false
+                );
+
+                Assert.True(timedOut["ok"]!.GetValue<bool>());
+                Assert.True(
+                    timedOut["timedOut"]!.GetValue<bool>(),
+                    "The stream must stay open after the tagged-template snapshot."
+                );
+            },
+            opts =>
+                opts.SessionFactory = async () =>
+                {
+                    var session = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                    session.RegisterTaggedTemplate(
+                        "path",
+                        invocation => string.Concat(invocation.Raw),
+                        complete: (_, _) => new ValueTask<IReadOnlyList<TemplateCompletionItem>>([])
+                    );
+                    return session;
+                }
+        );
     }
 
     [Fact]

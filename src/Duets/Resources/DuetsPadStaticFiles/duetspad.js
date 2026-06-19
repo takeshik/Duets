@@ -14,6 +14,7 @@
     timelineUpdate: "timeline.update",
     timelineTrim: "timeline.trim",
     typeDeclaration: "type.declaration",
+    taggedTemplateSnapshot: "taggedTemplate.snapshot",
   };
 
   // URL helpers
@@ -175,12 +176,33 @@
     return res.json();
   }
 
+  async function completeTaggedTemplate(request, cancellationToken) {
+    const controller = new AbortController();
+    const disposable = cancellationToken?.onCancellationRequested?.(() => {
+      controller.abort();
+    });
+
+    try {
+      const res = await fetch(padUrl(`sessions/${sessionId}/complete`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+      return await res.json();
+    } finally {
+      disposable?.dispose?.();
+    }
+  }
+
   // Connection state — single source of truth for whether the SSE session is live.
   let isConnected = false;
 
   // Module-scoped EventSource reference.
   // Kept here so swapSession() can close the old stream before opening the new one.
   let activeEventSource = null;
+
+  const taggedTemplateTags = new Set();
 
   // Set to true during swapSession() to suppress onerror-driven reconnect logic
   // for the outgoing stream.
@@ -840,6 +862,18 @@
         );
       }
 
+      const taggedTemplateCompletion = window.DuetsPadTaggedTemplateCompletion;
+      if (taggedTemplateCompletion) {
+        monaco.languages.registerCompletionItemProvider(
+          "typescript",
+          taggedTemplateCompletion.createCompletionItemProvider({
+            monaco,
+            getTags: () => taggedTemplateTags,
+            requestCompletions: completeTaggedTemplate,
+          }),
+        );
+      }
+
       function monacoThemeFromUi() {
         return document.documentElement.getAttribute("data-bs-theme") === "dark"
           ? "vs-dark"
@@ -980,6 +1014,15 @@
               handleTimelineEvent(msg);
             } else if (msg.type === PAD_EVENTS.typeDeclaration) {
               addExtraLib(msg);
+            } else if (msg.type === PAD_EVENTS.taggedTemplateSnapshot) {
+              taggedTemplateTags.clear();
+              if (Array.isArray(msg.tags)) {
+                for (const tag of msg.tags) {
+                  if (typeof tag === "string") {
+                    taggedTemplateTags.add(tag);
+                  }
+                }
+              }
             } else if (msg.type.startsWith("control.")) {
               handleControlEvent(msg);
             }

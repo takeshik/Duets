@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Duets;
+using Duets.Completions;
 using Duets.Jint;
 using Duets.Pad;
 using Duets.Pad.Interactions;
@@ -109,6 +110,125 @@ public sealed class DuetsPadSessionTests
             this._release.Wait();
             return DisplayContent.Text("blocked");
         }
+    }
+
+    [Fact]
+    public async Task CompleteTaggedTemplate_timeout_then_dispose_does_not_cancel_disposed_cts()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+        var callbackCompleted = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        duetsSession.RegisterTaggedTemplate(
+            "path",
+            complete: async (_, cancellationToken) =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    callbackCompleted.SetResult(null);
+                }
+
+                return [];
+            }
+        );
+
+        var session = new DuetsPadSession(
+            Guid.NewGuid(),
+            duetsSession,
+            taggedTemplateCompletionTimeout: TimeSpan.FromMilliseconds(20)
+        );
+        var result = await session.CompleteTaggedTemplateAsync(
+            new TemplateCompletionContext("path", "x", "", "x", 0, 1, ["x"]),
+            cancellationToken
+        );
+
+        Assert.True(result.TimedOut);
+        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        session.Dispose();
+    }
+
+    [Fact]
+    public async Task CompleteTaggedTemplate_timeout_then_dispose_waits_for_pending_continuation()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+        var releaseCallback = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        duetsSession.RegisterTaggedTemplate(
+            "path",
+            complete: async (_, _) =>
+            {
+                await releaseCallback.Task;
+                return [];
+            }
+        );
+
+        var session = new DuetsPadSession(
+            Guid.NewGuid(),
+            duetsSession,
+            taggedTemplateCompletionTimeout: TimeSpan.FromMilliseconds(20)
+        );
+        var result = await session.CompleteTaggedTemplateAsync(
+            new TemplateCompletionContext("path", "x", "", "x", 0, 1, ["x"]),
+            cancellationToken
+        );
+
+        Assert.True(result.TimedOut);
+
+        var disposeTask = Task.Run(session.Dispose, cancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+        Assert.False(disposeTask.IsCompleted);
+
+        releaseCallback.SetResult(null);
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+    }
+
+    [Fact]
+    public async Task CompleteTaggedTemplate_supersedes_previous_in_flight_request()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+        var firstEntered = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var calls = 0;
+        duetsSession.RegisterTaggedTemplate(
+            "path",
+            complete: async (_, callbackCancellationToken) =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    firstEntered.SetResult(null);
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(10), callbackCancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return [];
+                    }
+                }
+
+                return [new TemplateCompletionItem("second")];
+            }
+        );
+
+        using var session = new DuetsPadSession(Guid.NewGuid(), duetsSession);
+        var context = new TemplateCompletionContext("path", "x", "", "x", 0, 1, ["x"]);
+        var first = session.CompleteTaggedTemplateAsync(context, cancellationToken);
+        await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+
+        var second = await session.CompleteTaggedTemplateAsync(context, cancellationToken);
+        var firstResult = await first;
+
+        Assert.True(firstResult.Stale);
+        Assert.Equal("second", Assert.Single(second.Items).Label);
     }
 
     // dump()

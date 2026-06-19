@@ -27,6 +27,15 @@ internal abstract class PadEventMessage
         public global::Duets.TypeDeclaration Declaration { get; } = declaration;
     }
 
+    /// <summary>Wraps a tagged-template completion tag snapshot.</summary>
+    internal sealed class TaggedTemplateSnapshot(
+        global::Duets.Completions.TaggedTemplateRegistrySnapshot snapshot
+    ) : PadEventMessage
+    {
+        public global::Duets.Completions.TaggedTemplateRegistrySnapshot Snapshot { get; } =
+            snapshot;
+    }
+
     /// <summary>
     /// Carries a control command from the server to the browser. Serialised as
     /// <c>{ "type": "control.&lt;Op&gt;", ...Payload }</c>.

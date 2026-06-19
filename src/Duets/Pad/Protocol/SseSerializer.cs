@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
 using Duets.Pad.Interactions;
 using Duets.Pad.Rendering;
@@ -81,6 +83,7 @@ internal static class SseSerializer
             PadEventMessage.Canvas c => Serialize(c.Message),
             PadEventMessage.Timeline t => Serialize(t.Message),
             PadEventMessage.TypeDeclaration d => SerializeTypeDeclaration(d.Declaration),
+            PadEventMessage.TaggedTemplateSnapshot s => SerializeTaggedTemplateSnapshot(s.Snapshot),
             PadEventMessage.Control ctrl => SerializeControl(ctrl.Op, ctrl.Payload),
             _ => throw new InvalidOperationException(
                 $"Unrecognised PadEventMessage type '{m.GetType().Name}'."
@@ -105,6 +108,36 @@ internal static class SseSerializer
             ["fileName"] = decl.FileName,
             ["content"] = decl.Content,
         }.ToJsonString();
+
+    private static string SerializeTaggedTemplateSnapshot(
+        Completions.TaggedTemplateRegistrySnapshot snapshot
+    )
+    {
+        var json = new StringBuilder();
+        json.Append("{\"type\":\"taggedTemplate.snapshot\",\"version\":");
+        json.Append(snapshot.Version);
+        json.Append(",\"tags\":[");
+
+        for (var i = 0; i < snapshot.Tags.Count; i++)
+        {
+            if (i > 0)
+            {
+                json.Append(',');
+            }
+
+            AppendJsonString(json, snapshot.Tags[i]);
+        }
+
+        json.Append("]}");
+        return json.ToString();
+    }
+
+    private static void AppendJsonString(StringBuilder json, string value)
+    {
+        json.Append('"');
+        json.Append(JavaScriptEncoder.Default.Encode(value));
+        json.Append('"');
+    }
 
     private static string SerializeTimelineReset(
         string type,
