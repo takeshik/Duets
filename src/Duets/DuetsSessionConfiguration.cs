@@ -65,6 +65,11 @@ public sealed class DuetsSessionConfiguration
 
     internal Func<ITranspiler, IScriptEngine> GetRequiredEngineFactory()
     {
+        if (this._engineFactory == null)
+        {
+            DuetsBackendRegistry.EnsureBackendAssembliesLoaded();
+        }
+
         return this._engineFactory
             ?? DuetsBackendRegistry.DefaultEngineFactory
             ?? throw new InvalidOperationException(
@@ -75,6 +80,11 @@ public sealed class DuetsSessionConfiguration
 
     internal Func<TypeDeclarations, Task<ITranspiler>> GetRequiredTranspilerFactory()
     {
+        if (this._transpilerFactory == null)
+        {
+            DuetsBackendRegistry.EnsureBackendAssembliesLoaded();
+        }
+
         return this._transpilerFactory
             ?? DuetsBackendRegistry.DefaultTranspilerFactory
             ?? throw new InvalidOperationException(
