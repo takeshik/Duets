@@ -30,7 +30,7 @@ internal interface ICanvasSurface
     public void Set(object? value);
 
     /// <summary>
-    /// Clears the canvas and enqueues a snapshot event. Never throws.
+    /// Clears the canvas and enqueues a Canvas mutation event. Never throws.
     /// </summary>
     public void Clear();
 }

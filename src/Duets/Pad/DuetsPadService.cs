@@ -39,6 +39,7 @@ public sealed class DuetsPadService : IDisposable
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
                         .MapPost("/sessions/{sessionId}/complete", this.HandleCompleteAsync)
+                        .MapGet("/sessions/{sessionId}/canvas", this.HandleCanvasSnapshotAsync)
                         .MapPost(
                             "/sessions/{sessionId}/interactions/{handlerId}/invoke",
                             this.HandleInvokeInteractionAsync
@@ -253,7 +254,40 @@ public sealed class DuetsPadService : IDisposable
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
     }
 
-    // POST /sessions/{sessionId}/interactions/{handlerId}/invoke
+    // GET /sessions/{sessionId}/canvas
+
+    private async Task HandleCanvasSnapshotAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
+        {
+            return;
+        }
+
+        var canvasName = ctx.Request.QueryString["name"];
+        if (string.IsNullOrEmpty(canvasName))
+        {
+            canvasName = "default";
+        }
+
+        if (!session.TryGetCanvasSnapshot(canvasName, out var snapshot))
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Unknown canvas.",
+                    ["sessionId"] = session.Id.ToString(),
+                    ["name"] = canvasName,
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        await ctx.CloseAsync("application/json; charset=utf-8", SseSerializer.Serialize(snapshot));
+    }
 
     private async Task HandleInvokeInteractionAsync(HttpActionContext ctx)
     {

@@ -9,6 +9,7 @@
   const PAD_EVENTS = {
     canvasSnapshot: "canvas.snapshot",
     canvasReplace: "canvas.replace",
+    canvasPatch: "canvas.patch",
     timelineReset: "timeline.reset",
     timelineAppend: "timeline.append",
     timelineUpdate: "timeline.update",
@@ -116,13 +117,143 @@
     return el;
   }
 
-  function resolveTarget(root, path) {
+  function assertRenderNode(node, path = "node") {
+    if (!node || typeof node !== "object") {
+      throw new Error(`${path} must be an object`);
+    }
+
+    switch (node.kind) {
+      case "text":
+        if (typeof node.value !== "string") {
+          throw new Error(`${path}.value must be a string`);
+        }
+        return;
+
+      case "element":
+        assertElementNode(node, path);
+        return;
+
+      case "rawHtml":
+        if (typeof node.content !== "string") {
+          throw new Error(`${path}.content must be a string`);
+        }
+        return;
+
+      default:
+        throw new Error(`${path}.kind is not supported`);
+    }
+  }
+
+  const URL_ATTRIBUTES = new Set([
+    "href",
+    "src",
+    "action",
+    "formaction",
+    "poster",
+    "srcset",
+  ]);
+
+  function assertElementNode(node, path) {
+    if (!isSafeTagName(node.tag)) {
+      throw new Error(`${path}.tag is not allowed`);
+    }
+
+    if (
+      !node.attributes ||
+      typeof node.attributes !== "object" ||
+      Array.isArray(node.attributes)
+    ) {
+      throw new Error(`${path}.attributes must be an object`);
+    }
+
+    for (const [name, value] of Object.entries(node.attributes)) {
+      assertSafeAttribute(name, value, `${path}.attributes.${name}`);
+      if (value !== null && typeof value !== "string") {
+        throw new Error(`${path}.attributes.${name} is invalid`);
+      }
+    }
+
+    if (!Array.isArray(node.children)) {
+      throw new Error(`${path}.children must be an array`);
+    }
+
+    for (let i = 0; i < node.children.length; i++) {
+      assertRenderNode(node.children[i], `${path}.children[${i}]`);
+    }
+  }
+
+  function assertCanvasRootNode(node) {
+    assertRenderNode(node, "canvas state");
+    if (
+      node.kind !== "element" ||
+      node.tag !== "div" ||
+      !Object.hasOwn(node.attributes, "data-duetspad-root")
+    ) {
+      throw new Error("canvas state root invariant is invalid");
+    }
+  }
+
+  function isSafeTagName(tag) {
+    if (typeof tag !== "string" || tag.length === 0) return false;
+    if (!/^[a-z][a-z0-9-]*$/i.test(tag)) return false;
+    if (
+      ["script", "iframe", "object", "embed", "template"].includes(
+        tag.toLowerCase(),
+      )
+    ) {
+      return false;
+    }
+
+    for (const ch of tag) {
+      if (/[\s"'<>/=]/.test(ch) || ch < " ") return false;
+    }
+
+    return true;
+  }
+
+  function assertSafeAttribute(name, value, path = "attribute") {
+    if (!isSafeAttributeName(name)) {
+      throw new Error(`${path}.name is not allowed`);
+    }
+
+    const lower = name.toLowerCase();
+    if (lower === "srcdoc") {
+      throw new Error(`${path}.name is not allowed`);
+    }
+
+    if (
+      typeof value === "string" &&
+      URL_ATTRIBUTES.has(lower) &&
+      value.trimStart().toLowerCase().startsWith("javascript:")
+    ) {
+      throw new Error(`${path}.value is not allowed`);
+    }
+  }
+
+  function isSafeAttributeName(name) {
+    if (typeof name !== "string" || name.length === 0) return false;
+    if (!/^[a-z_:][a-z0-9_.:-]*$/i.test(name)) return false;
+    if (/^on/i.test(name)) return false;
+
+    for (const ch of name) {
+      if (/[\s"'<>/=]/.test(ch) || ch < " ") return false;
+    }
+
+    return true;
+  }
+
+  function resolveNode(root, path) {
     let node = root;
     if (!Array.isArray(path)) return null;
     for (const segment of path) {
       if (!node || !Number.isInteger(segment) || segment < 0) return null;
       node = node.childNodes[segment] ?? null;
     }
+    return node;
+  }
+
+  function resolveTarget(root, path) {
+    const node = resolveNode(root, path);
     return node instanceof HTMLElement ? node : null;
   }
 
@@ -140,7 +271,7 @@
     }
   }
 
-  function applyInteractions(root, interactions) {
+  function applyInteractions(root, interactions, signal) {
     if (!Array.isArray(interactions)) return;
 
     for (const interaction of interactions) {
@@ -154,9 +285,13 @@
       }
 
       if (interaction.event === "click") {
-        target.addEventListener("click", () => {
-          void invokeInteraction(interaction.handlerId);
-        });
+        target.addEventListener(
+          "click",
+          () => {
+            void invokeInteraction(interaction.handlerId);
+          },
+          signal ? { signal } : undefined,
+        );
       }
     }
   }
@@ -512,6 +647,20 @@
   // Maps canvas name → <div class="canvas-panel"> element.
   const canvasPanelMap = new Map();
 
+  // Maps canvas name to the latest validated revision rendered in the DOM.
+  const canvasRevisionMap = new Map();
+
+  // Maps canvas name to in-flight resync state.
+  const canvasResyncMap = new Map();
+
+  // Maps canvas name to the AbortController used by the current canvas bindings.
+  const canvasInteractionControllerMap = new Map();
+
+  const CANVAS_RESYNC_MAX_BUFFERED_PATCHES = 256;
+  const CANVAS_RESYNC_MAX_BUFFERED_BYTES = 1024 * 1024;
+  const CANVAS_RESYNC_MAX_REPEATED_FAILURES = 3;
+  const textEncoder = new TextEncoder();
+
   // Tracks which canvas is currently displayed (name string).
   let activeCanvasName = "default";
 
@@ -583,26 +732,758 @@
     }
   }
 
+  function getCanvasName(msg) {
+    return typeof msg.name === "string" && msg.name.length > 0
+      ? msg.name
+      : "default";
+  }
+
+  function isRevision(value) {
+    return Number.isSafeInteger(value) && value >= 0;
+  }
+
+  function resetCanvasInteractionBindings(name) {
+    canvasInteractionControllerMap.get(name)?.abort();
+    const controller = new AbortController();
+    canvasInteractionControllerMap.set(name, controller);
+    return controller.signal;
+  }
+
+  function pathKey(path) {
+    return path.join("/");
+  }
+
+  function assertDisplayPath(path, label) {
+    if (!Array.isArray(path)) {
+      throw new Error(`${label} must be an array`);
+    }
+
+    for (const segment of path) {
+      if (!Number.isInteger(segment) || segment < 0) {
+        throw new Error(`${label} contains an invalid segment`);
+      }
+    }
+  }
+
+  function isSameOrDescendantPath(path, ancestor) {
+    if (path.length < ancestor.length) return false;
+    for (let i = 0; i < ancestor.length; i++) {
+      if (path[i] !== ancestor[i]) return false;
+    }
+    return true;
+  }
+
+  function comparePath(left, right) {
+    const length = Math.min(left.length, right.length);
+    for (let i = 0; i < length; i++) {
+      if (left[i] !== right[i]) return left[i] - right[i];
+    }
+
+    return left.length - right.length;
+  }
+
+  function hasSameOrAncestorPath(path, paths) {
+    return paths.some((candidate) => isSameOrDescendantPath(path, candidate));
+  }
+
+  function assertNotUnderReplacedPath(path, replacedPaths, label) {
+    if (hasSameOrAncestorPath(path, replacedPaths)) {
+      throw new Error(`${label} conflicts with replace-node`);
+    }
+  }
+
+  function operationPhase(operation) {
+    switch (operation.op) {
+      case "replace-node":
+        return 0;
+      case "set-attr":
+      case "remove-attr":
+      case "replace-text":
+        return 1;
+      case "remove-child":
+        return 2;
+      case "insert-child":
+        return 3;
+      default:
+        return 4;
+    }
+  }
+
+  function scalarOperationKindOrder(operation) {
+    switch (operation.op) {
+      case "set-attr":
+        return 0;
+      case "remove-attr":
+        return 1;
+      case "replace-text":
+        return 2;
+      default:
+        return 3;
+    }
+  }
+
+  function operationSortPath(operation) {
+    switch (operation.op) {
+      case "set-attr":
+      case "remove-attr":
+      case "replace-text":
+      case "replace-node":
+        return operation.path;
+      case "remove-child":
+      case "insert-child":
+        return operation.parentPath;
+      default:
+        return [];
+    }
+  }
+
+  function compareCanonicalOperations(left, right) {
+    const phase = operationPhase(left) - operationPhase(right);
+    if (phase !== 0) return phase;
+
+    switch (left.op) {
+      case "replace-node": {
+        const depth = right.path.length - left.path.length;
+        return depth !== 0 ? depth : comparePath(left.path, right.path);
+      }
+
+      case "set-attr":
+      case "remove-attr":
+      case "replace-text": {
+        const path = comparePath(
+          operationSortPath(left),
+          operationSortPath(right),
+        );
+        return path !== 0
+          ? path
+          : scalarOperationKindOrder(left) - scalarOperationKindOrder(right);
+      }
+
+      case "remove-child": {
+        const parent = comparePath(left.parentPath, right.parentPath);
+        return parent !== 0 ? parent : right.index - left.index;
+      }
+
+      case "insert-child": {
+        const parent = comparePath(left.parentPath, right.parentPath);
+        return parent !== 0 ? parent : left.index - right.index;
+      }
+
+      default:
+        return 0;
+    }
+  }
+
+  function assertCanonicalOperationOrder(operations) {
+    for (let i = 1; i < operations.length; i++) {
+      if (compareCanonicalOperations(operations[i - 1], operations[i]) > 0) {
+        throw new Error("canvas patch operations are not canonical");
+      }
+    }
+  }
+
+  function collectReplaceNodePaths(operations) {
+    const paths = [];
+    for (const operation of operations) {
+      if (operation.op !== "replace-node") continue;
+
+      assertDisplayPath(operation.path, "replace-node.path");
+      if (operation.path.length === 0) {
+        throw new Error("replace-node cannot replace the canvas root");
+      }
+
+      if (
+        paths.some(
+          (path) =>
+            isSameOrDescendantPath(path, operation.path) ||
+            isSameOrDescendantPath(operation.path, path),
+        )
+      ) {
+        throw new Error("replace-node paths conflict");
+      }
+
+      paths.push(operation.path);
+    }
+
+    return paths;
+  }
+
+  function assertInteractionSet(root, interactions) {
+    if (!Array.isArray(interactions)) {
+      throw new Error("canvas interactions must be an array");
+    }
+
+    const seen = new Set();
+    for (const interaction of interactions) {
+      if (!interaction || typeof interaction !== "object") {
+        throw new Error("canvas interaction must be an object");
+      }
+
+      assertDisplayPath(interaction.target, "interaction.target");
+      if (interaction.event !== "click") {
+        throw new Error("interaction event is not supported");
+      }
+
+      if (
+        typeof interaction.handlerId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          interaction.handlerId,
+        )
+      ) {
+        throw new Error("interaction handler id is invalid");
+      }
+
+      if (interaction.state !== "live") {
+        throw new Error("canvas interaction state must be live");
+      }
+
+      if (!resolveTarget(root, interaction.target)) {
+        throw new Error("interaction target is missing");
+      }
+
+      const key = `${pathKey(interaction.target)}|${interaction.event}`;
+      if (seen.has(key)) {
+        throw new Error("duplicate canvas interaction target/event");
+      }
+      seen.add(key);
+    }
+  }
+
+  function renderCanvasFullState(msg) {
+    const name = getCanvasName(msg);
+    const revision = msg.revision;
+    if (!isRevision(revision)) {
+      throw new Error(`invalid canvas revision: ${revision}`);
+    }
+
+    const currentRevision = canvasRevisionMap.get(name);
+    if (currentRevision !== undefined && revision <= currentRevision) {
+      return false;
+    }
+
+    assertCanvasRootNode(msg.state);
+    const body = projectNode(msg.state);
+    assertInteractionSet(body, msg.interactions);
+
+    const isNew = !canvasPanelMap.has(name);
+    const panel = ensureCanvasPanel(name);
+    if (!panel) return false;
+
+    if (isNew || canvasPanelMap.size === 1) {
+      activateCanvasPanel(name);
+    }
+
+    panel.textContent = "";
+    panel.appendChild(body);
+    const signal = resetCanvasInteractionBindings(name);
+    applyInteractions(body, msg.interactions, signal);
+    canvasRevisionMap.set(name, revision);
+    return true;
+  }
+
+  function applyCanvasPatch(root, operations) {
+    if (!root) {
+      throw new Error("canvas root is missing");
+    }
+
+    // This mutation pass is intentionally guard-light. It must only run
+    // synchronously after preflightCanvasPatch has validated the same DOM
+    // revision; async or interleaved application must re-preflight or add guards.
+    for (const operation of operations) {
+      switch (operation.op) {
+        case "set-attr": {
+          const target = resolveNode(root, operation.path);
+          target.setAttribute(operation.name, operation.value ?? "");
+          break;
+        }
+
+        case "remove-attr": {
+          const target = resolveNode(root, operation.path);
+          target.removeAttribute(operation.name);
+          break;
+        }
+
+        case "replace-text": {
+          const target = resolveNode(root, operation.path);
+          target.textContent = operation.value;
+          break;
+        }
+
+        case "replace-node": {
+          const target = resolveNode(root, operation.path);
+          target.replaceWith(projectNode(operation.node));
+          break;
+        }
+
+        case "remove-child": {
+          const parent = resolveNode(root, operation.parentPath);
+          const child = parent.childNodes[operation.index];
+          parent.removeChild(child);
+          break;
+        }
+
+        case "insert-child": {
+          const parent = resolveNode(root, operation.parentPath);
+          parent.insertBefore(
+            projectNode(operation.node),
+            parent.childNodes[operation.index] ?? null,
+          );
+          break;
+        }
+
+        default:
+          throw new Error(`unknown canvas patch op: ${operation.op}`);
+      }
+    }
+  }
+
+  function preflightCanvasPatch(root, operations, interactions) {
+    if (!root) {
+      throw new Error("canvas root is missing");
+    }
+
+    if (!Array.isArray(operations)) {
+      throw new Error("canvas patch operations must be an array");
+    }
+
+    for (const operation of operations) {
+      if (!operation || typeof operation !== "object") {
+        throw new Error("canvas patch operation must be an object");
+      }
+
+      switch (operation.op) {
+        case "set-attr":
+        case "remove-attr":
+        case "replace-text":
+        case "replace-node":
+          assertDisplayPath(operation.path, `${operation.op}.path`);
+          break;
+        case "remove-child":
+        case "insert-child":
+          assertDisplayPath(operation.parentPath, `${operation.op}.parentPath`);
+          break;
+        default:
+          throw new Error(`unknown canvas patch op: ${operation.op}`);
+      }
+    }
+
+    assertCanonicalOperationOrder(operations);
+
+    // The clone preserves the hard atomicity contract: invalid patches must not
+    // touch the live DOM. This costs O(canvas size) per preflight and is an
+    // accepted DuetsPad trade-off documented in ADR-45.
+    const candidateRoot = root.cloneNode(true);
+    const replacedPaths = collectReplaceNodePaths(operations);
+    const attrOps = new Set();
+    const textOps = new Set();
+    const removeChildOps = new Set();
+    const insertChildOps = new Set();
+    const virtualChildCounts = new Map();
+
+    for (const operation of operations) {
+      if (!operation || typeof operation !== "object") {
+        throw new Error("canvas patch operation must be an object");
+      }
+
+      switch (operation.op) {
+        case "set-attr": {
+          assertDisplayPath(operation.path, "set-attr.path");
+          assertNotUnderReplacedPath(
+            operation.path,
+            replacedPaths,
+            "set-attr.path",
+          );
+          assertSafeAttribute(operation.name, operation.value, "set-attr.name");
+          if (operation.value !== null && typeof operation.value !== "string") {
+            throw new Error("set-attr.value must be a string or null");
+          }
+          const target = resolveNode(candidateRoot, operation.path);
+          if (!(target instanceof HTMLElement)) {
+            throw new Error("set-attr target is not an element");
+          }
+          const key = `${pathKey(operation.path)}|${operation.name}`;
+          if (attrOps.has(key)) {
+            throw new Error("duplicate attribute operation");
+          }
+          attrOps.add(key);
+          break;
+        }
+
+        case "remove-attr": {
+          assertDisplayPath(operation.path, "remove-attr.path");
+          assertNotUnderReplacedPath(
+            operation.path,
+            replacedPaths,
+            "remove-attr.path",
+          );
+          assertSafeAttribute(operation.name, null, "remove-attr.name");
+          const target = resolveNode(candidateRoot, operation.path);
+          if (!(target instanceof HTMLElement)) {
+            throw new Error("remove-attr target is not an element");
+          }
+          const key = `${pathKey(operation.path)}|${operation.name}`;
+          if (attrOps.has(key)) {
+            throw new Error("duplicate attribute operation");
+          }
+          attrOps.add(key);
+          break;
+        }
+
+        case "replace-text": {
+          assertDisplayPath(operation.path, "replace-text.path");
+          assertNotUnderReplacedPath(
+            operation.path,
+            replacedPaths,
+            "replace-text.path",
+          );
+          if (typeof operation.value !== "string") {
+            throw new Error("replace-text.value must be a string");
+          }
+          const target = resolveNode(candidateRoot, operation.path);
+          if (!target || target.nodeType !== Node.TEXT_NODE) {
+            throw new Error("replace-text target is not a text node");
+          }
+          const key = pathKey(operation.path);
+          if (textOps.has(key)) {
+            throw new Error("duplicate replace-text operation");
+          }
+          textOps.add(key);
+          break;
+        }
+
+        case "replace-node": {
+          assertDisplayPath(operation.path, "replace-node.path");
+          if (operation.path.length === 0) {
+            throw new Error("replace-node cannot replace the canvas root");
+          }
+          assertRenderNode(operation.node, "replace-node.node");
+          const target = resolveNode(candidateRoot, operation.path);
+          if (!target?.parentNode) {
+            throw new Error("replace-node target is missing");
+          }
+          break;
+        }
+
+        case "remove-child": {
+          assertDisplayPath(operation.parentPath, "remove-child.parentPath");
+          assertNotUnderReplacedPath(
+            operation.parentPath,
+            replacedPaths,
+            "remove-child.parentPath",
+          );
+          if (!Number.isInteger(operation.index) || operation.index < 0) {
+            throw new Error("remove-child.index is invalid");
+          }
+          const targetPath = [...operation.parentPath, operation.index];
+          if (
+            replacedPaths.some(
+              (path) =>
+                pathKey(path) === pathKey(targetPath) ||
+                isSameOrDescendantPath(path, targetPath),
+            )
+          ) {
+            throw new Error("remove-child conflicts with replace-node");
+          }
+          const parent = resolveNode(candidateRoot, operation.parentPath);
+          if (!(parent instanceof HTMLElement)) {
+            throw new Error("remove-child parent is not an element");
+          }
+          const parentKey = pathKey(operation.parentPath);
+          const count =
+            virtualChildCounts.get(parentKey) ?? parent.childNodes.length;
+          if (operation.index >= count) {
+            throw new Error("remove-child index is out of range");
+          }
+          const key = `${parentKey}|${operation.index}`;
+          if (removeChildOps.has(key)) {
+            throw new Error("duplicate remove-child operation");
+          }
+          removeChildOps.add(key);
+          virtualChildCounts.set(parentKey, count - 1);
+          break;
+        }
+
+        case "insert-child": {
+          assertDisplayPath(operation.parentPath, "insert-child.parentPath");
+          assertNotUnderReplacedPath(
+            operation.parentPath,
+            replacedPaths,
+            "insert-child.parentPath",
+          );
+          if (!Number.isInteger(operation.index) || operation.index < 0) {
+            throw new Error("insert-child.index is invalid");
+          }
+          assertRenderNode(operation.node, "insert-child.node");
+          const parent = resolveNode(candidateRoot, operation.parentPath);
+          if (!(parent instanceof HTMLElement)) {
+            throw new Error("insert-child parent is not an element");
+          }
+          const parentKey = pathKey(operation.parentPath);
+          const count =
+            virtualChildCounts.get(parentKey) ?? parent.childNodes.length;
+          if (operation.index > count) {
+            throw new Error("insert-child index is out of range");
+          }
+          const key = `${parentKey}|${operation.index}`;
+          if (insertChildOps.has(key)) {
+            throw new Error("duplicate insert-child operation");
+          }
+          insertChildOps.add(key);
+          virtualChildCounts.set(parentKey, count + 1);
+          break;
+        }
+
+        default:
+          throw new Error(`unknown canvas patch op: ${operation.op}`);
+      }
+
+      applyCanvasPatch(candidateRoot, [operation]);
+    }
+
+    assertInteractionSet(candidateRoot, interactions);
+  }
+
+  function getCanvasResyncState(name) {
+    let state = canvasResyncMap.get(name);
+    if (!state) {
+      state = {
+        inFlight: false,
+        requestId: 0,
+        buffer: [],
+        bufferedBytes: 0,
+        refreshAfterCurrent: false,
+        overflowCount: 0,
+        failureCount: 0,
+      };
+      canvasResyncMap.set(name, state);
+    }
+    return state;
+  }
+
+  function serializedByteLength(value) {
+    return textEncoder.encode(JSON.stringify(value)).length;
+  }
+
+  function surfaceCanvasResyncError(name, reason) {
+    setEditorStatus(`Canvas "${name}" resync failed: ${reason}`, true);
+  }
+
+  function noteCanvasResyncFailure(name, err) {
+    const state = getCanvasResyncState(name);
+    state.failureCount++;
+    if (state.failureCount >= CANVAS_RESYNC_MAX_REPEATED_FAILURES) {
+      surfaceCanvasResyncError(name, String(err));
+      return false;
+    }
+    return true;
+  }
+
+  function clearCanvasPatchBuffer(state) {
+    state.buffer = [];
+    state.bufferedBytes = 0;
+  }
+
+  function bufferCanvasPatch(name, msg) {
+    const state = getCanvasResyncState(name);
+    state.buffer.push(msg);
+    state.bufferedBytes += serializedByteLength(msg);
+    if (
+      state.buffer.length > CANVAS_RESYNC_MAX_BUFFERED_PATCHES ||
+      state.bufferedBytes > CANVAS_RESYNC_MAX_BUFFERED_BYTES
+    ) {
+      clearCanvasPatchBuffer(state);
+      state.overflowCount++;
+      if (state.overflowCount >= CANVAS_RESYNC_MAX_REPEATED_FAILURES) {
+        surfaceCanvasResyncError(name, "patch buffer overflow");
+      }
+      if (state.inFlight) {
+        state.refreshAfterCurrent = true;
+      }
+    }
+  }
+
+  async function requestCanvasResync(name) {
+    const state = getCanvasResyncState(name);
+    if (state.inFlight) return;
+
+    const requestId = ++state.requestId;
+    state.inFlight = true;
+    try {
+      const url = padUrl(
+        `sessions/${sessionId}/canvas?name=${encodeURIComponent(name)}`,
+      );
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`resync failed: ${res.status}`);
+      }
+
+      const msg = await res.json();
+      if (state.requestId !== requestId) {
+        return;
+      }
+
+      state.inFlight = false;
+      if (state.refreshAfterCurrent) {
+        state.refreshAfterCurrent = false;
+        clearCanvasPatchBuffer(state);
+        void requestCanvasResync(name);
+        return;
+      }
+      if (
+        msg.type !== PAD_EVENTS.canvasSnapshot &&
+        msg.type !== PAD_EVENTS.canvasReplace
+      ) {
+        throw new Error("resync response did not contain a canvas snapshot");
+      }
+
+      handleCanvasFullEvent(msg, { requestedName: name });
+    } catch (err) {
+      if (state.requestId !== requestId) {
+        return;
+      }
+
+      state.inFlight = false;
+      console.error("[DuetsPad] canvas resync failed", err);
+      if (noteCanvasResyncFailure(name, err)) {
+        void requestCanvasResync(name);
+      }
+    }
+  }
+
+  function drainCanvasPatchBuffer(name) {
+    const state = canvasResyncMap.get(name);
+    if (!state || state.inFlight) return;
+
+    const buffered = state.buffer;
+    clearCanvasPatchBuffer(state);
+    for (let i = 0; i < buffered.length; i++) {
+      const msg = buffered[i];
+      handleCanvasPatchEvent(msg);
+      if (state.inFlight) {
+        const remaining = buffered.slice(i + 1);
+        if (remaining.length > 0) {
+          state.buffer.push(...remaining);
+          state.bufferedBytes += remaining.reduce(
+            (total, patch) => total + serializedByteLength(patch),
+            0,
+          );
+        }
+        break;
+      }
+    }
+
+    if (!state.inFlight && state.buffer.length === 0) {
+      canvasResyncMap.delete(name);
+    }
+  }
+
+  function handleCanvasFullEvent(msg, options = {}) {
+    const responseName = getCanvasName(msg);
+    const name = options.requestedName ?? responseName;
+    try {
+      if (
+        options.requestedName !== undefined &&
+        responseName !== options.requestedName
+      ) {
+        throw new Error(
+          "resync response canvas name did not match the request",
+        );
+      }
+
+      const applied = renderCanvasFullState(msg);
+      const state = canvasResyncMap.get(name);
+      if (state) {
+        state.failureCount = 0;
+        if (applied && options.requestedName === undefined && state.inFlight) {
+          state.requestId++;
+          state.inFlight = false;
+          state.refreshAfterCurrent = false;
+        }
+      }
+      drainCanvasPatchBuffer(name);
+    } catch (err) {
+      console.error("[DuetsPad] canvas full-state event rejected", err);
+      const state = canvasResyncMap.get(name);
+      let shouldRetry = true;
+      if (state) {
+        shouldRetry = noteCanvasResyncFailure(name, err);
+        if (state.inFlight) {
+          state.requestId++;
+          state.inFlight = false;
+          state.refreshAfterCurrent = false;
+        }
+      }
+      if (shouldRetry) {
+        void requestCanvasResync(name);
+      }
+    }
+  }
+
+  function handleCanvasPatchEvent(msg) {
+    const name = getCanvasName(msg);
+    const baseRevision = msg.baseRevision;
+    const revision = msg.revision;
+
+    if (
+      !isRevision(baseRevision) ||
+      !isRevision(revision) ||
+      revision !== baseRevision + 1
+    ) {
+      console.error("[DuetsPad] malformed canvas patch revision", msg);
+      const state = canvasResyncMap.get(name);
+      if (state?.inFlight) {
+        state.refreshAfterCurrent = true;
+      }
+      void requestCanvasResync(name);
+      return;
+    }
+
+    const resyncState = canvasResyncMap.get(name);
+    if (resyncState?.inFlight) {
+      bufferCanvasPatch(name, msg);
+      return;
+    }
+
+    const currentRevision = canvasRevisionMap.get(name);
+    if (currentRevision === undefined || baseRevision > currentRevision) {
+      bufferCanvasPatch(name, msg);
+      void requestCanvasResync(name);
+      return;
+    }
+
+    if (baseRevision < currentRevision) {
+      return;
+    }
+
+    const panel = ensureCanvasPanel(name);
+    if (!panel) {
+      bufferCanvasPatch(name, msg);
+      void requestCanvasResync(name);
+      return;
+    }
+
+    try {
+      const body = panel.firstChild;
+      preflightCanvasPatch(body, msg.operations, msg.interactions);
+      applyCanvasPatch(body, msg.operations);
+      const signal = resetCanvasInteractionBindings(name);
+      applyInteractions(body, msg.interactions, signal);
+      canvasRevisionMap.set(name, revision);
+      drainCanvasPatchBuffer(name);
+    } catch (err) {
+      console.error("[DuetsPad] canvas patch rejected", err);
+      void requestCanvasResync(name);
+    }
+  }
+
   function handleCanvasEvent(msg) {
     if (
       msg.type === PAD_EVENTS.canvasSnapshot ||
       msg.type === PAD_EVENTS.canvasReplace
     ) {
-      const name = typeof msg.name === "string" ? msg.name : "default";
-      const isNew = !canvasPanelMap.has(name);
-      const panel = ensureCanvasPanel(name);
-      if (!panel) return;
-
-      // If this is the first event for this name (or the only canvas),
-      // make it active so content is visible immediately.
-      if (isNew || canvasPanelMap.size === 1) {
-        activateCanvasPanel(name);
-      }
-
-      panel.textContent = "";
-      const body = projectNode(msg.state);
-      panel.appendChild(body);
-      applyInteractions(body, msg.interactions);
+      handleCanvasFullEvent(msg);
+    } else if (msg.type === PAD_EVENTS.canvasPatch) {
+      handleCanvasPatchEvent(msg);
     }
   }
 
@@ -616,6 +1497,12 @@
       root.textContent = "";
     }
     canvasPanelMap.clear();
+    canvasRevisionMap.clear();
+    canvasResyncMap.clear();
+    for (const controller of canvasInteractionControllerMap.values()) {
+      controller.abort();
+    }
+    canvasInteractionControllerMap.clear();
     activeCanvasName = "default";
 
     // Notify the UI layer so it can rebuild canvas tabs.

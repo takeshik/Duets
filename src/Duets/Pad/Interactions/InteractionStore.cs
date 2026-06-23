@@ -21,8 +21,6 @@ internal sealed class InteractionStore
     private readonly Dictionary<long, IReadOnlyList<CommittedInteraction>> _timelineInteractions =
     [];
 
-    // Canvas interactions
-
     // Committed interactions keyed by canvas name.
     private readonly Dictionary<string, IReadOnlyList<CommittedInteraction>> _canvasInteractions =
         new(StringComparer.Ordinal);
@@ -45,27 +43,12 @@ internal sealed class InteractionStore
     /// When non-null, each interaction target is prepended with this segment index (used when
     /// appending a child to an existing canvas root rather than replacing it).
     /// </param>
-    public void SetCanvasInteractions(
+    public IReadOnlyList<CommittedInteraction> SetCanvasInteractions(
         string name,
         PendingInteractions pending,
         int? childIndex = null
-    )
-    {
-        if (this._canvasInteractions.TryGetValue(name, out var existing))
-        {
-            this.Release(existing);
-        }
-
-        var committed = this.Commit(pending, childIndex);
-        if (committed.Count > 0)
-        {
-            this._canvasInteractions[name] = committed;
-        }
-        else
-        {
-            this._canvasInteractions.Remove(name);
-        }
-    }
+    ) =>
+        this.CommitCanvasInteractions(this.PrepareSetCanvasInteractions(name, pending, childIndex));
 
     /// <summary>
     /// Appends committed interactions for <paramref name="pending"/> to the existing canvas
@@ -76,28 +59,109 @@ internal sealed class InteractionStore
     /// <param name="childIndex">
     /// Segment index prepended to each target (the index of the newly appended child).
     /// </param>
-    public void AppendCanvasInteractions(string name, PendingInteractions pending, int childIndex)
+    public IReadOnlyList<CommittedInteraction> AppendCanvasInteractions(
+        string name,
+        PendingInteractions pending,
+        int childIndex
+    )
     {
-        var committed = this.Commit(pending, childIndex);
-        if (committed.Count > 0)
-        {
-            var existing = this.GetCanvasInteractions(name);
-            this._canvasInteractions[name] = [.. existing, .. committed];
-        }
+        return this.CommitCanvasInteractions(
+            this.PrepareAppendCanvasInteractions(name, pending, childIndex)
+        );
     }
 
     /// <summary>
-    /// Clears the interactions for the canvas named <paramref name="name"/>, unregistering their handlers.
+    /// Prepares <paramref name="pending"/> interactions as the new canvas interaction set for
+    /// the canvas named <paramref name="name"/> without publishing their handlers yet.
     /// </summary>
-    public void ClearCanvasInteractions(string name)
+    public CanvasInteractionCommitPlan PrepareSetCanvasInteractions(
+        string name,
+        PendingInteractions pending,
+        int? childIndex = null
+    )
+    {
+        var existing = this.GetCanvasInteractions(name);
+        var prepared = this.Prepare(pending, childIndex);
+        return new CanvasInteractionCommitPlan(
+            name,
+            prepared.Interactions,
+            existing,
+            prepared.Registrations
+        );
+    }
+
+    /// <summary>
+    /// Prepares <paramref name="pending"/> interactions to be appended to the existing canvas
+    /// interaction set for the canvas named <paramref name="name"/> without publishing their
+    /// handlers yet.
+    /// </summary>
+    public CanvasInteractionCommitPlan PrepareAppendCanvasInteractions(
+        string name,
+        PendingInteractions pending,
+        int childIndex
+    )
+    {
+        var existing = this.GetCanvasInteractions(name);
+        var prepared = this.Prepare(pending, childIndex);
+        return new CanvasInteractionCommitPlan(
+            name,
+            [.. existing, .. prepared.Interactions],
+            [],
+            prepared.Registrations
+        );
+    }
+
+    /// <summary>
+    /// Clears the interactions for the canvas named <paramref name="name"/>, unregistering their
+    /// handlers.
+    /// </summary>
+    public IReadOnlyList<CommittedInteraction> ClearCanvasInteractions(string name)
     {
         if (this._canvasInteractions.Remove(name, out var interactions))
         {
             this.Release(interactions);
         }
+
+        return [];
     }
 
-    // Timeline interactions
+    /// <summary>
+    /// Prepares clearing all interactions for the canvas named <paramref name="name"/>.
+    /// </summary>
+    public CanvasInteractionCommitPlan PrepareClearCanvasInteractions(string name) =>
+        new(name, [], this.GetCanvasInteractions(name), replaceExisting: true);
+
+    /// <summary>
+    /// Publishes the prepared handlers in <paramref name="plan"/>, updates the committed canvas
+    /// interaction set, and releases replaced handlers.
+    /// </summary>
+    public IReadOnlyList<CommittedInteraction> CommitCanvasInteractions(
+        CanvasInteractionCommitPlan plan
+    )
+    {
+        if (plan is null)
+        {
+            throw new ArgumentNullException(nameof(plan));
+        }
+
+        foreach (var registration in plan.Registrations)
+        {
+            this._registry.Commit(registration);
+        }
+
+        if (plan.Interactions.Count > 0)
+        {
+            this._canvasInteractions[plan.Name] = plan.Interactions;
+        }
+        else
+        {
+            this._canvasInteractions.Remove(plan.Name);
+        }
+
+        this.Release(plan.ReplacedInteractions);
+
+        return plan.Interactions;
+    }
 
     /// <summary>
     /// Returns the full map of committed Timeline interactions keyed by entry id.
@@ -139,15 +203,11 @@ internal sealed class InteractionStore
         }
     }
 
-    // Handler lookup
-
     /// <summary>
     /// Attempts to find the handler registered under <paramref name="handlerId"/>.
     /// </summary>
     public bool TryGetHandler(Guid handlerId, out Action? handler) =>
         this._registry.TryGet(handlerId, out handler);
-
-    // Teardown
 
     /// <summary>
     /// Clears all interactions (canvas and timeline) and unregisters all handlers.
@@ -160,38 +220,94 @@ internal sealed class InteractionStore
         this._timelineInteractions.Clear();
     }
 
-    // Private helpers
-
     private IReadOnlyList<CommittedInteraction> Commit(
         PendingInteractions interactions,
         int? childIndex
     )
     {
+        var prepared = this.Prepare(interactions, childIndex);
+        foreach (var registration in prepared.Registrations)
+        {
+            this._registry.Commit(registration);
+        }
+
+        return prepared.Interactions;
+    }
+
+    private PreparedInteractions Prepare(PendingInteractions interactions, int? childIndex)
+    {
         if (interactions.Count == 0)
         {
-            return [];
+            return PreparedInteractions.Empty;
         }
 
         var committed = new List<CommittedInteraction>(interactions.Count);
+        var registrations = new List<PreparedInteractionRegistration>(interactions.Count);
         foreach (var interaction in interactions)
         {
             var target = childIndex is int index
                 ? interaction.Target.Prepend(index)
                 : interaction.Target;
-            var handlerId = this._registry.Register(interaction.Handler);
+            var registration = this._registry.Prepare(interaction.Handler);
+            registrations.Add(registration);
             committed.Add(
                 new CommittedInteraction(
                     target,
                     interaction.Event,
-                    handlerId,
-                    InteractionState.Live
+                    registration.HandlerId,
+                    InteractionState.Live,
+                    interaction.Handler
                 )
             );
         }
 
-        return committed;
+        return new PreparedInteractions(committed, registrations);
     }
 
     private void Release(IEnumerable<CommittedInteraction> interactions) =>
         this._registry.Unregister(interactions.Select(i => i.HandlerId));
+
+    private sealed record PreparedInteractions(
+        IReadOnlyList<CommittedInteraction> Interactions,
+        IReadOnlyList<PreparedInteractionRegistration> Registrations
+    )
+    {
+        public static PreparedInteractions Empty { get; } = new([], []);
+    }
+}
+
+internal sealed record CanvasInteractionCommitPlan
+{
+    public CanvasInteractionCommitPlan(
+        string name,
+        IReadOnlyList<CommittedInteraction> interactions,
+        IReadOnlyList<CommittedInteraction> replacedInteractions,
+        IReadOnlyList<PreparedInteractionRegistration> registrations
+    )
+    {
+        this.Name = !string.IsNullOrWhiteSpace(name)
+            ? name
+            : throw new ArgumentException("Canvas name cannot be empty.", nameof(name));
+        this.Interactions = interactions ?? throw new ArgumentNullException(nameof(interactions));
+        this.ReplacedInteractions =
+            replacedInteractions ?? throw new ArgumentNullException(nameof(replacedInteractions));
+        this.Registrations =
+            registrations ?? throw new ArgumentNullException(nameof(registrations));
+    }
+
+    public CanvasInteractionCommitPlan(
+        string name,
+        IReadOnlyList<CommittedInteraction> interactions,
+        IReadOnlyList<CommittedInteraction> replacedInteractions,
+        bool replaceExisting
+    )
+        : this(name, interactions, replaceExisting ? replacedInteractions : [], []) { }
+
+    public string Name { get; }
+
+    public IReadOnlyList<CommittedInteraction> Interactions { get; }
+
+    public IReadOnlyList<CommittedInteraction> ReplacedInteractions { get; }
+
+    public IReadOnlyList<PreparedInteractionRegistration> Registrations { get; }
 }

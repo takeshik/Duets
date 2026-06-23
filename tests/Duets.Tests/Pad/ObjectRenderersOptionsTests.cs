@@ -271,15 +271,13 @@ public sealed class ObjectRenderersOptionsTests
                     new StringContent("canvas.add(\"SENTINEL\")", Encoding.UTF8, "text/plain")
                 );
 
-                // The canvas.replace root's first child must be the renderer's text node.
-                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
-                Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
+                // The canvas.patch inserted child must be the renderer's text node.
+                var patch = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
+                Assert.Equal(CanvasEventTypes.Patch, patch.GetProperty("type").GetString());
 
-                var children = replace.GetProperty("state").GetProperty("children");
-                var childArray = children.EnumerateArray().ToList();
-                Assert.Single(childArray);
-
-                var child = childArray[0];
+                var operation = Assert.Single(patch.GetProperty("operations").EnumerateArray());
+                Assert.Equal("insert-child", operation.GetProperty("op").GetString());
+                var child = operation.GetProperty("node");
                 Assert.Equal("text", child.GetProperty("kind").GetString());
                 Assert.Equal("RENDERED", child.GetProperty("value").GetString());
             }

@@ -52,13 +52,17 @@ public sealed record Element(string Tag, ElementAttributes Attributes, ElementCh
             throw new ArgumentException("Element tag cannot be empty.", nameof(tag));
         }
 
+        if (!IsAsciiLowerLetter(normalizedTag[0]))
+        {
+            throw new ArgumentException(
+                $"Element tag '{tag}' is not a valid tag name.",
+                nameof(tag)
+            );
+        }
+
         foreach (var ch in normalizedTag)
         {
-            if (
-                char.IsWhiteSpace(ch)
-                || char.IsControl(ch)
-                || ch is '"' or '\'' or '<' or '>' or '/' or '='
-            )
+            if (!IsAsciiLetterOrDigit(ch) && ch != '-')
             {
                 throw new ArgumentException(
                     $"Element tag '{tag}' is not a valid tag name.",
@@ -67,6 +71,11 @@ public sealed record Element(string Tag, ElementAttributes Attributes, ElementCh
             }
         }
     }
+
+    private static bool IsAsciiLowerLetter(char ch) => ch is >= 'a' and <= 'z';
+
+    private static bool IsAsciiLetterOrDigit(char ch) =>
+        ch is (>= 'a' and <= 'z') or (>= '0' and <= '9');
 
     private static void ValidateElementTagPolicy(string normalizedTag, string tag)
     {

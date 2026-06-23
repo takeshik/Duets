@@ -157,13 +157,17 @@ public sealed class ElementAttributes
             throw new ArgumentException("Element attribute name cannot be empty.", nameof(name));
         }
 
+        if (!IsAsciiLowerLetter(normalizedName[0]) && normalizedName[0] is not '_' and not ':')
+        {
+            throw new ArgumentException(
+                $"Element attribute '{name}' is not a valid attribute name.",
+                nameof(name)
+            );
+        }
+
         foreach (var ch in normalizedName)
         {
-            if (
-                char.IsWhiteSpace(ch)
-                || char.IsControl(ch)
-                || ch is '"' or '\'' or '<' or '>' or '/' or '='
-            )
+            if (!IsAsciiLetterOrDigit(ch) && ch is not '_' and not ':' and not '.' and not '-')
             {
                 throw new ArgumentException(
                     $"Element attribute '{name}' is not a valid attribute name.",
@@ -172,6 +176,11 @@ public sealed class ElementAttributes
             }
         }
     }
+
+    private static bool IsAsciiLowerLetter(char ch) => ch is >= 'a' and <= 'z';
+
+    private static bool IsAsciiLetterOrDigit(char ch) =>
+        ch is (>= 'a' and <= 'z') or (>= '0' and <= '9');
 
     private static void ValidateElementAttributePolicy(string normalizedName, string name)
     {

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Threading.Channels;
 using Duets.Completions;
 using Duets.Pad.Interactions;
@@ -74,6 +75,11 @@ namespace Duets.Pad;
 /// </remarks>
 internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSurface
 {
+    private sealed record CanvasProjection(CanvasState State, long Revision)
+    {
+        public static CanvasProjection Empty { get; } = new(CanvasState.Empty, Revision: 0);
+    }
+
     // Serializes public eval entry; NOT re-acquired by internal ops.
     private readonly SemaphoreSlim _evalSemaphore = new(1, 1);
 
@@ -180,11 +186,15 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     /// <summary>Grouped timeline sub-API: state snapshot.</summary>
     internal ITimelineSurface Timeline => this;
 
+    private readonly CanvasDiffer _canvasDiffer = new();
+
     // Backing state fields; accessed directly by internal methods and returned via interface State getters.
-    // Canvas state is keyed by name; the "default" canvas is always present.
-    private readonly Dictionary<string, CanvasState> _canvasStates = new(StringComparer.Ordinal)
+    // Canvas projections are keyed by name; the "default" canvas is always present.
+    private readonly Dictionary<string, CanvasProjection> _canvasProjections = new(
+        StringComparer.Ordinal
+    )
     {
-        ["default"] = CanvasState.Empty,
+        ["default"] = new(CanvasState.Empty, Revision: 0),
     };
     private TimelineState _timelineState = TimelineState.Empty;
 
@@ -226,7 +236,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
     string ICanvasSurface.Name => "default";
 
-    CanvasState ICanvasSurface.State => this._canvasStates["default"];
+    CanvasState ICanvasSurface.State => this._canvasProjections["default"].State;
 
     void ICanvasSurface.Add(object? value) => this.CanvasAdd("default", value);
 
@@ -258,20 +268,37 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
             lock (this._stateLock)
             {
-                if (!this._canvasStates.TryGetValue(name, out var state))
-                {
-                    state = CanvasState.Empty;
-                }
+                var existed = this._canvasProjections.TryGetValue(name, out var projection);
+                projection ??= CanvasProjection.Empty;
 
-                var childIndex = state.Root.Children.Count;
-                this._canvasStates[name] = state.Append(content.Body);
-                this._interactionStore.AppendCanvasInteractions(
+                var childIndex = projection.State.Root.Children.Count;
+                var newState = projection.State.Append(content.Body);
+                ValidateCanvasInteractions(
+                    newState,
+                    this._interactionStore.GetCanvasInteractions(name),
+                    content.Interactions,
+                    childIndex
+                );
+
+                var revision = projection.Revision + 1;
+                var interactions = this._interactionStore.PrepareAppendCanvasInteractions(
                     name,
                     content.Interactions,
                     childIndex
                 );
-                this.BroadcastCanvas(name);
+                this.CommitCanvasMutation(
+                    name,
+                    existed,
+                    projection,
+                    newState,
+                    revision,
+                    interactions
+                );
             }
+        }
+        catch (InvalidOperationException ex)
+        {
+            this.AppendCanvasProjectionError(ex);
         }
         catch
         {
@@ -301,19 +328,44 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
             lock (this._stateLock)
             {
-                if (!this._canvasStates.TryGetValue(name, out var state))
+                var existed = this._canvasProjections.TryGetValue(name, out var projection);
+                projection ??= CanvasProjection.Empty;
+
+                var newState = projection.State.Set(new ElementChildren(content.Body));
+                ValidateCanvasInteractions(newState, [], content.Interactions, childIndex: 0);
+
+                if (
+                    existed
+                    && projection.State.Equals(newState)
+                    && CanvasInteractionsEqual(
+                        this._interactionStore.GetCanvasInteractions(name),
+                        content.Interactions,
+                        childIndex: 0
+                    )
+                )
                 {
-                    state = CanvasState.Empty;
+                    return;
                 }
 
-                this._canvasStates[name] = state.Set(new ElementChildren(content.Body));
-                this._interactionStore.SetCanvasInteractions(
+                var revision = projection.Revision + 1;
+                var interactions = this._interactionStore.PrepareSetCanvasInteractions(
                     name,
                     content.Interactions,
                     childIndex: 0
                 );
-                this.BroadcastCanvas(name);
+                this.CommitCanvasMutation(
+                    name,
+                    existed,
+                    projection,
+                    newState,
+                    revision,
+                    interactions
+                );
             }
+        }
+        catch (InvalidOperationException ex)
+        {
+            this.AppendCanvasProjectionError(ex);
         }
         catch
         {
@@ -322,7 +374,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
     }
 
     /// <summary>
-    /// Clears the canvas named <paramref name="name"/> and enqueues a snapshot event.
+    /// Clears the canvas named <paramref name="name"/> and enqueues a Canvas mutation event.
     /// Creates the canvas if it does not yet exist. Never throws.
     /// </summary>
     internal void CanvasClear(string name)
@@ -336,10 +388,33 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         {
             lock (this._stateLock)
             {
-                this._canvasStates[name] = CanvasState.Empty;
-                this._interactionStore.ClearCanvasInteractions(name);
-                this.BroadcastCanvas(name);
+                var existed = this._canvasProjections.TryGetValue(name, out var projection);
+                projection ??= CanvasProjection.Empty;
+
+                if (
+                    existed
+                    && projection.State.Equals(CanvasState.Empty)
+                    && this._interactionStore.GetCanvasInteractions(name).Count == 0
+                )
+                {
+                    return;
+                }
+
+                var revision = projection.Revision + 1;
+                var interactions = this._interactionStore.PrepareClearCanvasInteractions(name);
+                this.CommitCanvasMutation(
+                    name,
+                    existed,
+                    projection,
+                    CanvasState.Empty,
+                    revision,
+                    interactions
+                );
             }
+        }
+        catch (InvalidOperationException ex)
+        {
+            this.AppendCanvasProjectionError(ex);
         }
         catch
         {
@@ -511,6 +586,28 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
             this.FlushPendingControl();
             this._evalSemaphore.Release();
         }
+    }
+
+    internal bool TryGetCanvasSnapshot(string name, out CanvasEventMessage snapshot)
+    {
+        this.Touch();
+
+        lock (this._stateLock)
+        {
+            if (this._canvasProjections.TryGetValue(name, out var projection))
+            {
+                snapshot = CanvasEventMessage.Snapshot(
+                    name,
+                    projection.State,
+                    this._interactionStore.GetCanvasInteractions(name),
+                    projection.Revision
+                );
+                return true;
+            }
+        }
+
+        snapshot = null!;
+        return false;
     }
 
     internal async Task<TaggedTemplateCompletionDispatchResult> CompleteTaggedTemplateAsync(
@@ -805,7 +902,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
                 this._eventSubscribers.Clear();
 
-                this._canvasStates.Clear();
+                this._canvasProjections.Clear();
                 this._interactionStore.Clear();
             }
 
@@ -953,24 +1050,276 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
-    /// <summary>
-    /// Enqueues a <c>canvas.replace</c> event for the canvas named <paramref name="name"/> to all
-    /// registered subscribers. Must be called while <c>_stateLock</c> is held.
-    /// </summary>
-    private void BroadcastCanvas(string name)
+    private void AppendCanvasProjectionError(Exception ex)
     {
-        var state = this._canvasStates.TryGetValue(name, out var s) ? s : CanvasState.Empty;
-        var msg = CanvasEventMessage.Replace(
+        try
+        {
+            this.AppendTimelineEntry(
+                "render-error",
+                DisplayContent.Text($"Canvas projection rejected: {ex.Message}")
+            );
+        }
+        catch
+        {
+            // Swallow.
+        }
+    }
+
+    /// <summary>
+    /// Commits a Canvas state/interaction mutation, chooses the smallest supported event shape,
+    /// and broadcasts it to all registered subscribers. Must be called while <c>_stateLock</c>
+    /// is held.
+    /// </summary>
+    private void CommitCanvasMutation(
+        string name,
+        bool existed,
+        CanvasProjection oldProjection,
+        CanvasState newState,
+        long revision,
+        CanvasInteractionCommitPlan interactions
+    )
+    {
+        ValidateCanvasInteractions(newState, interactions.Interactions);
+
+        var message = this.CreateCanvasMutationMessage(
             name,
-            state,
-            this._interactionStore.GetCanvasInteractions(name)
+            existed,
+            oldProjection,
+            newState,
+            revision,
+            interactions.Interactions
         );
+
+        this._interactionStore.CommitCanvasInteractions(interactions);
+        this._canvasProjections[name] = new CanvasProjection(newState, revision);
+        this.BroadcastCanvas(message);
+    }
+
+    private CanvasEventMessage CreateCanvasMutationMessage(
+        string name,
+        bool existed,
+        CanvasProjection oldProjection,
+        CanvasState newState,
+        long revision,
+        IReadOnlyList<CommittedInteraction> interactions
+    )
+    {
+        var replace = CanvasEventMessage.Replace(name, newState, interactions, revision);
+        if (!existed)
+        {
+            return replace;
+        }
+
+        var operations = this._canvasDiffer.Diff(oldProjection.State, newState);
+        var patch = CanvasEventMessage.Patch(
+            name,
+            oldProjection.Revision,
+            revision,
+            operations,
+            interactions
+        );
+
+        return SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
+    }
+
+    /// <summary>
+    /// Enqueues a Canvas event to all registered subscribers. Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private void BroadcastCanvas(CanvasEventMessage msg)
+    {
         var padMsg = new PadEventMessage.Canvas(msg);
         foreach (var (_, writer) in this._eventSubscribers)
         {
             writer.TryWrite(padMsg);
         }
     }
+
+    private static int SerializedByteLength(CanvasEventMessage message) =>
+        Encoding.UTF8.GetByteCount(SseSerializer.Serialize(message));
+
+    private static bool CanvasInteractionsEqual(
+        IReadOnlyList<CommittedInteraction> oldInteractions,
+        IReadOnlyList<CommittedInteraction> newInteractions
+    )
+    {
+        if (oldInteractions.Count != newInteractions.Count)
+        {
+            return false;
+        }
+
+        var oldByKey = oldInteractions.ToDictionary(CanvasInteractionKey, StringComparer.Ordinal);
+        foreach (var newInteraction in newInteractions)
+        {
+            if (!oldByKey.TryGetValue(CanvasInteractionKey(newInteraction), out var oldInteraction))
+            {
+                return false;
+            }
+
+            if (
+                oldInteraction.State != InteractionState.Live
+                || newInteraction.State != InteractionState.Live
+                || !ReferenceEquals(oldInteraction.Handler, newInteraction.Handler)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool CanvasInteractionsEqual(
+        IReadOnlyList<CommittedInteraction> oldInteractions,
+        PendingInteractions newInteractions,
+        int? childIndex
+    )
+    {
+        if (oldInteractions.Count != newInteractions.Count)
+        {
+            return false;
+        }
+
+        var oldByKey = oldInteractions.ToDictionary(CanvasInteractionKey, StringComparer.Ordinal);
+        foreach (var interaction in newInteractions)
+        {
+            var target = childIndex is int index
+                ? interaction.Target.Prepend(index)
+                : interaction.Target;
+            if (
+                !oldByKey.TryGetValue(
+                    CanvasInteractionKey(target, interaction.Event),
+                    out var oldInteraction
+                )
+            )
+            {
+                return false;
+            }
+
+            if (
+                oldInteraction.State != InteractionState.Live
+                || !ReferenceEquals(oldInteraction.Handler, interaction.Handler)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void ValidateCanvasInteractions(
+        CanvasState state,
+        IReadOnlyList<CommittedInteraction> interactions
+    )
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var interaction in interactions)
+        {
+            if (interaction.State != InteractionState.Live)
+            {
+                throw new InvalidOperationException("Canvas interactions must be live.");
+            }
+
+            if (interaction.Event != InteractionEvent.Click)
+            {
+                throw new InvalidOperationException("Canvas interaction event is invalid.");
+            }
+
+            if (!CanvasInteractionTargetResolves(state, interaction.Target))
+            {
+                throw new InvalidOperationException("Canvas interaction target is invalid.");
+            }
+
+            if (!seen.Add(CanvasInteractionKey(interaction)))
+            {
+                throw new InvalidOperationException(
+                    "Canvas interactions must be unique by target and event."
+                );
+            }
+        }
+    }
+
+    private static void ValidateCanvasInteractions(
+        CanvasState state,
+        IReadOnlyList<CommittedInteraction> existingInteractions,
+        PendingInteractions pendingInteractions,
+        int? childIndex
+    )
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var interaction in existingInteractions)
+        {
+            if (interaction.State != InteractionState.Live)
+            {
+                throw new InvalidOperationException("Canvas interactions must be live.");
+            }
+
+            if (interaction.Event != InteractionEvent.Click)
+            {
+                throw new InvalidOperationException("Canvas interaction event is invalid.");
+            }
+
+            if (!CanvasInteractionTargetResolves(state, interaction.Target))
+            {
+                throw new InvalidOperationException("Canvas interaction target is invalid.");
+            }
+
+            if (!seen.Add(CanvasInteractionKey(interaction)))
+            {
+                throw new InvalidOperationException(
+                    "Canvas interactions must be unique by target and event."
+                );
+            }
+        }
+
+        foreach (var interaction in pendingInteractions)
+        {
+            if (interaction.Event != InteractionEvent.Click)
+            {
+                throw new InvalidOperationException("Canvas interaction event is invalid.");
+            }
+
+            var target = childIndex is int index
+                ? interaction.Target.Prepend(index)
+                : interaction.Target;
+            if (!CanvasInteractionTargetResolves(state, target))
+            {
+                throw new InvalidOperationException("Canvas interaction target is invalid.");
+            }
+
+            if (!seen.Add(CanvasInteractionKey(target, interaction.Event)))
+            {
+                throw new InvalidOperationException(
+                    "Canvas interactions must be unique by target and event."
+                );
+            }
+        }
+    }
+
+    private static bool CanvasInteractionTargetResolves(CanvasState state, DisplayPath target)
+    {
+        ITerminalRenderNode node = state.Root;
+        foreach (var segment in target.Segments)
+        {
+            if (node is not Element element || segment >= element.Children.Count)
+            {
+                return false;
+            }
+
+            node = element.Children[segment];
+        }
+
+        return node is Element;
+    }
+
+    private static string CanvasInteractionKey(CommittedInteraction interaction) =>
+        $"{PathKey(interaction.Target)}|{interaction.Event}";
+
+    private static string CanvasInteractionKey(DisplayPath target, InteractionEvent @event) =>
+        $"{PathKey(target)}|{@event}";
+
+    private static string PathKey(DisplayPath path) => string.Join("/", path.Segments);
 
     /// <summary>
     /// Enqueues <paramref name="msg"/> to all registered Timeline subscribers.
@@ -1063,14 +1412,15 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
             this._eventSubscribers[key] = writer;
 
             // Initial snapshot order: canvas.snapshot (one per canvas) → timeline.reset → type.declaration(s).
-            foreach (var (canvasName, canvasState) in this._canvasStates)
+            foreach (var (canvasName, projection) in this._canvasProjections)
             {
                 writer.TryWrite(
                     new PadEventMessage.Canvas(
                         CanvasEventMessage.Snapshot(
                             canvasName,
-                            canvasState,
-                            this._interactionStore.GetCanvasInteractions(canvasName)
+                            projection.State,
+                            this._interactionStore.GetCanvasInteractions(canvasName),
+                            projection.Revision
                         )
                     )
                 );

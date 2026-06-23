@@ -54,6 +54,20 @@ public sealed class DuetsPadProtocolTests
         Assert.Equal("myCanvas", messageNamed.Name);
     }
 
+    [Fact]
+    public void Canvas_patch_event_type_is_canvas_patch_and_carries_revisions()
+    {
+        var operation = new InsertChildOperation(DisplayPath.Root, 0, new Text("hello"));
+
+        var message = CanvasEventMessage.Patch("default", 1, 2, [operation], []);
+
+        Assert.Equal(CanvasEventTypes.Patch, message.Type);
+        Assert.Throws<InvalidOperationException>(() => message.State);
+        Assert.Equal(1, message.BaseRevision);
+        Assert.Equal(2, message.Revision);
+        Assert.Same(operation, Assert.Single(message.Operations));
+    }
+
     // Timeline events
 
     [Fact]
@@ -200,6 +214,40 @@ public sealed class DuetsPadProtocolTests
         Assert.Contains("\"event\":\"click\"", json, StringComparison.Ordinal);
         Assert.Contains($"\"handlerId\":\"{handlerId}\"", json, StringComparison.Ordinal);
         Assert.Contains("\"state\":\"stale\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_canvas_full_state_event_emits_revision()
+    {
+        var message = CanvasEventMessage.Replace("default", CanvasState.Empty, [], revision: 3);
+
+        var json = SseSerializer.Serialize(message);
+
+        Assert.Contains("\"revision\":3", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Serializer_canvas_patch_emits_revisions_operations_and_interactions()
+    {
+        var message = CanvasEventMessage.Patch(
+            "default",
+            baseRevision: 3,
+            revision: 4,
+            [new ReplaceTextOperation(new DisplayPath([0]), "new")],
+            []
+        );
+
+        var json = SseSerializer.Serialize(message);
+
+        Assert.Contains($"\"type\":\"{CanvasEventTypes.Patch}\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"baseRevision\":3", json, StringComparison.Ordinal);
+        Assert.Contains("\"revision\":4", json, StringComparison.Ordinal);
+        Assert.Contains("\"operations\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"op\":\"replace-text\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"path\":[0]", json, StringComparison.Ordinal);
+        Assert.Contains("\"value\":\"new\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"interactions\":[]", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"state\"", json, StringComparison.Ordinal);
     }
 
     // Serializer: Timeline events

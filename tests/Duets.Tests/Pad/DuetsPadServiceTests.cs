@@ -995,7 +995,7 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
-    public async Task Canvas_add_produces_canvas_replace_with_child()
+    public async Task Canvas_add_produces_canvas_patch_with_insert_child()
     {
         await RunAsync(
             async (client, prefix) =>
@@ -1017,11 +1017,44 @@ public sealed class DuetsPadServiceTests
                     new StringContent("canvas.add(ui.label(\"hi\"))", Encoding.UTF8, "text/plain")
                 );
 
-                // Next event is canvas.replace with one child.
-                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
-                Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
-                var children = replace.GetProperty("state").GetProperty("children");
-                Assert.Single(children.EnumerateArray());
+                // Next event is canvas.patch with one inserted child.
+                var patch = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
+                Assert.Equal(CanvasEventTypes.Patch, patch.GetProperty("type").GetString());
+                Assert.Equal(0, patch.GetProperty("baseRevision").GetInt64());
+                Assert.Equal(1, patch.GetProperty("revision").GetInt64());
+                var operation = Assert.Single(patch.GetProperty("operations").EnumerateArray());
+                Assert.Equal("insert-child", operation.GetProperty("op").GetString());
+                Assert.Equal(0, operation.GetProperty("index").GetInt32());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Canvas_snapshot_route_returns_current_canvas_revision_and_state()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("canvas.add(ui.label(\"hi\"))", Encoding.UTF8, "text/plain")
+                );
+                evalResponse.EnsureSuccessStatusCode();
+
+                using var snapshotResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/canvas?name=default"
+                );
+                snapshotResponse.EnsureSuccessStatusCode();
+                var snapshot = await snapshotResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+                Assert.Equal(CanvasEventTypes.Snapshot, snapshot.GetProperty("type").GetString());
+                Assert.Equal("default", snapshot.GetProperty("name").GetString());
+                Assert.Equal(1, snapshot.GetProperty("revision").GetInt64());
+                Assert.Single(
+                    snapshot.GetProperty("state").GetProperty("children").EnumerateArray()
+                );
             }
         );
     }
@@ -1061,11 +1094,9 @@ public sealed class DuetsPadServiceTests
                 );
                 evalResponse.EnsureSuccessStatusCode();
 
-                var replace = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
-                Assert.Equal(CanvasEventTypes.Replace, replace.GetProperty("type").GetString());
-                var interaction = Assert.Single(
-                    replace.GetProperty("interactions").EnumerateArray()
-                );
+                var patch = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
+                Assert.Equal(CanvasEventTypes.Patch, patch.GetProperty("type").GetString());
+                var interaction = Assert.Single(patch.GetProperty("interactions").EnumerateArray());
                 var handlerId = interaction.GetProperty("handlerId").GetString();
                 Assert.False(string.IsNullOrWhiteSpace(handlerId));
 
@@ -1209,12 +1240,10 @@ public sealed class DuetsPadServiceTests
                     new StringContent("canvas.add(ui.label(\"a\"))", Encoding.UTF8, "text/plain")
                 );
 
-                // Session A receives a canvas.replace event.
+                // Session A receives a canvas.patch event.
                 var updateA = await ReadNextSseDataAsync(readerA, typePrefix: "canvas.");
-                Assert.Equal(CanvasEventTypes.Replace, updateA.GetProperty("type").GetString());
-                Assert.Single(
-                    updateA.GetProperty("state").GetProperty("children").EnumerateArray()
-                );
+                Assert.Equal(CanvasEventTypes.Patch, updateA.GetProperty("type").GetString());
+                Assert.Single(updateA.GetProperty("operations").EnumerateArray());
 
                 // Session B should receive no data event within a short window.
                 var readBTask = readerB.ReadLineAsync().WaitAsync(TimeSpan.FromMilliseconds(500));

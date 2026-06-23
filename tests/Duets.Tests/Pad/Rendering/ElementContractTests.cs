@@ -163,11 +163,27 @@ public sealed class ElementContractTests
     [InlineData("bad tag")]
     [InlineData("bad<tag")]
     [InlineData("bad/tag")]
+    [InlineData("bad!tag")]
+    [InlineData("1div")]
     public void Element_rejects_invalid_tag_name_syntax(string tag)
     {
         var exception = Assert.Throws<ArgumentException>(() => new Element(tag));
 
         Assert.Contains("Element tag", exception.Message);
+    }
+
+    [Theory]
+    [InlineData("bad attr")]
+    [InlineData("bad/attr")]
+    [InlineData("bad!attr")]
+    [InlineData("1attr")]
+    public void ElementAttributes_reject_invalid_attribute_name_syntax(string name)
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new ElementAttributes(new KeyValuePair<string, string?>(name, "value"))
+        );
+
+        Assert.Contains("Element attribute", exception.Message);
     }
 
     [Fact]

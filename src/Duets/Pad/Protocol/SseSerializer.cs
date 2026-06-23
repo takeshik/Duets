@@ -19,7 +19,6 @@ internal static class SseSerializer
 
     /// <summary>
     /// Serializes a <see cref="CanvasEventMessage"/> to SSE data JSON.
-    /// Canvas events emit <c>{ "type": "&lt;canvas.*&gt;", "state": &lt;element-json&gt; }</c>.
     /// </summary>
     public static string Serialize(CanvasEventMessage m)
     {
@@ -28,14 +27,85 @@ internal static class SseSerializer
             throw new ArgumentNullException(nameof(m));
         }
 
-        return new JsonObject
+        var obj = new JsonObject
         {
             ["type"] = m.Type,
             ["name"] = m.Name,
-            ["state"] = _canvasSerializer.Serialize(m.State),
+            ["revision"] = m.Revision,
             ["interactions"] = SerializeInteractions(m.Interactions),
-        }.ToJsonString();
+        };
+
+        if (m.Type == CanvasEventTypes.Patch)
+        {
+            obj["baseRevision"] = m.BaseRevision;
+            obj["operations"] = SerializePatchOperations(m.Operations);
+        }
+        else
+        {
+            obj["state"] = _canvasSerializer.Serialize(m.State);
+        }
+
+        return obj.ToJsonString();
     }
+
+    private static JsonArray SerializePatchOperations(
+        IReadOnlyList<CanvasPatchOperation> operations
+    )
+    {
+        var array = new JsonArray();
+        foreach (var operation in operations)
+        {
+            array.Add(SerializePatchOperation(operation));
+        }
+
+        return array;
+    }
+
+    private static JsonObject SerializePatchOperation(CanvasPatchOperation operation) =>
+        operation switch
+        {
+            SetAttributeOperation op => new JsonObject
+            {
+                ["op"] = "set-attr",
+                ["path"] = SerializePath(op.Path),
+                ["name"] = op.Name,
+                ["value"] = op.Value is not null ? JsonValue.Create(op.Value) : null,
+            },
+            RemoveAttributeOperation op => new JsonObject
+            {
+                ["op"] = "remove-attr",
+                ["path"] = SerializePath(op.Path),
+                ["name"] = op.Name,
+            },
+            ReplaceTextOperation op => new JsonObject
+            {
+                ["op"] = "replace-text",
+                ["path"] = SerializePath(op.Path),
+                ["value"] = op.Value,
+            },
+            ReplaceNodeOperation op => new JsonObject
+            {
+                ["op"] = "replace-node",
+                ["path"] = SerializePath(op.Path),
+                ["node"] = RenderNodeJsonSerializer.Serialize(op.Node),
+            },
+            RemoveChildOperation op => new JsonObject
+            {
+                ["op"] = "remove-child",
+                ["parentPath"] = SerializePath(op.ParentPath),
+                ["index"] = op.Index,
+            },
+            InsertChildOperation op => new JsonObject
+            {
+                ["op"] = "insert-child",
+                ["parentPath"] = SerializePath(op.ParentPath),
+                ["index"] = op.Index,
+                ["node"] = RenderNodeJsonSerializer.Serialize(op.Node),
+            },
+            _ => throw new InvalidOperationException(
+                $"Unrecognised CanvasPatchOperation type '{operation.GetType().Name}'."
+            ),
+        };
 
     /// <summary>
     /// Serializes a <see cref="TimelineEventMessage"/> to SSE data JSON.

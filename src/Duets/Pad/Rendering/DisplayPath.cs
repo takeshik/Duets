@@ -60,6 +60,19 @@ internal sealed class DisplayPath : IEquatable<DisplayPath>
         return new DisplayPath(next);
     }
 
+    public DisplayPath Append(int segment)
+    {
+        if (segment < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(segment));
+        }
+
+        var next = new int[this.segments.Length + 1];
+        Array.Copy(this.segments, next, this.segments.Length);
+        next[^1] = segment;
+        return new DisplayPath(next);
+    }
+
     public bool Equals(DisplayPath? other) =>
         ReferenceEquals(this, other)
         || (other is not null && this.segments.SequenceEqual(other.segments));

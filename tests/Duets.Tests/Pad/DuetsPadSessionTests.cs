@@ -112,6 +112,25 @@ public sealed class DuetsPadSessionTests
         }
     }
 
+    private sealed class DuplicateCanvasInteractionRenderer : IObjectRenderer
+    {
+        public bool CanRender(object value) => value is "duplicate-interactions";
+
+        public DisplayContent Render(object value, RenderContext context)
+        {
+            var body = new Element(
+                "button",
+                new ElementAttributes(new KeyValuePair<string, string?>("type", "button")),
+                new ElementChildren(new Text("duplicate"))
+            );
+            var interactions = new PendingInteractions([
+                new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, () => { }),
+                new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, () => { }),
+            ]);
+            return new DisplayContent(body, interactions);
+        }
+    }
+
     [Fact]
     public async Task CompleteTaggedTemplate_timeout_then_dispose_does_not_cancel_disposed_cts()
     {
@@ -472,12 +491,12 @@ public sealed class DuetsPadSessionTests
         );
 
         Assert.True(eval.Ok, eval.Error);
-        var replace = await ReadCanvasEventAsync(
+        var update = await ReadCanvasEventAsync(
             channel.Reader,
             TestContext.Current.CancellationToken
         );
-        Assert.Equal(CanvasEventTypes.Replace, replace.Type);
-        var interaction = Assert.Single(replace.Interactions);
+        Assert.Equal(CanvasEventTypes.Patch, update.Type);
+        var interaction = Assert.Single(update.Interactions);
         Assert.Equal([0], interaction.Target.Segments);
         Assert.Equal(InteractionEvent.Click, interaction.Event);
         Assert.Equal(InteractionState.Live, interaction.State);
@@ -501,11 +520,11 @@ public sealed class DuetsPadSessionTests
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
         Assert.True(eval.Ok, eval.Error);
-        var replace = await ReadCanvasEventAsync(
+        var update = await ReadCanvasEventAsync(
             channel.Reader,
             TestContext.Current.CancellationToken
         );
-        var handlerId = Assert.Single(replace.Interactions).HandlerId;
+        var handlerId = Assert.Single(update.Interactions).HandlerId;
 
         await session.EvaluateAsync("canvas.clear()");
         var invoke = await session.InvokeInteractionAsync(handlerId);
@@ -526,11 +545,11 @@ public sealed class DuetsPadSessionTests
 
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Run", () => {}))""");
         Assert.True(eval.Ok, eval.Error);
-        var replace = await ReadCanvasEventAsync(
+        var update = await ReadCanvasEventAsync(
             channel.Reader,
             TestContext.Current.CancellationToken
         );
-        var handlerId = Assert.Single(replace.Interactions).HandlerId;
+        var handlerId = Assert.Single(update.Interactions).HandlerId;
 
         await session.EvaluateAsync("canvas.clear()");
         var invoke = await session.InvokeInteractionAsync(handlerId);
@@ -906,7 +925,7 @@ public sealed class DuetsPadSessionTests
     // SSE subscriber: initial snapshot + update
 
     [Fact]
-    public async Task Canvas_subscriber_receives_canvas_snapshot_on_subscribe_and_canvas_replace_after_mutation()
+    public async Task Canvas_subscriber_receives_canvas_snapshot_on_subscribe_and_canvas_patch_after_mutation()
     {
         using var session = await CreatePadSessionAsync();
 
@@ -919,18 +938,85 @@ public sealed class DuetsPadSessionTests
             TestContext.Current.CancellationToken
         );
         Assert.Equal(CanvasEventTypes.Snapshot, msg1.Type);
+        Assert.Equal(0, msg1.Revision);
         Assert.Empty(msg1.State.Root.Children);
 
         // Trigger a canvas mutation.
         await session.EvaluateAsync("""canvas.add(ui.label("test"))""");
 
-        // Next canvas message: canvas.replace reflecting the addition.
+        // Next canvas message: canvas.patch reflecting the addition.
         var msg2 = await ReadCanvasEventAsync(
             channel.Reader,
             TestContext.Current.CancellationToken
         );
-        Assert.Equal(CanvasEventTypes.Replace, msg2.Type);
-        Assert.Single(msg2.State.Root.Children);
+        Assert.Equal(CanvasEventTypes.Patch, msg2.Type);
+        Assert.Equal(0, msg2.BaseRevision);
+        Assert.Equal(1, msg2.Revision);
+        var operation = Assert.IsType<InsertChildOperation>(Assert.Single(msg2.Operations));
+        Assert.Equal(0, operation.Index);
+    }
+
+    [Fact]
+    public async Task Named_canvas_first_mutation_emits_replace_at_revision_one()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync("""canvases.get("secondary").add(ui.label("test"))""");
+
+        var msg = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+        Assert.Equal("secondary", msg.Name);
+        Assert.Equal(CanvasEventTypes.Replace, msg.Type);
+        Assert.Equal(1, msg.Revision);
+        Assert.Single(msg.State.Root.Children);
+    }
+
+    [Fact]
+    public async Task Canvas_no_op_mutation_does_not_emit_canvas_event()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync("canvas.clear()");
+
+        await Assert.ThrowsAsync<TimeoutException>(async () =>
+            await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken)
+        );
+    }
+
+    [Fact]
+    public async Task Canvas_duplicate_interaction_candidate_does_not_mutate_projection()
+    {
+        using var session = await CreatePadSessionAsync([new DuplicateCanvasInteractionRenderer()]);
+
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        var result = await session.EvaluateAsync("""canvas.set("duplicate-interactions")""");
+
+        Assert.True(result.Ok);
+        await Assert.ThrowsAsync<TimeoutException>(async () =>
+            await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken)
+        );
+
+        Assert.True(session.TryGetCanvasSnapshot("default", out var resync));
+        Assert.Equal(0, resync.Revision);
+        Assert.Empty(resync.State.Root.Children);
+        Assert.Empty(resync.Interactions);
+
+        var entry = Assert.Single(session.Timeline.State);
+        Assert.Equal("render-error", entry.Reason);
+        var body = Assert.IsType<Text>(entry.Body);
+        Assert.Contains("Canvas projection rejected:", body.Value, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1453,7 +1539,7 @@ public sealed class DuetsPadSessionTests
         var eval = await session.EvaluateAsync("""canvas.add(ui.button("Go", () => {}))""");
         Assert.True(eval.Ok, eval.Error);
 
-        // Fish out the handler id from the canvas.replace event.
+        // Fish out the handler id from the Canvas mutation event.
         while (channel.Reader.TryRead(out var msg))
         {
             if (msg is PadEventMessage.Canvas c && c.Message.Interactions.Count > 0)
