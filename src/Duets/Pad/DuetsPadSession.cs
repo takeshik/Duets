@@ -73,7 +73,7 @@ namespace Duets.Pad;
 /// and a DELETE or idle-eviction of the session affects all subscribers simultaneously.
 /// </para>
 /// </remarks>
-internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSurface
+internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSurface, ISlotHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -444,6 +444,163 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         {
             // Absolute last resort: swallow so eval is never disrupted.
         }
+    }
+
+    /// <summary>
+    /// Re-renders <paramref name="slot"/>'s current content and updates every Canvas and Timeline
+    /// location where the slot is currently placed. Called synchronously from the eval call stack
+    /// when script assigns <c>slot.content</c>; must not acquire <c>_evalSemaphore</c>. Never throws.
+    /// </summary>
+    void ISlotHost.UpdateSlot(DisplaySlot slot)
+    {
+        if (slot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // An unplaced slot (assignment before canvas.add/dump) has nothing to project: the new
+            // value is already recorded on the handle. Skip rendering entirely so an unplaced
+            // assignment cannot do wasted work or surface a spurious render-error.
+            lock (this._stateLock)
+            {
+                if (!this.IsSlotPlaced(slot.Id))
+                {
+                    return;
+                }
+            }
+
+            var (content, isError) = this.TryRenderContent(slot.Content, this.DumpOptions);
+            if (isError)
+            {
+                this.AppendTimelineEntry("render-error", content);
+                return;
+            }
+
+            lock (this._stateLock)
+            {
+                this.UpdateSlotInCanvases(slot.Id, content);
+                this.UpdateSlotInTimeline(slot.Id, content);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            this.AppendCanvasProjectionError(ex);
+        }
+        catch
+        {
+            // Swallow — a slot update must never disrupt the eval.
+        }
+    }
+
+    /// <summary>
+    /// Replaces the marked subtree for <paramref name="slotId"/> in every canvas that currently
+    /// contains it and broadcasts the resulting mutation. Must be called while <c>_stateLock</c>
+    /// is held.
+    /// </summary>
+    private void UpdateSlotInCanvases(Guid slotId, DisplayContent content)
+    {
+        foreach (var name in this._canvasProjections.Keys.ToList())
+        {
+            var projection = this._canvasProjections[name];
+            var markers = SlotMarker.Find(projection.State.Root, slotId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newRoot = projection.State.Root;
+            foreach (var markerPath in markers)
+            {
+                newRoot = (Element)SlotMarker.ReplaceContent(newRoot, markerPath, content.Body);
+            }
+
+            var newState = new CanvasState(newRoot);
+            if (newState.Equals(projection.State) && content.Interactions.Count == 0)
+            {
+                // Identical non-interactive content: a true no-op. Skip so reassigning the same
+                // value does not emit a phantom empty-operation patch or advance the revision.
+                continue;
+            }
+
+            var plan = this._interactionStore.PrepareReplaceCanvasSlots(
+                name,
+                [.. markers.Select(m => new SlotInteractionReplacement(m, content.Interactions))]
+            );
+            this.CommitCanvasMutation(
+                name,
+                existed: true,
+                projection,
+                newState,
+                projection.Revision + 1,
+                plan
+            );
+        }
+    }
+
+    /// <summary>
+    /// Replaces the marked subtree for <paramref name="slotId"/> in every Timeline entry that
+    /// currently contains it and broadcasts a <c>timeline.update</c> for each. Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private void UpdateSlotInTimeline(Guid slotId, DisplayContent content)
+    {
+        for (var i = 0; i < this._timelineState.Count; i++)
+        {
+            var entry = this._timelineState[i];
+            var markers = SlotMarker.Find(entry.Body, slotId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newBody = entry.Body;
+            foreach (var markerPath in markers)
+            {
+                newBody = SlotMarker.ReplaceContent(newBody, markerPath, content.Body);
+            }
+
+            if (newBody.Equals(entry.Body) && content.Interactions.Count == 0)
+            {
+                // Identical non-interactive content: skip the redundant timeline.update.
+                continue;
+            }
+
+            var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
+            this._timelineState = this._timelineState.Replace(newEntry);
+            var interactions = this._interactionStore.ReplaceTimelineSlots(
+                entry.Id,
+                [.. markers.Select(m => new SlotInteractionReplacement(m, content.Interactions))]
+            );
+            this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
+        }
+    }
+
+    /// <summary>
+    /// Returns whether the slot identified by <paramref name="slotId"/> currently has at least one
+    /// marker placement in any canvas projection or Timeline entry. Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private bool IsSlotPlaced(Guid slotId)
+    {
+        foreach (var projection in this._canvasProjections.Values)
+        {
+            if (SlotMarker.Find(projection.State.Root, slotId).Count > 0)
+            {
+                return true;
+            }
+        }
+
+        foreach (var entry in this._timelineState)
+        {
+            if (SlotMarker.Find(entry.Body, slotId).Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Public eval entry

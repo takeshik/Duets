@@ -9,12 +9,32 @@ namespace Duets.Pad;
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
 /// <see cref="Stack"/>, <see cref="Button"/>, Tabler components, and <see cref="Table"/>.
 /// </summary>
-internal sealed class UIGlobal(DisplayRenderer renderer, DumpOptions dumpOptions)
+internal sealed class UIGlobal(
+    DisplayRenderer renderer,
+    DumpOptions dumpOptions,
+    ISlotHost? slotHost = null
+)
 {
     private readonly DisplayRenderer _renderer =
         renderer ?? throw new ArgumentNullException(nameof(renderer));
     private readonly DumpOptions _dumpOptions =
         dumpOptions ?? throw new ArgumentNullException(nameof(dumpOptions));
+
+    // Null only in rendering-focused unit tests that never call Slot; production always supplies it.
+    private readonly ISlotHost? _slotHost = slotHost;
+
+    /// <summary>
+    /// Returns a mutable <see cref="DisplaySlot"/> whose <c>content</c> can be reassigned to update
+    /// the rendered output in place. (JS: <c>ui.slot</c>)
+    /// </summary>
+    public DisplaySlot Slot(object? initial = null) =>
+        new(
+            this._slotHost
+                ?? throw new InvalidOperationException(
+                    "ui.slot is not available because no slot host was provided."
+                ),
+            initial
+        );
 
     /// <summary>
     /// Returns a <see cref="Rendering.RawHtml"/> node. This is the only raw-HTML escape hatch.

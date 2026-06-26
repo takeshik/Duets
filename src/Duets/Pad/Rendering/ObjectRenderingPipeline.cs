@@ -56,6 +56,18 @@ internal class DisplayRenderer(IReadOnlyList<IObjectRenderer> renderers)
             return DisplayContent.FromNode(node);
         }
 
+        // Step 4.5: mutable slot — render its current content and wrap it in a locatable marker.
+        // Intercepted before cycle detection and the renderer loop so the slot handle itself is
+        // never reflected over; self-referential content is bounded by the depth limit (step 2).
+        if (value is DisplaySlot slot)
+        {
+            var child = ctx.RenderChild(slot.Content);
+            return new DisplayContent(
+                SlotMarker.Wrap(slot.Id, child.Body),
+                child.Interactions.PrependPath(0)
+            );
+        }
+
         // Step 5: cycle detection — only for reference types (not strings, not value types)
         var isRef = value is not string && !value.GetType().IsValueType;
         if (isRef)

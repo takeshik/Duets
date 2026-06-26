@@ -73,6 +73,33 @@ internal sealed class DisplayPath : IEquatable<DisplayPath>
         return new DisplayPath(next);
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when this path is equal to or descends from
+    /// <paramref name="prefix"/> (i.e. <paramref name="prefix"/> is a leading segment run).
+    /// </summary>
+    public bool StartsWith(DisplayPath prefix)
+    {
+        if (prefix is null)
+        {
+            throw new ArgumentNullException(nameof(prefix));
+        }
+
+        if (prefix.segments.Length > this.segments.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < prefix.segments.Length; i++)
+        {
+            if (this.segments[i] != prefix.segments[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public bool Equals(DisplayPath? other) =>
         ReferenceEquals(this, other)
         || (other is not null && this.segments.SequenceEqual(other.segments));

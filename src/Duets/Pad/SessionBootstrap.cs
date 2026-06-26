@@ -49,7 +49,7 @@ internal static class SessionBootstrap
         var canvasesGlobal = new CanvasesGlobal(padSession);
         duetsSession.SetValue("canvases", canvasesGlobal);
         duetsSession.SetValue("canvas", canvasesGlobal.Get("default"));
-        duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions));
+        duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions, padSession));
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
         // Register per-session d.ts declarations for canvases, canvas, ui, dump, and pad.
@@ -78,9 +78,20 @@ internal static class SessionBootstrap
                 get(name: string): DuetsPadCanvas;
             };
 
+            /**
+             * A mutable display handle. Place it once (e.g. `canvas.add(slot)`) and reassign
+             * `slot.content` to update the rendered output in place, from anywhere a later run reaches.
+             */
+            interface DuetsPadSlot {
+                /** The current content. Reassigning re-renders every placement of this slot in place. */
+                content: any;
+            }
+
             declare const ui: {
                 /** Returns a raw-HTML escape-hatch node (use sparingly). */
                 rawHtml(content: string): any;
+                /** Returns a mutable slot whose `content` can be reassigned to update the display in place. */
+                slot(initial?: any): DuetsPadSlot;
                 /** Builds a structured element node. */
                 element(tag: string, attributes?: any, children?: any[]): any;
                 /** Returns a plain text node. */

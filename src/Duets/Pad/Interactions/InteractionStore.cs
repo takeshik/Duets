@@ -132,6 +132,105 @@ internal sealed class InteractionStore
         new(name, [], this.GetCanvasInteractions(name), replaceExisting: true);
 
     /// <summary>
+    /// Prepares a slot-update commit for the canvas named <paramref name="name"/>: interactions
+    /// under each replacement's marker path are dropped (released on commit), the new content's
+    /// interactions are registered rebased under <c>markerPath + [0]</c>, and all other interactions
+    /// are preserved.
+    /// </summary>
+    public CanvasInteractionCommitPlan PrepareReplaceCanvasSlots(
+        string name,
+        IReadOnlyList<SlotInteractionReplacement> replacements
+    )
+    {
+        var (kept, replaced, committed, registrations) = this.PlanSlotReplacements(
+            this.GetCanvasInteractions(name),
+            replacements
+        );
+        return new CanvasInteractionCommitPlan(
+            name,
+            [.. kept, .. committed],
+            replaced,
+            registrations
+        );
+    }
+
+    /// <summary>
+    /// Applies a slot update to the Timeline entry with id <paramref name="entryId"/>: drops and
+    /// releases interactions under each replacement's marker path, commits the new content's
+    /// interactions rebased under <c>markerPath + [0]</c>, preserves all others, and returns the
+    /// resulting interaction set for the entry.
+    /// </summary>
+    public IReadOnlyList<CommittedInteraction> ReplaceTimelineSlots(
+        long entryId,
+        IReadOnlyList<SlotInteractionReplacement> replacements
+    )
+    {
+        var existing = this._timelineInteractions.TryGetValue(entryId, out var current)
+            ? current
+            : [];
+        var (kept, replaced, committed, registrations) = this.PlanSlotReplacements(
+            existing,
+            replacements
+        );
+
+        foreach (var registration in registrations)
+        {
+            this._registry.Commit(registration);
+        }
+
+        this.Release(replaced);
+
+        IReadOnlyList<CommittedInteraction> result = [.. kept, .. committed];
+        if (result.Count > 0)
+        {
+            this._timelineInteractions[entryId] = result;
+        }
+        else
+        {
+            this._timelineInteractions.Remove(entryId);
+        }
+
+        return result;
+    }
+
+    private (
+        List<CommittedInteraction> Kept,
+        List<CommittedInteraction> Replaced,
+        List<CommittedInteraction> Committed,
+        List<PreparedInteractionRegistration> Registrations
+    ) PlanSlotReplacements(
+        IReadOnlyList<CommittedInteraction> existing,
+        IReadOnlyList<SlotInteractionReplacement> replacements
+    )
+    {
+        var kept = new List<CommittedInteraction>();
+        var replaced = new List<CommittedInteraction>();
+        foreach (var interaction in existing)
+        {
+            if (replacements.Any(r => interaction.Target.StartsWith(r.MarkerPath)))
+            {
+                replaced.Add(interaction);
+            }
+            else
+            {
+                kept.Add(interaction);
+            }
+        }
+
+        var committed = new List<CommittedInteraction>();
+        var registrations = new List<PreparedInteractionRegistration>();
+        foreach (var replacement in replacements)
+        {
+            var prefix = new List<int>(replacement.MarkerPath.Segments) { 0 };
+            var prepared = this.Prepare(replacement.Pending, prefix);
+            committed.AddRange(prepared.Interactions);
+            registrations.AddRange(prepared.Registrations);
+        }
+
+        return (kept, replaced, committed, registrations);
+    }
+
+    /// <summary>
     /// Publishes the prepared handlers in <paramref name="plan"/>, updates the committed canvas
     /// interaction set, and releases replaced handlers.
     /// </summary>
@@ -234,7 +333,22 @@ internal sealed class InteractionStore
         return prepared.Interactions;
     }
 
-    private PreparedInteractions Prepare(PendingInteractions interactions, int? childIndex)
+    private PreparedInteractions Prepare(PendingInteractions interactions, int? childIndex) =>
+        this.Prepare(
+            interactions,
+            interaction =>
+                childIndex is int index ? interaction.Target.Prepend(index) : interaction.Target
+        );
+
+    private PreparedInteractions Prepare(
+        PendingInteractions interactions,
+        IReadOnlyList<int> prefix
+    ) => this.Prepare(interactions, interaction => interaction.Target.Prepend(prefix));
+
+    private PreparedInteractions Prepare(
+        PendingInteractions interactions,
+        Func<PendingInteraction, DisplayPath> rebaseTarget
+    )
     {
         if (interactions.Count == 0)
         {
@@ -245,9 +359,7 @@ internal sealed class InteractionStore
         var registrations = new List<PreparedInteractionRegistration>(interactions.Count);
         foreach (var interaction in interactions)
         {
-            var target = childIndex is int index
-                ? interaction.Target.Prepend(index)
-                : interaction.Target;
+            var target = rebaseTarget(interaction);
             var registration = this._registry.Prepare(interaction.Handler);
             registrations.Add(registration);
             committed.Add(
@@ -275,6 +387,15 @@ internal sealed class InteractionStore
         public static PreparedInteractions Empty { get; } = new([], []);
     }
 }
+
+/// <summary>
+/// Describes one slot replacement: the marker path in the surface tree and the pending
+/// interactions produced by the slot's freshly rendered content (relative to the content root).
+/// </summary>
+internal sealed record SlotInteractionReplacement(
+    DisplayPath MarkerPath,
+    PendingInteractions Pending
+);
 
 internal sealed record CanvasInteractionCommitPlan
 {
