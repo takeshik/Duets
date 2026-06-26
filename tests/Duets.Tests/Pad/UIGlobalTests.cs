@@ -51,6 +51,148 @@ public sealed class UIGlobalTests
         Assert.Equal("my label", (string?)json["children"]![0]!["value"]);
     }
 
+    // Positive: Tabler components
+
+    [Fact]
+    public void Badge_returns_tabler_badge_with_options()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Badge(
+            "new",
+            new Dictionary<string, object?>
+            {
+                ["color"] = "green",
+                ["pill"] = true,
+                ["outline"] = true,
+            }
+        );
+
+        var node = Assert.IsType<Element>(result.Body);
+        Assert.Equal("span", node.Tag);
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal(
+            "badge bg-green-lt badge-pill badge-outline",
+            (string?)json["attributes"]!["class"]
+        );
+        Assert.Equal("new", (string?)json["children"]![0]!["value"]);
+    }
+
+    [Fact]
+    public void Alert_returns_tabler_alert_with_title_and_role()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Alert(
+            "Saved",
+            new Dictionary<string, object?> { ["variant"] = "success", ["title"] = "Done" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("alert alert-success", (string?)json["attributes"]!["class"]);
+        Assert.Equal("alert", (string?)json["attributes"]!["role"]);
+        Assert.Equal("alert-title", (string?)json["children"]![0]!["attributes"]!["class"]);
+        Assert.Equal("Done", (string?)json["children"]![0]!["children"]![0]!["value"]);
+        Assert.Equal("Saved", (string?)json["children"]![1]!["value"]);
+    }
+
+    [Fact]
+    public void Spinner_returns_tabler_spinner_with_options()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Spinner(
+            new Dictionary<string, object?> { ["color"] = "blue", ["small"] = true }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal(
+            "spinner-border text-blue spinner-border-sm",
+            (string?)json["attributes"]!["class"]
+        );
+        Assert.Equal("status", (string?)json["attributes"]!["role"]);
+        Assert.Empty(json["children"]!.AsArray());
+    }
+
+    [Fact]
+    public void Status_returns_tabler_status_with_dot_and_text()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Status(
+            "Online",
+            new Dictionary<string, object?> { ["color"] = "green", ["animated"] = true }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("span", (string?)json["tag"]);
+        Assert.Equal("status status-green", (string?)json["attributes"]!["class"]);
+        Assert.Equal("span", (string?)json["children"]![0]!["tag"]);
+        Assert.Equal(
+            "status-dot status-dot-animated",
+            (string?)json["children"]![0]!["attributes"]!["class"]
+        );
+        Assert.Equal("Online", (string?)json["children"]![1]!["value"]);
+    }
+
+    [Fact]
+    public void Icon_returns_tabler_icon_with_size_and_color()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Icon(
+            "alert-triangle",
+            new Dictionary<string, object?> { ["size"] = 24, ["color"] = "warning" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("i", (string?)json["tag"]);
+        Assert.Equal("ti ti-alert-triangle text-warning", (string?)json["attributes"]!["class"]);
+        Assert.Equal("font-size: 24px", (string?)json["attributes"]!["style"]);
+        Assert.Empty(json["children"]!.AsArray());
+    }
+
+    [Fact]
+    public void Progress_returns_tabler_progress_with_patchable_bar_attributes()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Progress(
+            42.5,
+            new Dictionary<string, object?> { ["color"] = "green", ["label"] = "42.5%" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("progress", (string?)json["attributes"]!["class"]);
+
+        var bar = json["children"]![0];
+        Assert.Equal("div", (string?)bar!["tag"]);
+        Assert.Equal("progress-bar bg-green", (string?)bar["attributes"]!["class"]);
+        Assert.Equal("width: 42.5%", (string?)bar["attributes"]!["style"]);
+        Assert.Equal("progressbar", (string?)bar["attributes"]!["role"]);
+        Assert.Equal("42.5", (string?)bar["attributes"]!["aria-valuenow"]);
+        Assert.Equal("0", (string?)bar["attributes"]!["aria-valuemin"]);
+        Assert.Equal("100", (string?)bar["attributes"]!["aria-valuemax"]);
+        Assert.Equal("42.5%", (string?)bar["children"]![0]!["value"]);
+    }
+
+    [Fact]
+    public void Alert_without_options_defaults_to_info_without_title()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Alert("Heads up");
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("alert alert-info", (string?)json["attributes"]!["class"]);
+        Assert.Single(json["children"]!.AsArray());
+        Assert.Equal("Heads up", (string?)json["children"]![0]!["value"]);
+    }
+
     // Positive: Stack
 
     [Fact]
@@ -360,6 +502,73 @@ public sealed class UIGlobalTests
         var attrs = new Dictionary<string, object?> { ["srcdoc"] = "<p>html</p>" };
 
         Assert.Throws<ArgumentException>(() => ui.Element("div", attrs));
+    }
+
+    // Negative: Tabler components
+
+    [Fact]
+    public void Badge_with_null_text_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentNullException>(() => ui.Badge(null!));
+    }
+
+    [Fact]
+    public void Alert_with_invalid_variant_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Alert("Saved", new Dictionary<string, object?> { ["variant"] = "primary" })
+        );
+        Assert.Contains("variant", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Spinner_with_non_object_options_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Spinner(42));
+        Assert.Equal("options", ex.ParamName);
+    }
+
+    [Fact]
+    public void Icon_with_null_name_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentNullException>(() => ui.Icon(null!));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public void Progress_with_out_of_range_value_throws(double value)
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => ui.Progress(value));
+        Assert.Equal("value", ex.ParamName);
+    }
+
+    [Fact]
+    public void Progress_with_null_value_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Progress(null));
+        Assert.Equal("value", ex.ParamName);
+    }
+
+    [Fact]
+    public void Progress_with_string_value_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Progress("50"));
+        Assert.Equal("value", ex.ParamName);
     }
 
     // Negative: Table

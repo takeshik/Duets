@@ -87,6 +87,18 @@ internal static class SessionBootstrap
                 text(value: string): any;
                 /** Returns a <span class="duetspad-label"> wrapping value. */
                 label(value: string): any;
+                /** Returns a Tabler <span class="badge"> wrapping text. */
+                badge(text: string, options?: { color?: string; pill?: boolean; outline?: boolean }): any;
+                /** Returns a Tabler alert with an optional title. */
+                alert(message: string, options?: { variant?: "success" | "danger" | "warning" | "info"; title?: string }): any;
+                /** Returns a Tabler spinner. */
+                spinner(options?: { color?: string; small?: boolean }): any;
+                /** Returns a Tabler status indicator wrapping text. */
+                status(text: string, options?: { color?: string; animated?: boolean }): any;
+                /** Returns a Tabler icon by icon name, for example "check" or "alert-triangle". */
+                icon(name: string, options?: { size?: number; color?: string }): any;
+                /** Returns a Tabler progress bar for a value between 0 and 100. */
+                progress(value: number, options?: { color?: string; label?: string }): any;
                 /** Returns a <div class="duetspad-stack"> containing rendered children. */
                 stack(children?: any[]): any;
                 /** Returns a button with a click handler. */
