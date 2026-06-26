@@ -867,6 +867,12 @@ animates smoothly via its own CSS
 transition. The patch protocol is a projection-layer decision; it does not
 constrain the component authoring API, which remains a separate concern.
 
+How a value-changing piece of content *locates its place* in the projected state
+so it can be updated after the fact — as opposed to *how the change is projected*,
+decided here — is a separate decision recorded in
+[ADR-46](46_placement-discovery-for-mutable-projected-content.md); `ui.slot` is
+its first consumer.
+
 ## Consequences
 
 ### Positive

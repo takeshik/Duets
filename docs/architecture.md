@@ -33,6 +33,8 @@ each `canvas.patch` advances the revision by exactly one (contiguous) and carrie
 the browser applies patches with preflight-then-mutate atomicity; and canvas-scoped resync uses the
 same snapshot payload shape when a gap or malformed event is detected ([ADR-45](decisions/45_duetspad-canvas-incremental-patch-protocol.md)).
 
+Mutable content that updates in place (currently the `ui.slot` handle: a `DisplaySlot` whose `content` can be reassigned) locates its placements by **marker search over authoritative state** rather than a maintained placement index ([ADR-46](decisions/46_placement-discovery-for-mutable-projected-content.md)). Such content renders as a `data-duetspad-slot` marker element; an update searches every `CanvasState` tree and Timeline entry body for the marker, replaces the marked subtree, and re-projects via the existing ADR-45 Canvas projection path (a `canvas.patch`, or a full replace when the patch would not be smaller) and the ADR-36 `timeline.update` path, rebasing any interactions inside it. Identity lives on the handle, so render nodes stay immutable.
+
 ### Duets.Jint
 
 The Jint integration package provides the Jint-backed runtime implementation
