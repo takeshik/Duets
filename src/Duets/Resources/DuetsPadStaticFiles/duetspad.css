@@ -795,6 +795,10 @@ html[data-bs-theme="light"] .immediate-console {
     gap: 5px;
 }
 
+.duetspad-stack-horizontal {
+    flex-direction: row;
+}
+
 /* View mode: Tabs — the bar is a Tabler .nav.nav-tabs; we only toggle its
    visibility and give it the surface background + density. */
 .workspace-tabbar {

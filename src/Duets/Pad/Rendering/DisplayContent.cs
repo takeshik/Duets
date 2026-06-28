@@ -10,6 +10,10 @@ public sealed record DisplayContent
         new KeyValuePair<string, string?>("class", "duetspad-stack")
     );
 
+    private static readonly ElementAttributes StackHorizontalAttributes = new(
+        new KeyValuePair<string, string?>("class", "duetspad-stack duetspad-stack-horizontal")
+    );
+
     private static readonly RenderTreeReducer Reducer = new();
 
     public DisplayContent(ITerminalRenderNode body)
@@ -154,18 +158,213 @@ public sealed record DisplayContent
         );
     }
 
+    /// <summary>
+    /// Builds a Bootstrap/Tabler grid row container.
+    /// </summary>
+    public static DisplayContent Row(
+        IEnumerable<DisplayContent> children,
+        RowOptions? options = null
+    )
+    {
+        options ??= new RowOptions();
+        return FromElement("div", BuildRowAttributes(options), children);
+    }
+
+    /// <summary>
+    /// Builds a Bootstrap/Tabler grid column.
+    /// </summary>
+    public static DisplayContent Col(
+        IEnumerable<DisplayContent> children,
+        ColOptions? options = null
+    )
+    {
+        options ??= new ColOptions();
+        return FromElement("div", BuildColAttributes(options), children);
+    }
+
+    /// <summary>
+    /// Builds a horizontal divider. When <see cref="DividerOptions.Text"/> is set,
+    /// renders as Tabler's labeled divider; otherwise a plain <c>&lt;hr&gt;</c>.
+    /// </summary>
+    public static DisplayContent Divider(DividerOptions? options = null)
+    {
+        options ??= new DividerOptions();
+        if (!string.IsNullOrWhiteSpace(options.Text))
+        {
+            return new DisplayContent(
+                new Element(
+                    "div",
+                    BuildLabeledDividerAttributes(options),
+                    new ElementChildren(new Text(options.Text))
+                )
+            );
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Color))
+        {
+            return new DisplayContent(
+                new Element("hr", BuildDividerAttributes(options), ElementChildren.Empty)
+            );
+        }
+
+        return new DisplayContent(
+            new Element("hr", ElementAttributes.Empty, ElementChildren.Empty)
+        );
+    }
+
     public static DisplayContent Element(
         string tag,
         ElementAttributes? attributes = null,
         IEnumerable<DisplayContent>? children = null
     ) => FromElement(tag, attributes ?? ElementAttributes.Empty, children ?? []);
 
-    public static DisplayContent Stack(IEnumerable<DisplayContent> children) =>
-        FromElement(
+    public static DisplayContent Stack(
+        IEnumerable<DisplayContent> children,
+        StackOptions? options = null
+    )
+    {
+        var direction = options?.Direction;
+        if (direction is not (null or "vertical" or "horizontal"))
+        {
+            throw new ArgumentException(
+                "Stack direction must be \"vertical\" or \"horizontal\".",
+                nameof(options)
+            );
+        }
+
+        var attributes = direction == "horizontal" ? StackHorizontalAttributes : StackAttributes;
+        return FromElement(
             "div",
-            StackAttributes,
+            attributes,
             children ?? throw new ArgumentNullException(nameof(children))
         );
+    }
+
+    /// <summary>
+    /// Builds a Tabler card component.
+    /// </summary>
+    public static DisplayContent Card(
+        IEnumerable<DisplayContent> children,
+        CardOptions? options = null
+    )
+    {
+        options ??= new CardOptions();
+        var parts = new List<DisplayContent>();
+
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            var headerTitle = new Element(
+                "h3",
+                new ElementAttributes(new KeyValuePair<string, string?>("class", "card-title")),
+                new ElementChildren(new Text(options.Title))
+            );
+            parts.Add(
+                new DisplayContent(
+                    new Element(
+                        "div",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>("class", "card-header")
+                        ),
+                        new ElementChildren(headerTitle)
+                    )
+                )
+            );
+        }
+
+        parts.Add(
+            FromElement(
+                "div",
+                new ElementAttributes(new KeyValuePair<string, string?>("class", "card-body")),
+                children
+            )
+        );
+
+        if (!string.IsNullOrWhiteSpace(options.Footer))
+        {
+            parts.Add(
+                new DisplayContent(
+                    new Element(
+                        "div",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>("class", "card-footer")
+                        ),
+                        new ElementChildren(new Text(options.Footer))
+                    )
+                )
+            );
+        }
+
+        return FromElement("div", BuildCardAttributes(options), parts);
+    }
+
+    /// <summary>
+    /// Builds a URL link element.
+    /// </summary>
+    public static DisplayContent Link(string text, string url, LinkOptions? options = null)
+    {
+        if (text is null)
+        {
+            throw new ArgumentNullException(nameof(text));
+        }
+
+        if (url is null)
+        {
+            throw new ArgumentNullException(nameof(url));
+        }
+
+        // Security invariant: link URLs render into an href and open with
+        // target="_blank". Block the schemes that can execute script or smuggle
+        // active content in that context (javascript:, vbscript:, data:). This is
+        // the single enforcement point for ui.link URL safety.
+        var scheme = url.TrimStart();
+        if (
+            scheme.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase)
+            || scheme.StartsWith("vbscript:", StringComparison.OrdinalIgnoreCase)
+            || scheme.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new ArgumentException(
+                "javascript:, vbscript:, and data: URLs are not allowed.",
+                nameof(url)
+            );
+        }
+
+        options ??= new LinkOptions();
+        return new DisplayContent(
+            new Element(
+                "a",
+                BuildUrlLinkAttributes(url, options),
+                new ElementChildren(new Text(text))
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds an action link element with a click handler.
+    /// </summary>
+    public static DisplayContent Link(string text, Action handler, LinkOptions? options = null)
+    {
+        if (text is null)
+        {
+            throw new ArgumentNullException(nameof(text));
+        }
+
+        if (handler is null)
+        {
+            throw new ArgumentNullException(nameof(handler));
+        }
+
+        options ??= new LinkOptions();
+        var body = new Element(
+            "a",
+            BuildActionLinkAttributes(options),
+            new ElementChildren(new Text(text))
+        );
+        var interactions = new PendingInteractions([
+            new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, handler),
+        ]);
+        return new DisplayContent(body, interactions);
+    }
 
     public static DisplayContent Button(string label, Action handler, ButtonOptions? options = null)
     {
@@ -199,6 +398,33 @@ public sealed record DisplayContent
             childList.Select((child, index) => child.Interactions.PrependPath(index))
         );
         return new DisplayContent(body, interactions);
+    }
+
+    private static ElementAttributes BuildUrlLinkAttributes(string url, LinkOptions options)
+    {
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new("href", url),
+            new("target", "_blank"),
+            new("rel", "noopener noreferrer"),
+        };
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            attributes.Add(new KeyValuePair<string, string?>("title", options.Title));
+        }
+
+        return new ElementAttributes(attributes);
+    }
+
+    private static ElementAttributes BuildActionLinkAttributes(LinkOptions options)
+    {
+        var attributes = new List<KeyValuePair<string, string?>> { new("role", "button") };
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            attributes.Add(new KeyValuePair<string, string?>("title", options.Title));
+        }
+
+        return new ElementAttributes(attributes);
     }
 
     private static ElementAttributes BuildButtonAttributes(ButtonOptions options)
@@ -310,6 +536,107 @@ public sealed record DisplayContent
             new KeyValuePair<string, string?>("aria-valuemin", "0"),
             new KeyValuePair<string, string?>("aria-valuemax", "100")
         );
+    }
+
+    private static ElementAttributes BuildCardAttributes(CardOptions options)
+    {
+        var classes = new List<string> { "card" };
+        AddClassIfPresent(classes, options.Color, color => $"card-{color}");
+        return ClassOnly(classes);
+    }
+
+    private static ElementAttributes BuildRowAttributes(RowOptions options)
+    {
+        var classes = new List<string> { "row" };
+        if (options.Gutter is { } gutter)
+        {
+            if (gutter is < 0 or > 5)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(options),
+                    gutter,
+                    "Gutter must be between 0 and 5."
+                );
+            }
+
+            classes.Add($"g-{gutter}");
+        }
+
+        return ClassOnly(classes);
+    }
+
+    private static ElementAttributes BuildColAttributes(ColOptions options)
+    {
+        var classes = new List<string>();
+        var hasBreakpoint = false;
+
+        if (options.Span is { } span)
+        {
+            ValidateColSpan(span, nameof(options.Span));
+            classes.Add($"col-{span}");
+            hasBreakpoint = true;
+        }
+
+        if (options.Sm is { } sm)
+        {
+            ValidateColSpan(sm, nameof(options.Sm));
+            classes.Add($"col-sm-{sm}");
+            hasBreakpoint = true;
+        }
+
+        if (options.Md is { } md)
+        {
+            ValidateColSpan(md, nameof(options.Md));
+            classes.Add($"col-md-{md}");
+            hasBreakpoint = true;
+        }
+
+        if (options.Lg is { } lg)
+        {
+            ValidateColSpan(lg, nameof(options.Lg));
+            classes.Add($"col-lg-{lg}");
+            hasBreakpoint = true;
+        }
+
+        if (options.Xl is { } xl)
+        {
+            ValidateColSpan(xl, nameof(options.Xl));
+            classes.Add($"col-xl-{xl}");
+            hasBreakpoint = true;
+        }
+
+        if (!hasBreakpoint)
+        {
+            classes.Add("col");
+        }
+
+        return ClassOnly(classes);
+    }
+
+    private static ElementAttributes BuildLabeledDividerAttributes(DividerOptions options)
+    {
+        var classes = new List<string> { "hr-text" };
+        AddClassIfPresent(classes, options.Color, color => $"text-{color}");
+        return ClassOnly(classes);
+    }
+
+    private static ElementAttributes BuildDividerAttributes(DividerOptions options)
+    {
+        var classes = new List<string>();
+        AddClassIfPresent(classes, options.Color, color => $"text-{color}");
+        return ClassOnly(classes);
+    }
+
+    private static void ValidateColSpan(int span, string paramName)
+    {
+        if (span is < 1 or > 12)
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                span,
+                "Column span must be between 1 and 12."
+            );
+        }
     }
 
     private static ElementAttributes ClassOnly(IEnumerable<string> classes) =>

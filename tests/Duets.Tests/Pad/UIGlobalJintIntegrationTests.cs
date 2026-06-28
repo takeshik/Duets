@@ -153,6 +153,113 @@ public sealed class UIGlobalJintIntegrationTests
     }
 
     [Fact]
+    public async Task Stack_with_horizontal_direction_from_js()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var result = session.Evaluate("ui.stack(['a', 'b'], { direction: 'horizontal' })");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal(
+            "duetspad-stack duetspad-stack-horizontal",
+            (string?)json["attributes"]!["class"]
+        );
+        Assert.Equal(2, json["children"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public async Task Card_from_js_serializes_correctly()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var result = session.Evaluate("ui.card([ui.text('hello')], { title: 'Test Card' })");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("card", (string?)json["attributes"]!["class"]);
+        var children = json["children"]!.AsArray();
+        Assert.Equal(2, children.Count); // header + body
+        Assert.Equal("card-header", (string?)children[0]!["attributes"]!["class"]);
+        Assert.Equal("card-body", (string?)children[1]!["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public async Task Row_from_js_renders_row_div()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(session, "ui.row([ui.text('hello')])");
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("row", (string?)json["attributes"]!["class"]);
+        Assert.Single(json["children"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task Col_with_no_options_from_js_renders_auto_col()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(session, "ui.col()");
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("col", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public async Task Col_with_span_option_from_js()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(session, "ui.col(null, { span: 6 })");
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("col-6", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public async Task Divider_with_no_options_from_js_renders_hr()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(session, "ui.divider()");
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("hr", (string?)json["tag"]);
+    }
+
+    [Fact]
+    public async Task Divider_with_text_option_from_js()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(session, "ui.divider({ text: 'Section' })");
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("hr-text", (string?)json["attributes"]!["class"]);
+        Assert.Equal("Section", (string?)json["children"]![0]!["value"]);
+    }
+
+    [Fact]
     public async Task Element_script_tag_from_js_throws()
     {
         using var session = await CreateSessionAsync();
@@ -193,6 +300,61 @@ public sealed class UIGlobalJintIntegrationTests
         var interaction = Assert.Single(content.Interactions);
         Assert.Equal(InteractionEvent.Click, interaction.Event);
     }
+
+    [Fact]
+    public async Task Link_with_url_from_js_serializes_correctly()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var result = session.Evaluate("ui.link('Visit', 'https://example.com')");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("a", (string?)json["tag"]);
+        Assert.Equal("https://example.com", (string?)json["attributes"]!["href"]);
+        Assert.Equal("_blank", (string?)json["attributes"]!["target"]);
+        Assert.Equal("Visit", (string?)json["children"]![0]!["value"]);
+        Assert.Empty(content.Interactions);
+    }
+
+    [Fact]
+    public async Task Link_with_handler_from_js_returns_click_interaction()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var result = session.Evaluate("ui.link('Run', () => {})");
+        var content = Assert.IsAssignableFrom<DisplayContent>(result.ToObject());
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        Assert.Equal("a", (string?)json["tag"]);
+        Assert.Equal("button", (string?)json["attributes"]!["role"]);
+        Assert.Equal("Run", (string?)json["children"]![0]!["value"]);
+
+        var interaction = Assert.Single(content.Interactions);
+        Assert.Equal(InteractionEvent.Click, interaction.Event);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("vbscript:msgbox(1)")]
+    [InlineData("data:text/html,<script>alert(1)</script>")]
+    public async Task Link_with_unsafe_url_scheme_from_js_throws(string url)
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        Assert.ThrowsAny<Exception>(() =>
+            session.Evaluate($"ui.link('xss', {ToJsStringLiteral(url)})")
+        );
+    }
+
+    private static string ToJsStringLiteral(string value) =>
+        "'" + value.Replace("\\", "\\\\").Replace("'", "\\'") + "'";
 
     private static DisplayContent EvaluateDisplayContent(DuetsSession session, string source)
     {

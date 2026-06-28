@@ -110,8 +110,18 @@ internal static class SessionBootstrap
                 icon(name: string, options?: { size?: number; color?: string }): any;
                 /** Returns a Tabler progress bar for a value between 0 and 100. */
                 progress(value: number, options?: { color?: string; label?: string }): any;
-                /** Returns a <div class="duetspad-stack"> containing rendered children. */
-                stack(children?: any[]): any;
+                /** Returns a stack container. Direction defaults to "vertical". */
+                stack(children?: any[], options?: { direction?: "vertical" | "horizontal" }): any;
+                /** Returns a Tabler card with an optional title header and footer. */
+                card(children?: any[], options?: { title?: string; footer?: string; color?: string }): any;
+                /** Returns a Bootstrap/Tabler grid row container. */
+                row(children?: any[], options?: { gutter?: "sm" | "md" | "lg" | number }): any;
+                /** Returns a Bootstrap/Tabler grid column. Omit all spans for auto equal-width. */
+                col(children?: any[], options?: { span?: number; sm?: number; md?: number; lg?: number; xl?: number }): any;
+                /** Returns a horizontal divider. Pass text for a labeled divider. */
+                divider(options?: { text?: string; color?: string }): any;
+                /** Returns a link. Pass a URL string to navigate, or a handler function for an action link. */
+                link(text: string, urlOrHandler: string | (() => void), options?: { title?: string }): any;
                 /** Returns a button with a click handler. */
                 button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
                 /** Builds a <table class="duetspad-table"> from rows. */

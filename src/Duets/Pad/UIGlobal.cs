@@ -7,7 +7,8 @@ namespace Duets.Pad;
 /// <summary>
 /// Host object bound to the <c>ui</c> global in script. Provides the structured display surface:
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
-/// <see cref="Stack"/>, <see cref="Button"/>, Tabler components, and <see cref="Table"/>.
+/// <see cref="Stack"/>, <see cref="Row"/>, <see cref="Col"/>, <see cref="Card"/>,
+/// <see cref="Link"/>, <see cref="Button"/>, <see cref="Divider"/>, Tabler components, and <see cref="Table"/>.
 /// </summary>
 internal sealed class UIGlobal(
     DisplayRenderer renderer,
@@ -111,9 +112,66 @@ internal sealed class UIGlobal(
     /// Returns a <c>div.duetspad-stack</c> element containing the rendered <paramref name="children"/>.
     /// (JS: <c>ui.stack</c>)
     /// </summary>
-    public DisplayContent Stack(object? children = null)
+    public DisplayContent Stack(object? children = null, object? options = null) =>
+        DisplayContent.Stack(this.BuildChildren(children), BuildStackOptions(options));
+
+    /// <summary>
+    /// Builds a Tabler card element. (JS: <c>ui.card</c>)
+    /// </summary>
+    public DisplayContent Card(object? children = null, object? options = null) =>
+        DisplayContent.Card(this.BuildChildren(children), BuildCardOptions(options));
+
+    /// <summary>
+    /// Builds a Bootstrap/Tabler grid row container. (JS: <c>ui.row</c>)
+    /// </summary>
+    public DisplayContent Row(object? children = null, object? options = null) =>
+        DisplayContent.Row(this.BuildChildren(children), BuildRowOptions(options));
+
+    /// <summary>
+    /// Builds a Bootstrap/Tabler grid column. (JS: <c>ui.col</c>)
+    /// </summary>
+    public DisplayContent Col(object? children = null, object? options = null) =>
+        DisplayContent.Col(this.BuildChildren(children), BuildColOptions(options));
+
+    /// <summary>
+    /// Builds a horizontal divider. (JS: <c>ui.divider</c>)
+    /// </summary>
+    public DisplayContent Divider(object? options = null) =>
+        DisplayContent.Divider(BuildDividerOptions(options));
+
+    /// <summary>
+    /// Builds a URL link element or an action link element with a click handler. (JS: <c>ui.link</c>)
+    /// Pass a <see cref="string"/> for URL navigation or an <see cref="Action"/> for a server-side handler.
+    /// </summary>
+    public DisplayContent Link(string text, object? urlOrHandler, object? options = null)
     {
-        return DisplayContent.Stack(this.BuildChildren(children));
+        var linkOptions = BuildLinkOptions(options);
+        switch (urlOrHandler)
+        {
+            case string url:
+                return DisplayContent.Link(text, url, linkOptions);
+            case Action action:
+                return DisplayContent.Link(text, action, linkOptions);
+            case null:
+                throw new ArgumentNullException(nameof(urlOrHandler));
+            case Delegate d:
+                // Runtime delegate wrappers (e.g., Jint JsCallDelegate from JS function arguments)
+                // are invoked with default parameter values so zero-arg action lambdas work correctly.
+                var defaultArgs = d
+                    .Method.GetParameters()
+                    .Select(p =>
+                        p.ParameterType.IsValueType
+                            ? Activator.CreateInstance(p.ParameterType)
+                            : (object?)null
+                    )
+                    .ToArray();
+                return DisplayContent.Link(text, () => d.DynamicInvoke(defaultArgs), linkOptions);
+            default:
+                throw new ArgumentException(
+                    "urlOrHandler must be a URL string or an action handler.",
+                    nameof(urlOrHandler)
+                );
+        }
     }
 
     /// <summary>
@@ -257,6 +315,56 @@ internal sealed class UIGlobal(
         return [.. rowList[0].Keys];
     }
 
+    private static StackOptions? BuildStackOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new StackOptions();
+        if (dict.TryGetValue("direction", out var direction) && direction is not null)
+        {
+            result = result with
+            {
+                Direction = Convert.ToString(direction, CultureInfo.InvariantCulture),
+            };
+        }
+
+        return result;
+    }
+
+    private static CardOptions? BuildCardOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new CardOptions();
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("footer", out var footer) && footer is not null)
+        {
+            result = result with
+            {
+                Footer = Convert.ToString(footer, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("color", out var color) && color is not null)
+        {
+            result = result with { Color = Convert.ToString(color, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
     private static ElementAttributes BuildAttributes(object? attributes)
     {
         if (attributes is null)
@@ -297,6 +405,23 @@ internal sealed class UIGlobal(
             "attributes must be an object with string keys and string values.",
             nameof(attributes)
         );
+    }
+
+    private static LinkOptions? BuildLinkOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new LinkOptions();
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
     }
 
     private static ButtonOptions? BuildButtonOptions(object? options)
@@ -473,6 +598,118 @@ internal sealed class UIGlobal(
         if (dict.TryGetValue("label", out var label) && label is not null)
         {
             result = result with { Label = Convert.ToString(label, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static RowOptions? BuildRowOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new RowOptions();
+        if (dict.TryGetValue("gutter", out var gutter) && gutter is not null)
+        {
+            result = result with { Gutter = ResolveGutter(gutter) };
+        }
+
+        return result;
+    }
+
+    // Resolves the JS-side gutter value ("sm"/"md"/"lg" alias or a number) to a
+    // Tabler gutter step. This is the script-boundary coercion; range validation
+    // (0-5) lives in DisplayContent.BuildRowAttributes.
+    private static int ResolveGutter(object gutter)
+    {
+        if (gutter is string s)
+        {
+            return s switch
+            {
+                "sm" => 1,
+                "md" => 3,
+                "lg" => 5,
+                _ => throw new ArgumentException(
+                    $"gutter must be \"sm\", \"md\", \"lg\", or a number (0-5). Got \"{s}\".",
+                    nameof(gutter)
+                ),
+            };
+        }
+
+        return CoerceInteger(gutter, "gutter");
+    }
+
+    // Converts a JS-side numeric value to an int, rejecting fractional numbers
+    // rather than silently rounding them (JS has no integer type, so a span or
+    // gutter literal arrives as a double). Range validation lives in DisplayContent.
+    private static int CoerceInteger(object value, string paramName)
+    {
+        var raw = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        if (raw != Math.Truncate(raw))
+        {
+            throw new ArgumentException($"{paramName} must be an integer. Got {raw}.", paramName);
+        }
+
+        return (int)raw;
+    }
+
+    private static ColOptions? BuildColOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new ColOptions();
+        if (dict.TryGetValue("span", out var span) && span is not null)
+        {
+            result = result with { Span = CoerceInteger(span, "span") };
+        }
+
+        if (dict.TryGetValue("sm", out var sm) && sm is not null)
+        {
+            result = result with { Sm = CoerceInteger(sm, "sm") };
+        }
+
+        if (dict.TryGetValue("md", out var md) && md is not null)
+        {
+            result = result with { Md = CoerceInteger(md, "md") };
+        }
+
+        if (dict.TryGetValue("lg", out var lg) && lg is not null)
+        {
+            result = result with { Lg = CoerceInteger(lg, "lg") };
+        }
+
+        if (dict.TryGetValue("xl", out var xl) && xl is not null)
+        {
+            result = result with { Xl = CoerceInteger(xl, "xl") };
+        }
+
+        return result;
+    }
+
+    private static DividerOptions? BuildDividerOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new DividerOptions();
+        if (dict.TryGetValue("text", out var text) && text is not null)
+        {
+            result = result with { Text = Convert.ToString(text, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("color", out var color) && color is not null)
+        {
+            result = result with { Color = Convert.ToString(color, CultureInfo.InvariantCulture) };
         }
 
         return result;

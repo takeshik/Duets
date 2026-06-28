@@ -224,6 +224,399 @@ public sealed class UIGlobalTests
     }
 
     [Fact]
+    public void Stack_with_horizontal_direction_adds_horizontal_class()
+    {
+        var ui = CreateUIGlobal();
+        var children = new object?[] { "hello" };
+
+        var result = ui.Stack(
+            children,
+            new Dictionary<string, object?> { ["direction"] = "horizontal" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal(
+            "duetspad-stack duetspad-stack-horizontal",
+            (string?)json["attributes"]!["class"]
+        );
+    }
+
+    [Fact]
+    public void Stack_with_vertical_direction_uses_default_class()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Stack(null, new Dictionary<string, object?> { ["direction"] = "vertical" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("duetspad-stack", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Stack_with_no_options_uses_default_vertical_class()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Stack();
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("duetspad-stack", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Stack_with_invalid_direction_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Stack(null, new Dictionary<string, object?> { ["direction"] = "horiz" })
+        );
+        Assert.Equal("options", ex.ParamName);
+    }
+
+    [Fact]
+    public void Card_returns_tabler_card_with_body()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Card(new object?[] { "hello" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("card", (string?)json["attributes"]!["class"]);
+        var children = json["children"]!.AsArray();
+        Assert.Single(children); // body only
+        Assert.Equal("card-body", (string?)children[0]!["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Card_with_title_and_footer_renders_header_body_footer()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Card(
+            new object?[] { "content" },
+            new Dictionary<string, object?>
+            {
+                ["title"] = "My Card",
+                ["footer"] = "Footer text",
+                ["color"] = "primary",
+            }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("card card-primary", (string?)json["attributes"]!["class"]);
+        var children = json["children"]!.AsArray();
+        Assert.Equal(3, children.Count);
+
+        // header
+        Assert.Equal("card-header", (string?)children[0]!["attributes"]!["class"]);
+        Assert.Equal("card-title", (string?)children[0]!["children"]![0]!["attributes"]!["class"]);
+        Assert.Equal("My Card", (string?)children[0]!["children"]![0]!["children"]![0]!["value"]);
+
+        // body
+        Assert.Equal("card-body", (string?)children[1]!["attributes"]!["class"]);
+
+        // footer
+        Assert.Equal("card-footer", (string?)children[2]!["attributes"]!["class"]);
+        Assert.Equal("Footer text", (string?)children[2]!["children"]![0]!["value"]);
+    }
+
+    [Fact]
+    public void Card_with_no_children_returns_card_with_empty_body()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Card();
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("card", (string?)json["attributes"]!["class"]);
+        var body = json["children"]![0];
+        Assert.Equal("card-body", (string?)body!["attributes"]!["class"]);
+        Assert.Empty(body["children"]!.AsArray());
+    }
+
+    [Fact]
+    public void Card_without_title_rebases_body_child_interaction_path()
+    {
+        var ui = CreateUIGlobal();
+        var button = ui.Button("Run", () => { });
+
+        var result = ui.Card(new object?[] { button });
+
+        // Body is the only part (index 0); the button is its first child (index 0).
+        var interaction = Assert.Single(result.Interactions);
+        Assert.Equal([0, 0], interaction.Target.Segments);
+    }
+
+    [Fact]
+    public void Card_with_title_rebases_body_child_interaction_path_past_header()
+    {
+        var ui = CreateUIGlobal();
+        var button = ui.Button("Run", () => { });
+
+        var result = ui.Card(
+            new object?[] { button },
+            new Dictionary<string, object?> { ["title"] = "My Card" }
+        );
+
+        // Header is part index 0, body is part index 1; the button is body child 0.
+        var interaction = Assert.Single(result.Interactions);
+        Assert.Equal([1, 0], interaction.Target.Segments);
+    }
+
+    // Positive: Row
+
+    [Fact]
+    public void Row_WithChildren_RendersRowDiv()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Row(new object?[] { "hello" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("element", (string?)json["kind"]);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("row", (string?)json["attributes"]!["class"]);
+        Assert.Single(json["children"]!.AsArray());
+    }
+
+    [Fact]
+    public void Row_WithGutterSm_AddsGutterClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Row(null, new Dictionary<string, object?> { ["gutter"] = "sm" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("row g-1", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Row_WithGutterMd_AddsGutterClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Row(null, new Dictionary<string, object?> { ["gutter"] = "md" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("row g-3", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Row_WithGutterLg_AddsGutterClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Row(null, new Dictionary<string, object?> { ["gutter"] = "lg" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("row g-5", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Row_WithGutterNumber_AddsGutterClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Row(null, new Dictionary<string, object?> { ["gutter"] = 2 });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("row g-2", (string?)json["attributes"]!["class"]);
+    }
+
+    // Positive: Col
+
+    [Fact]
+    public void Col_NoOptions_RendersAutoCol()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Col();
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("col", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Col_WithSpan_RendersColSpan()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Col(null, new Dictionary<string, object?> { ["span"] = 6 });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("col-6", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Col_WithBreakpoints_RendersResponsiveClasses()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Col(
+            null,
+            new Dictionary<string, object?>
+            {
+                ["sm"] = 12,
+                ["md"] = 6,
+                ["lg"] = 4,
+            }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("col-sm-12 col-md-6 col-lg-4", (string?)json["attributes"]!["class"]);
+    }
+
+    // Negative: Col
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    public void Col_SpanOutOfRange_Throws(int span)
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ui.Col(null, new Dictionary<string, object?> { ["span"] = span })
+        );
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    public void Col_BreakpointSpanOutOfRange_Throws(int span)
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ui.Col(null, new Dictionary<string, object?> { ["md"] = span })
+        );
+        // ParamName must identify the offending breakpoint, not just "options".
+        Assert.Equal("Md", ex.ParamName);
+    }
+
+    [Fact]
+    public void Col_WithFractionalSpan_Throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Col(null, new Dictionary<string, object?> { ["span"] = 2.5 })
+        );
+        Assert.Equal("span", ex.ParamName);
+    }
+
+    [Fact]
+    public void Col_WithFractionalBreakpointSpan_Throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Col(null, new Dictionary<string, object?> { ["md"] = 6.5 })
+        );
+        Assert.Equal("md", ex.ParamName);
+    }
+
+    [Fact]
+    public void Row_WithGutterNonInteger_Throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentException>(() =>
+            ui.Row(null, new Dictionary<string, object?> { ["gutter"] = 2.5 })
+        );
+    }
+
+    [Fact]
+    public void Row_WithUnknownGutterAlias_Throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ui.Row(null, new Dictionary<string, object?> { ["gutter"] = "xl" })
+        );
+        Assert.Equal("gutter", ex.ParamName);
+    }
+
+    [Fact]
+    public void Row_WithGutterOutOfRange_Throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ui.Row(null, new Dictionary<string, object?> { ["gutter"] = 6 })
+        );
+    }
+
+    [Fact]
+    public void Divider_WithColorOnly_RendersHrWithColorClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Divider(new Dictionary<string, object?> { ["color"] = "primary" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("hr", (string?)json["tag"]);
+        Assert.Equal("text-primary", (string?)json["attributes"]!["class"]);
+    }
+
+    // Positive: Divider
+
+    [Fact]
+    public void Divider_NoOptions_RendersHr()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Divider();
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("hr", (string?)json["tag"]);
+        Assert.Empty(json["attributes"]!.AsObject());
+    }
+
+    [Fact]
+    public void Divider_WithText_RendersLabeledDivider()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Divider(new Dictionary<string, object?> { ["text"] = "Section" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("hr-text", (string?)json["attributes"]!["class"]);
+        Assert.Equal("Section", (string?)json["children"]![0]!["value"]);
+    }
+
+    [Fact]
+    public void Divider_WithColor_AddsColorClass()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Divider(new Dictionary<string, object?> { ["color"] = "muted" });
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("hr", (string?)json["tag"]);
+        Assert.Equal("text-muted", (string?)json["attributes"]!["class"]);
+    }
+
+    [Fact]
+    public void Divider_WithTextAndColor_RendersBoth()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Divider(
+            new Dictionary<string, object?> { ["text"] = "Section", ["color"] = "primary" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("div", (string?)json["tag"]);
+        Assert.Equal("hr-text text-primary", (string?)json["attributes"]!["class"]);
+        Assert.Equal("Section", (string?)json["children"]![0]!["value"]);
+    }
+
+    [Fact]
     public void Button_returns_button_body_and_pending_click_interaction()
     {
         var ui = CreateUIGlobal();
@@ -258,6 +651,99 @@ public sealed class UIGlobalTests
         Assert.Equal("button", (string?)json["tag"]);
         Assert.True(json["attributes"]!.AsObject().ContainsKey("disabled"));
         Assert.Empty(result.Interactions);
+    }
+
+    // Positive: Link
+
+    [Fact]
+    public void Link_with_url_returns_anchor_with_href_and_target()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Link("Click me", "https://example.com");
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("a", (string?)json["tag"]);
+        Assert.Equal("https://example.com", (string?)json["attributes"]!["href"]);
+        Assert.Equal("_blank", (string?)json["attributes"]!["target"]);
+        Assert.Equal("noopener noreferrer", (string?)json["attributes"]!["rel"]);
+        Assert.Equal("Click me", (string?)json["children"]![0]!["value"]);
+        Assert.Empty(result.Interactions);
+    }
+
+    [Fact]
+    public void Link_with_url_and_title_option_sets_title_attribute()
+    {
+        var ui = CreateUIGlobal();
+
+        var result = ui.Link(
+            "Click me",
+            "https://example.com",
+            new Dictionary<string, object?> { ["title"] = "Visit example" }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("Visit example", (string?)json["attributes"]!["title"]);
+    }
+
+    [Fact]
+    public void Link_with_handler_returns_anchor_with_click_interaction()
+    {
+        var ui = CreateUIGlobal();
+        var clicked = false;
+
+        var result = ui.Link("Run action", () => clicked = true);
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        Assert.Equal("a", (string?)json["tag"]);
+        Assert.Equal("button", (string?)json["attributes"]!["role"]);
+        Assert.False(json["attributes"]!.AsObject().ContainsKey("href"));
+        Assert.Equal("Run action", (string?)json["children"]![0]!["value"]);
+
+        var interaction = Assert.Single(result.Interactions);
+        Assert.Equal(InteractionEvent.Click, interaction.Event);
+
+        interaction.Handler();
+        Assert.True(clicked);
+    }
+
+    // Negative: Link
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("vbscript:msgbox(1)")]
+    [InlineData("data:text/html,<script>alert(1)</script>")]
+    [InlineData("  javascript:alert(1)")]
+    public void Link_with_unsafe_url_scheme_throws(string url)
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<ArgumentException>(() => ui.Link("xss", url));
+        Assert.Equal("url", ex.ParamName);
+    }
+
+    [Fact]
+    public void Link_with_null_text_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentNullException>(() => ui.Link(null!, "https://example.com"));
+    }
+
+    [Fact]
+    public void Link_with_null_url_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentNullException>(() => ui.Link("text", (string)null!));
+    }
+
+    [Fact]
+    public void Link_with_null_handler_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentNullException>(() => ui.Link("text", (Action)null!));
     }
 
     // Positive: Element
