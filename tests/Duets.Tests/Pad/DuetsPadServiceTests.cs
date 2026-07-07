@@ -1117,6 +1117,153 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    /// <summary>
+    /// Recursively finds the first <c>data-duetspad-field</c> attribute value in a serialized
+    /// render-node tree (canvas snapshot <c>state</c> or an interaction-invoke response).
+    /// </summary>
+    private static string? FindFieldId(JsonElement node)
+    {
+        if (node.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (
+            node.TryGetProperty("attributes", out var attributes)
+            && attributes.TryGetProperty("data-duetspad-field", out var idProp)
+        )
+        {
+            return idProp.GetString();
+        }
+
+        if (
+            node.TryGetProperty("children", out var children)
+            && children.ValueKind == JsonValueKind.Array
+        )
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                if (FindFieldId(child) is { } found)
+                {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    [Fact]
+    public async Task Field_commit_route_stores_the_value_without_broadcasting()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent(
+                        """var t = ui.textBox({ name: "n" }); canvas.add(t);""",
+                        Encoding.UTF8,
+                        "text/plain"
+                    )
+                );
+                evalResponse.EnsureSuccessStatusCode();
+
+                using var snapshotResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/canvas?name=default"
+                );
+                snapshotResponse.EnsureSuccessStatusCode();
+                var snapshot = await snapshotResponse.Content.ReadFromJsonAsync<JsonElement>();
+                var fieldId = FindFieldId(snapshot.GetProperty("state"));
+                Assert.False(string.IsNullOrWhiteSpace(fieldId));
+
+                using var commitResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/fields/{fieldId}/commit",
+                    new StringContent("hello", Encoding.UTF8, "text/plain")
+                );
+                commitResponse.EnsureSuccessStatusCode();
+                var commitPayload = await commitResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(commitPayload.GetProperty("ok").GetBoolean());
+
+                using var readResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent("t.value", Encoding.UTF8, "text/plain")
+                );
+                readResponse.EnsureSuccessStatusCode();
+                var readPayload = await readResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal("hello", readPayload.GetProperty("result").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Invoke_route_merges_the_field_snapshot_before_running_the_handler()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+
+                await using var stream = await client.GetStreamAsync(
+                    prefix + $"sessions/{sessionId}/events"
+                );
+                using var reader = new StreamReader(stream);
+                _ = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
+                _ = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
+
+                using var evalResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/eval",
+                    new StringContent(
+                        """
+                        var t = ui.textBox({ name: "n" });
+                        canvas.add(ui.stack([t, ui.button("Run", () => dump(t.value))]));
+                        """,
+                        Encoding.UTF8,
+                        "text/plain"
+                    )
+                );
+                evalResponse.EnsureSuccessStatusCode();
+
+                var patch = await ReadNextSseDataAsync(reader, typePrefix: "canvas.");
+                var interaction = Assert.Single(patch.GetProperty("interactions").EnumerateArray());
+                var handlerId = interaction.GetProperty("handlerId").GetString();
+
+                using var snapshotResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/canvas?name=default"
+                );
+                var snapshot = await snapshotResponse.Content.ReadFromJsonAsync<JsonElement>();
+                var fieldId = FindFieldId(snapshot.GetProperty("state"));
+                Assert.False(string.IsNullOrWhiteSpace(fieldId));
+
+                var invokeBody = JsonSerializer.Serialize(
+                    new
+                    {
+                        fields = new Dictionary<string, string>
+                        {
+                            [fieldId!] = "typed-not-blurred",
+                        },
+                    }
+                );
+                using var invokeResponse = await client.PostAsync(
+                    prefix + $"sessions/{sessionId}/interactions/{handlerId}/invoke",
+                    new StringContent(invokeBody, Encoding.UTF8, "application/json")
+                );
+                invokeResponse.EnsureSuccessStatusCode();
+                var invokePayload = await invokeResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(invokePayload.GetProperty("ok").GetBoolean());
+
+                var append = await ReadNextSseDataAsync(reader, typePrefix: "timeline.");
+                var entry = append.GetProperty("entry");
+                Assert.Equal(
+                    "typed-not-blurred",
+                    entry.GetProperty("body").GetProperty("value").GetString()
+                );
+            }
+        );
+    }
+
     // SSE response headers
 
     [Fact]

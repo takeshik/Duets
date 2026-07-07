@@ -49,7 +49,10 @@ internal static class SessionBootstrap
         var canvasesGlobal = new CanvasesGlobal(padSession);
         duetsSession.SetValue("canvases", canvasesGlobal);
         duetsSession.SetValue("canvas", canvasesGlobal.Get("default"));
-        duetsSession.SetValue("ui", new UIGlobal(renderer, padSession.DumpOptions, padSession));
+        duetsSession.SetValue(
+            "ui",
+            new UIGlobal(renderer, padSession.DumpOptions, padSession, padSession)
+        );
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
         // Register per-session d.ts declarations for canvases, canvas, ui, dump, and pad.
@@ -85,6 +88,17 @@ internal static class SessionBootstrap
             interface DuetsPadSlot {
                 /** The current content. Reassigning re-renders every placement of this slot in place. */
                 content: any;
+            }
+
+            /**
+             * A form-input display handle (ADR-47). Its value lives in the session's server-canonical
+             * field store, not on the handle: reads are session-scoped, and assigning re-projects
+             * every placement of the field in place. Every value is a plain string with no coercion
+             * or validation; a checkbox reports "True"/"False".
+             */
+            interface DuetsPadInput {
+                /** The field's current value. Assigning re-projects every placement of this field. */
+                value: string;
             }
 
             declare const ui: {
@@ -126,6 +140,20 @@ internal static class SessionBootstrap
                 button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
+                /** Returns a single-line text input field. */
+                textBox(options?: { name?: string; placeholder?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a multi-line text input field. */
+                textArea(options?: { name?: string; placeholder?: string; value?: string; rows?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a numeric text input field. The value is still a plain string: no coercion or validation is performed. */
+                numberBox(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a checkbox field. The value is the string "True" or "False". */
+                checkBox(options?: { label?: string; checked?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a single-select dropdown field. A value absent from items is retained but cannot be displayed as selected. */
+                dropDown(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a range-slider field. The value is still a plain string: no coercion or validation is performed. */
+                slider(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a radio-button group field. A value absent from items is retained but leaves every option unchecked. */
+                radioGroup(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
             };
 
             declare const pad: {

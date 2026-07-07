@@ -44,6 +44,10 @@ public sealed class DuetsPadService : IDisposable
                             "/sessions/{sessionId}/interactions/{handlerId}/invoke",
                             this.HandleInvokeInteractionAsync
                         )
+                        .MapPost(
+                            "/sessions/{sessionId}/fields/{fieldId}/commit",
+                            this.HandleCommitFieldAsync
+                        )
                         .MapGet("/sessions/{sessionId}/events", this.HandleEventsAsync)
             )
             .UseEmbeddedResources(
@@ -314,7 +318,8 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        var result = await session.InvokeInteractionAsync(parsedHandlerId);
+        var fieldSnapshot = await ReadFieldSnapshotAsync(ctx);
+        var result = await session.InvokeInteractionAsync(parsedHandlerId, fieldSnapshot);
         var response = new JsonObject
         {
             ["ok"] = result.Ok,
@@ -325,6 +330,109 @@ public sealed class DuetsPadService : IDisposable
         };
 
         await ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
+    }
+
+    // POST /sessions/{sessionId}/fields/{fieldId}/commit
+
+    /// <summary>
+    /// Browser-originated field-value commit (ADR-47): stores the raw request body as the field's
+    /// value and updates the authoritative Canvas/Timeline state in place, but never broadcasts —
+    /// the committing browser already reflects the value it is sending, so echoing it back would be
+    /// redundant (and updating the authoritative state without a broadcast is what lets a later SSE
+    /// reconnect see the committed value instead of reverting to the pre-commit projection).
+    /// </summary>
+    private async Task HandleCommitFieldAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+        var fieldId = ctx.Args["fieldId"];
+
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
+        {
+            return;
+        }
+
+        if (!Guid.TryParse(fieldId, out var parsedFieldId))
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Invalid field id.",
+                    ["sessionId"] = session.Id.ToString(),
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+        var value = await reader.ReadToEndAsync();
+
+        await session.CommitFieldValue(parsedFieldId, value);
+
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = true,
+                ["sessionId"] = session.Id.ToString(),
+                ["fieldId"] = parsedFieldId.ToString(),
+            }.ToJsonString()
+        );
+    }
+
+    /// <summary>
+    /// Reads the optional <c>{ fields: { fieldId: value } }</c> snapshot from an interaction-invoke
+    /// request body (ADR-47). Returns <see langword="null"/> when the body is empty, malformed, or
+    /// carries no recognizable field entries — the invoke proceeds without merging a snapshot rather
+    /// than failing.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<Guid, string>?> ReadFieldSnapshotAsync(
+        HttpActionContext ctx
+    )
+    {
+        if (ctx.Request.ContentLength64 <= 0)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
+        var body = await reader.ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (
+                doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("fields", out var fieldsEl)
+                || fieldsEl.ValueKind != JsonValueKind.Object
+            )
+            {
+                return null;
+            }
+
+            var snapshot = new Dictionary<Guid, string>();
+            foreach (var property in fieldsEl.EnumerateObject())
+            {
+                if (
+                    Guid.TryParse(property.Name, out var fieldId)
+                    && property.Value.ValueKind == JsonValueKind.String
+                )
+                {
+                    snapshot[fieldId] = property.Value.GetString() ?? "";
+                }
+            }
+
+            return snapshot;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     // GET /sessions/{sessionId}/events

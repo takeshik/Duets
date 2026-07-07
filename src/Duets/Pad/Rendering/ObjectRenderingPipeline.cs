@@ -68,6 +68,13 @@ internal class DisplayRenderer(IReadOnlyList<IObjectRenderer> renderers)
             );
         }
 
+        // Step 4.6: form-input field — renders its own marked element directly from the session's
+        // field store (ADR-47); there is no child content to render and no wrapper is needed.
+        if (value is DisplayInput input)
+        {
+            return input.Render();
+        }
+
         // Step 5: cycle detection — only for reference types (not strings, not value types)
         var isRef = value is not string && !value.GetType().IsValueType;
         if (isRef)

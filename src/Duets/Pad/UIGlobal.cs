@@ -8,12 +8,16 @@ namespace Duets.Pad;
 /// Host object bound to the <c>ui</c> global in script. Provides the structured display surface:
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
 /// <see cref="Stack"/>, <see cref="Row"/>, <see cref="Col"/>, <see cref="Card"/>,
-/// <see cref="Link"/>, <see cref="Button"/>, <see cref="Divider"/>, Tabler components, and <see cref="Table"/>.
+/// <see cref="Link"/>, <see cref="Button"/>, <see cref="Divider"/>, Tabler components,
+/// <see cref="Table"/>, and the form-input factories (<see cref="TextBox"/>, <see cref="TextArea"/>,
+/// <see cref="NumberBox"/>, <see cref="CheckBox"/>, <see cref="DropDown"/>, <see cref="Slider"/>,
+/// <see cref="RadioGroup"/>) that return a <see cref="DisplayInput"/> (ADR-47).
 /// </summary>
 internal sealed class UIGlobal(
     DisplayRenderer renderer,
     DumpOptions dumpOptions,
-    ISlotHost? slotHost = null
+    ISlotHost? slotHost = null,
+    IFieldHost? fieldHost = null
 )
 {
     private readonly DisplayRenderer _renderer =
@@ -23,6 +27,10 @@ internal sealed class UIGlobal(
 
     // Null only in rendering-focused unit tests that never call Slot; production always supplies it.
     private readonly ISlotHost? _slotHost = slotHost;
+
+    // Null only in rendering-focused unit tests that never call an input factory; production
+    // always supplies it.
+    private readonly IFieldHost? _fieldHost = fieldHost;
 
     /// <summary>
     /// Returns a mutable <see cref="DisplaySlot"/> whose <c>content</c> can be reassigned to update
@@ -35,6 +43,139 @@ internal sealed class UIGlobal(
                     "ui.slot is not available because no slot host was provided."
                 ),
             initial
+        );
+
+    /// <summary>
+    /// Returns a single-line text input field. (JS: <c>ui.textBox</c>)
+    /// </summary>
+    public DisplayInput TextBox(object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildTextBoxOptions(dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.Text,
+            ExtractInitialValue(dict),
+            value => DisplayContent.TextBox(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a multi-line text input field. (JS: <c>ui.textArea</c>)
+    /// </summary>
+    public DisplayInput TextArea(object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildTextAreaOptions(dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.TextArea,
+            ExtractInitialValue(dict),
+            value => DisplayContent.TextArea(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a numeric text input field. The value is still a plain string (ADR-47): no coercion
+    /// or validation is performed. (JS: <c>ui.numberBox</c>)
+    /// </summary>
+    public DisplayInput NumberBox(object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildNumberBoxOptions(dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.Number,
+            ExtractInitialValue(dict),
+            value => DisplayContent.NumberBox(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a checkbox field. The value is the string <c>"True"</c> or <c>"False"</c> (ADR-47).
+    /// (JS: <c>ui.checkBox</c>)
+    /// </summary>
+    public DisplayInput CheckBox(object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildCheckBoxOptions(dict);
+        var initial = ExtractInitialChecked(dict) ? "True" : "False";
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.CheckBox,
+            initial,
+            value => DisplayContent.CheckBox(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a single-select dropdown field built from <paramref name="items"/> (each either a
+    /// string or a <c>{ value, label }</c> object). A value absent from <paramref name="items"/> is
+    /// retained but cannot be displayed as selected (ADR-47). (JS: <c>ui.dropDown</c>)
+    /// </summary>
+    public DisplayInput DropDown(object? items, object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildDropDownOptions(items, dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.DropDown,
+            ExtractInitialValue(dict),
+            value => DisplayContent.DropDown(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a range-slider field. The value is still a plain string (ADR-47): no coercion or
+    /// validation is performed. (JS: <c>ui.slider</c>)
+    /// </summary>
+    public DisplayInput Slider(object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildSliderOptions(dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.Slider,
+            ExtractInitialValue(dict, FormatNumberForValue(opts.Min)),
+            value => DisplayContent.Slider(id, value, opts)
+        );
+    }
+
+    /// <summary>
+    /// Returns a radio-button group field built from <paramref name="items"/> (each either a string
+    /// or a <c>{ value, label }</c> object). A value absent from <paramref name="items"/> is retained
+    /// but leaves every option unchecked (ADR-47). (JS: <c>ui.radioGroup</c>)
+    /// </summary>
+    public DisplayInput RadioGroup(object? items, object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var opts = BuildRadioGroupOptions(items, dict);
+        var id = Guid.NewGuid();
+        return new DisplayInput(
+            this.RequireFieldHost(),
+            id,
+            FieldKind.Radio,
+            ExtractInitialValue(dict),
+            value => DisplayContent.RadioGroup(id, value, opts)
+        );
+    }
+
+    private IFieldHost RequireFieldHost() =>
+        this._fieldHost
+        ?? throw new InvalidOperationException(
+            "This ui.* input factory is not available because no field host was provided."
         );
 
     /// <summary>
@@ -713,6 +854,389 @@ internal sealed class UIGlobal(
         }
 
         return result;
+    }
+
+    private static string ExtractInitialValue(
+        IDictionary<string, object?>? dict,
+        string fallback = ""
+    )
+    {
+        if (dict is not null && dict.TryGetValue("value", out var value) && value is not null)
+        {
+            return Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
+        }
+
+        return fallback;
+    }
+
+    private static bool ExtractInitialChecked(IDictionary<string, object?>? dict)
+    {
+        if (dict is not null && dict.TryGetValue("checked", out var value) && value is not null)
+        {
+            return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+        }
+
+        return false;
+    }
+
+    private static string FormatNumberForValue(double value) =>
+        value.ToString("0.##########", CultureInfo.InvariantCulture);
+
+    private static TextBoxOptions BuildTextBoxOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new TextBoxOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("placeholder", out var placeholder) && placeholder is not null)
+        {
+            result = result with
+            {
+                Placeholder = Convert.ToString(placeholder, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static TextAreaOptions BuildTextAreaOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new TextAreaOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("placeholder", out var placeholder) && placeholder is not null)
+        {
+            result = result with
+            {
+                Placeholder = Convert.ToString(placeholder, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("rows", out var rows) && rows is not null)
+        {
+            result = result with { Rows = CoerceInteger(rows, "rows") };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static NumberBoxOptions BuildNumberBoxOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new NumberBoxOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("min", out var min) && min is not null)
+        {
+            result = result with { Min = Convert.ToDouble(min, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("max", out var max) && max is not null)
+        {
+            result = result with { Max = Convert.ToDouble(max, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("step", out var step) && step is not null)
+        {
+            result = result with { Step = Convert.ToDouble(step, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static CheckBoxOptions BuildCheckBoxOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new CheckBoxOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("label", out var label) && label is not null)
+        {
+            result = result with { Label = Convert.ToString(label, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static DropDownOptions BuildDropDownOptions(
+        object? items,
+        IDictionary<string, object?>? dict
+    )
+    {
+        var result = new DropDownOptions { Items = CoerceFieldOptions(items) };
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static SliderOptions BuildSliderOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new SliderOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("min", out var min) && min is not null)
+        {
+            result = result with { Min = Convert.ToDouble(min, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("max", out var max) && max is not null)
+        {
+            result = result with { Max = Convert.ToDouble(max, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("step", out var step) && step is not null)
+        {
+            result = result with { Step = Convert.ToDouble(step, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static RadioGroupOptions BuildRadioGroupOptions(
+        object? items,
+        IDictionary<string, object?>? dict
+    )
+    {
+        var result = new RadioGroupOptions { Items = CoerceFieldOptions(items) };
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("name", out var name) && name is not null)
+        {
+            result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<FieldOption> CoerceFieldOptions(object? items)
+    {
+        if (items is null or string || items is not IEnumerable itemsEnumerable)
+        {
+            throw new ArgumentException("items must be an array.", nameof(items));
+        }
+
+        var result = new List<FieldOption>();
+        foreach (var item in itemsEnumerable)
+        {
+            result.Add(CoerceFieldOption(item));
+        }
+
+        return result;
+    }
+
+    private static FieldOption CoerceFieldOption(object? item)
+    {
+        if (item is string s)
+        {
+            return new FieldOption(s, s);
+        }
+
+        var dict =
+            CoerceOptionsDictionary(item)
+            ?? throw new ArgumentException(
+                "invalid item: each item must be a string or a { value, label } object.",
+                "items"
+            );
+
+        var value =
+            dict.TryGetValue("value", out var v) && v is not null
+                ? Convert.ToString(v, CultureInfo.InvariantCulture) ?? ""
+                : throw new ArgumentException("item.value is required.", "items");
+        var label =
+            dict.TryGetValue("label", out var l) && l is not null
+                ? Convert.ToString(l, CultureInfo.InvariantCulture) ?? ""
+                : value;
+        return new FieldOption(value, label);
     }
 
     private static IDictionary<string, object?>? CoerceOptionsDictionary(object? options)

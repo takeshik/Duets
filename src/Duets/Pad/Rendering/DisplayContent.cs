@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Duets.Pad.Rendering;
 
 public sealed record DisplayContent
@@ -382,6 +384,356 @@ public sealed record DisplayContent
                 new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, handler),
             ]);
         return new DisplayContent(body, interactions);
+    }
+
+    /// <summary>
+    /// Builds a single-line text input field marked with <paramref name="id"/>. (JS: <c>ui.textBox</c>)
+    /// </summary>
+    public static DisplayContent TextBox(Guid id, string value, TextBoxOptions? options = null)
+    {
+        options ??= new TextBoxOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.Text.ToAttributeValue()),
+            new("type", "text"),
+            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new(FieldMarker.ValueAttributeName, value),
+        };
+        AddCommonFieldAttributes(
+            attributes,
+            options.Name,
+            options.Placeholder,
+            options.Title,
+            options.Disabled
+        );
+        return new DisplayContent(
+            new Element("input", new ElementAttributes(attributes), ElementChildren.Empty)
+        );
+    }
+
+    /// <summary>
+    /// Builds a multi-line text input field marked with <paramref name="id"/>. (JS: <c>ui.textArea</c>)
+    /// </summary>
+    public static DisplayContent TextArea(Guid id, string value, TextAreaOptions? options = null)
+    {
+        options ??= new TextAreaOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.TextArea.ToAttributeValue()),
+            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new(FieldMarker.ValueAttributeName, value),
+        };
+        if (options.Rows is { } rows)
+        {
+            attributes.Add(
+                new KeyValuePair<string, string?>(
+                    "rows",
+                    rows.ToString(CultureInfo.InvariantCulture)
+                )
+            );
+        }
+
+        AddCommonFieldAttributes(
+            attributes,
+            options.Name,
+            options.Placeholder,
+            options.Title,
+            options.Disabled
+        );
+        return new DisplayContent(
+            new Element("textarea", new ElementAttributes(attributes), ElementChildren.Empty)
+        );
+    }
+
+    /// <summary>
+    /// Builds a numeric text input field marked with <paramref name="id"/>. The value is still a
+    /// plain string (ADR-47): no coercion or validation is performed. (JS: <c>ui.numberBox</c>)
+    /// </summary>
+    public static DisplayContent NumberBox(Guid id, string value, NumberBoxOptions? options = null)
+    {
+        options ??= new NumberBoxOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.Number.ToAttributeValue()),
+            new("type", "number"),
+            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new(FieldMarker.ValueAttributeName, value),
+        };
+        if (options.Min is { } min)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("min", FormatNumber(min)));
+        }
+
+        if (options.Max is { } max)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("max", FormatNumber(max)));
+        }
+
+        if (options.Step is { } step)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("step", FormatNumber(step)));
+        }
+
+        AddCommonFieldAttributes(
+            attributes,
+            options.Name,
+            placeholder: null,
+            options.Title,
+            options.Disabled
+        );
+        return new DisplayContent(
+            new Element("input", new ElementAttributes(attributes), ElementChildren.Empty)
+        );
+    }
+
+    /// <summary>
+    /// Builds a checkbox field marked with <paramref name="id"/>, whose value is the string
+    /// <c>"True"</c> or <c>"False"</c> (ADR-47). (JS: <c>ui.checkBox</c>)
+    /// </summary>
+    public static DisplayContent CheckBox(Guid id, string value, CheckBoxOptions? options = null)
+    {
+        options ??= new CheckBoxOptions();
+        var inputAttributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.CheckBox.ToAttributeValue()),
+            new("type", "checkbox"),
+            new("class", ResolveClassName(options.ClassName, "form-check-input")),
+        };
+        if (string.Equals(value, "True", StringComparison.Ordinal))
+        {
+            inputAttributes.Add(
+                new KeyValuePair<string, string?>(FieldMarker.CheckedAttributeName, null)
+            );
+        }
+
+        if (options.Disabled)
+        {
+            inputAttributes.Add(new KeyValuePair<string, string?>("disabled", null));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            inputAttributes.Add(new KeyValuePair<string, string?>("title", options.Title));
+        }
+
+        var input = new Element(
+            "input",
+            new ElementAttributes(inputAttributes),
+            ElementChildren.Empty
+        );
+        if (string.IsNullOrWhiteSpace(options.Label))
+        {
+            return new DisplayContent(
+                new Element(
+                    "div",
+                    new ElementAttributes(new KeyValuePair<string, string?>("class", "form-check")),
+                    new ElementChildren(input)
+                )
+            );
+        }
+
+        var label = new Element(
+            "label",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "form-check-label")),
+            new ElementChildren(new Text(options.Label))
+        );
+        return new DisplayContent(
+            new Element(
+                "div",
+                new ElementAttributes(new KeyValuePair<string, string?>("class", "form-check")),
+                new ElementChildren(input, label)
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds a single-select dropdown field marked with <paramref name="id"/>. A <paramref name="value"/>
+    /// absent from <paramref name="options"/>'s items is retained but cannot be displayed as selected
+    /// (ADR-47). (JS: <c>ui.dropDown</c>)
+    /// </summary>
+    public static DisplayContent DropDown(Guid id, string value, DropDownOptions? options = null)
+    {
+        options ??= new DropDownOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.DropDown.ToAttributeValue()),
+            new("class", ResolveClassName(options.ClassName, "form-select")),
+            new(FieldMarker.ValueAttributeName, value),
+        };
+        AddCommonFieldAttributes(
+            attributes,
+            options.Name,
+            placeholder: null,
+            options.Title,
+            options.Disabled
+        );
+
+        var items = options
+            .Items.Select(item =>
+                (ITerminalRenderNode)
+                    new Element(
+                        "option",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>("value", item.Value)
+                        ),
+                        new ElementChildren(new Text(item.Label))
+                    )
+            )
+            .ToList();
+        return new DisplayContent(
+            new Element("select", new ElementAttributes(attributes), [.. items])
+        );
+    }
+
+    /// <summary>
+    /// Builds a range-slider field marked with <paramref name="id"/>. The value is still a plain
+    /// string (ADR-47): no coercion or validation is performed. (JS: <c>ui.slider</c>)
+    /// </summary>
+    public static DisplayContent Slider(Guid id, string value, SliderOptions? options = null)
+    {
+        options ??= new SliderOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.Slider.ToAttributeValue()),
+            new("type", "range"),
+            new("class", ResolveClassName(options.ClassName, "form-range")),
+            new("min", FormatNumber(options.Min)),
+            new("max", FormatNumber(options.Max)),
+            new(FieldMarker.ValueAttributeName, value),
+        };
+        if (options.Step is { } step)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("step", FormatNumber(step)));
+        }
+
+        AddCommonFieldAttributes(
+            attributes,
+            options.Name,
+            placeholder: null,
+            options.Title,
+            options.Disabled
+        );
+        return new DisplayContent(
+            new Element("input", new ElementAttributes(attributes), ElementChildren.Empty)
+        );
+    }
+
+    /// <summary>
+    /// Builds a radio-button group field marked with <paramref name="id"/>: one marked
+    /// <c>&lt;input type="radio"&gt;</c> per option, all sharing the field's identity. A
+    /// <paramref name="value"/> absent from <paramref name="options"/>'s items is retained but
+    /// leaves every option unchecked (ADR-47). (JS: <c>ui.radioGroup</c>)
+    /// </summary>
+    public static DisplayContent RadioGroup(
+        Guid id,
+        string value,
+        RadioGroupOptions? options = null
+    )
+    {
+        options ??= new RadioGroupOptions();
+        var groupName = string.IsNullOrWhiteSpace(options.Name)
+            ? $"duetspad-radio-{id:N}"
+            : options.Name!;
+
+        var children = options
+            .Items.Select(item =>
+            {
+                var inputAttributes = new List<KeyValuePair<string, string?>>
+                {
+                    new(FieldMarker.AttributeName, id.ToString("D")),
+                    new(FieldMarker.KindAttributeName, FieldKind.Radio.ToAttributeValue()),
+                    new("type", "radio"),
+                    new("name", groupName),
+                    new("value", item.Value),
+                    new("class", "form-check-input"),
+                };
+                if (string.Equals(item.Value, value, StringComparison.Ordinal))
+                {
+                    inputAttributes.Add(
+                        new KeyValuePair<string, string?>(FieldMarker.CheckedAttributeName, null)
+                    );
+                }
+
+                if (options.Disabled)
+                {
+                    inputAttributes.Add(new KeyValuePair<string, string?>("disabled", null));
+                }
+
+                var input = new Element(
+                    "input",
+                    new ElementAttributes(inputAttributes),
+                    ElementChildren.Empty
+                );
+                var label = new Element(
+                    "label",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "form-check-label")
+                    ),
+                    new ElementChildren(new Text(item.Label))
+                );
+                return (ITerminalRenderNode)
+                    new Element(
+                        "div",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>("class", "form-check")
+                        ),
+                        new ElementChildren(input, label)
+                    );
+            })
+            .ToList();
+
+        var wrapperAttributes = new List<KeyValuePair<string, string?>>();
+        if (!string.IsNullOrWhiteSpace(options.ClassName))
+        {
+            wrapperAttributes.Add(new KeyValuePair<string, string?>("class", options.ClassName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            wrapperAttributes.Add(new KeyValuePair<string, string?>("title", options.Title));
+        }
+
+        return new DisplayContent(
+            new Element("div", new ElementAttributes(wrapperAttributes), [.. children])
+        );
+    }
+
+    private static string ResolveClassName(string? className, string fallback) =>
+        string.IsNullOrWhiteSpace(className) ? fallback : className!;
+
+    private static void AddCommonFieldAttributes(
+        List<KeyValuePair<string, string?>> attributes,
+        string? name,
+        string? placeholder,
+        string? title,
+        bool disabled
+    )
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            attributes.Add(new KeyValuePair<string, string?>("name", name));
+        }
+
+        if (!string.IsNullOrWhiteSpace(placeholder))
+        {
+            attributes.Add(new KeyValuePair<string, string?>("placeholder", placeholder));
+        }
+
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            attributes.Add(new KeyValuePair<string, string?>("title", title));
+        }
+
+        if (disabled)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("disabled", null));
+        }
     }
 
     internal static DisplayContent FromNode(IRenderNode body) => new(Reducer.Reduce(body));

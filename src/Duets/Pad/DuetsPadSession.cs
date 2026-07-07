@@ -73,7 +73,12 @@ namespace Duets.Pad;
 /// and a DELETE or idle-eviction of the session affects all subscribers simultaneously.
 /// </para>
 /// </remarks>
-internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSurface, ISlotHost
+internal sealed class DuetsPadSession
+    : IDisposable,
+        ICanvasSurface,
+        ITimelineSurface,
+        ISlotHost,
+        IFieldHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -110,6 +115,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
     private readonly DisplayRenderer _renderer;
     private readonly InteractionStore _interactionStore = new();
+    private readonly FieldStore _fieldStore = new();
 
     private readonly int? _timelineEntryLimit;
     private readonly bool _taggedTemplateSnapshotsEnabled;
@@ -482,6 +488,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
             {
                 this.UpdateSlotInCanvases(slot.Id, content);
                 this.UpdateSlotInTimeline(slot.Id, content);
+                this.PruneFieldStore();
             }
         }
         catch (InvalidOperationException ex)
@@ -603,6 +610,331 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         return false;
     }
 
+    // IFieldHost — form-input field store (ADR-47)
+
+    /// <summary>
+    /// Returns the current stored value for <paramref name="fieldId"/>, or <c>""</c> when no value
+    /// has been stored yet. Readable from any eval while the field's marker lives (ADR-47).
+    /// </summary>
+    string IFieldHost.GetFieldValue(Guid fieldId)
+    {
+        lock (this._stateLock)
+        {
+            return this._fieldStore.GetValue(fieldId);
+        }
+    }
+
+    /// <summary>
+    /// Returns whether a value has been stored for <paramref name="fieldId"/>, distinguishing
+    /// "never stored" from "stored as the empty string" (ADR-47).
+    /// </summary>
+    bool IFieldHost.TryGetFieldValue(Guid fieldId, out string value)
+    {
+        lock (this._stateLock)
+        {
+            return this._fieldStore.TryGetValue(fieldId, out value);
+        }
+    }
+
+    /// <summary>
+    /// Stores <paramref name="value"/> for <paramref name="fieldId"/> and re-projects every
+    /// placement of the field's marker in Canvas and Timeline output. Called synchronously from the
+    /// eval call stack when script assigns <c>input.value</c>; must not acquire
+    /// <c>_evalSemaphore</c>. Never throws.
+    /// </summary>
+    void IFieldHost.SetFieldValue(Guid fieldId, FieldKind kind, string value)
+    {
+        try
+        {
+            var normalized = value ?? "";
+            lock (this._stateLock)
+            {
+                this._fieldStore.SetValue(fieldId, normalized);
+                this.UpdateFieldInCanvases(fieldId, kind, normalized);
+                this.UpdateFieldInTimeline(fieldId, kind, normalized);
+
+                // No explicit prune here: a value update only touches markers that are already
+                // placed (UpdateFieldInCanvases already prunes via CommitCanvasMutation when it
+                // actually commits a canvas). Pruning unconditionally would wipe out the value
+                // this same call just seeded for a field that has not been placed anywhere yet
+                // (e.g. the DisplayInput constructor's initial seed, before canvas.add runs).
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            this.AppendCanvasProjectionError(ex);
+        }
+        catch
+        {
+            // Swallow — a field update must never disrupt the eval.
+        }
+    }
+
+    /// <summary>
+    /// Applies a browser-originated blur commit for <paramref name="fieldId"/> (ADR-47). Acquires
+    /// <c>_evalSemaphore</c> before mutating state — the same discipline <see cref="InvokeInteractionAsync"/>
+    /// uses for its field-snapshot application — so a blur commit arriving from the HTTP field-commit
+    /// endpoint (which runs outside the eval call stack) cannot land between an in-progress eval's
+    /// out-of-lock render step and its in-lock projection commit and desynchronize the projection.
+    /// Delegates to <see cref="ApplyBrowserFieldCommit"/>, which discards the commit rather than
+    /// reviving the store entry when the field's marker is no longer reachable from any canvas or
+    /// Timeline content. Never throws.
+    /// </summary>
+    internal async Task CommitFieldValue(Guid fieldId, string value)
+    {
+        this.Touch();
+
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (Volatile.Read(ref this._disposed) == 1)
+            {
+                return;
+            }
+
+            var normalized = value ?? "";
+            lock (this._stateLock)
+            {
+                this.ApplyBrowserFieldCommit(fieldId, normalized);
+            }
+        }
+        catch
+        {
+            // Swallow — a browser commit must never surface as a hard failure.
+        }
+        finally
+        {
+            this._evalSemaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Applies a browser-originated commit of <paramref name="value"/> for <paramref name="fieldId"/>:
+    /// a no-op when the field's marker is no longer reachable from any canvas projection or Timeline
+    /// entry (a stale, delayed commit from a since-removed control must not revive a value whose
+    /// rendered content no longer exists, ADR-47), otherwise stores the value and updates the
+    /// authoritative Canvas/Timeline state in place without broadcasting (no echo — the committing
+    /// browser's own DOM already reflects the value). Shared by <see cref="CommitFieldValue"/> (the
+    /// blur-commit HTTP path) and <see cref="InvokeInteractionAsync"/> (the invoke-body snapshot path)
+    /// so both browser-originated commit routes apply the same liveness guard and projection update.
+    /// Must be called while <c>_stateLock</c> is held.
+    /// </summary>
+    private void ApplyBrowserFieldCommit(Guid fieldId, string value)
+    {
+        if (!this.IsFieldReachable(fieldId))
+        {
+            return;
+        }
+
+        this._fieldStore.SetValue(fieldId, value);
+        this.CommitFieldValueInCanvases(fieldId, value);
+        this.CommitFieldValueInTimeline(fieldId, value);
+    }
+
+    /// <summary>
+    /// Returns whether the field identified by <paramref name="fieldId"/> currently has at least one
+    /// marker placement in any canvas projection or Timeline entry. Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private bool IsFieldReachable(Guid fieldId)
+    {
+        foreach (var projection in this._canvasProjections.Values)
+        {
+            if (FieldMarker.Find(projection.State.Root, fieldId).Count > 0)
+            {
+                return true;
+            }
+        }
+
+        foreach (var entry in this._timelineState)
+        {
+            if (FieldMarker.Find(entry.Body, fieldId).Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
+    /// marker in every canvas and broadcasts the resulting mutation. Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private void UpdateFieldInCanvases(Guid fieldId, FieldKind kind, string value)
+    {
+        foreach (var name in this._canvasProjections.Keys.ToList())
+        {
+            var projection = this._canvasProjections[name];
+            var markers = FieldMarker.Find(projection.State.Root, fieldId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newRoot = (Element)
+                FieldMarker.ApplyValue(projection.State.Root, markers, kind, value);
+            var newState = new CanvasState(newRoot);
+            if (newState.Equals(projection.State))
+            {
+                // Identical value: a true no-op. Skip so reassigning the same value does not emit
+                // a phantom empty-operation patch or advance the revision.
+                continue;
+            }
+
+            // A field carries no interactions of its own; the existing canvas interaction set is
+            // preserved unchanged (paths still resolve because only attributes changed).
+            var plan = new CanvasInteractionCommitPlan(
+                name,
+                this._interactionStore.GetCanvasInteractions(name),
+                replacedInteractions: [],
+                replaceExisting: false
+            );
+            this.CommitCanvasMutation(
+                name,
+                existed: true,
+                projection,
+                newState,
+                projection.Revision + 1,
+                plan
+            );
+        }
+    }
+
+    /// <summary>
+    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
+    /// marker in every Timeline entry and broadcasts a <c>timeline.update</c> for each. Must be
+    /// called while <c>_stateLock</c> is held.
+    /// </summary>
+    private void UpdateFieldInTimeline(Guid fieldId, FieldKind kind, string value)
+    {
+        for (var i = 0; i < this._timelineState.Count; i++)
+        {
+            var entry = this._timelineState[i];
+            var markers = FieldMarker.Find(entry.Body, fieldId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newBody = FieldMarker.ApplyValue(entry.Body, markers, kind, value);
+            if (newBody.Equals(entry.Body))
+            {
+                // Identical value: skip the redundant timeline.update.
+                continue;
+            }
+
+            var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
+            this._timelineState = this._timelineState.Replace(newEntry);
+            var interactions = this._interactionStore.TimelineInteractions.TryGetValue(
+                entry.Id,
+                out var existing
+            )
+                ? existing
+                : [];
+            this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
+        }
+    }
+
+    /// <summary>
+    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
+    /// marker in every canvas projection's <see cref="CanvasState"/>, resolving each marker's
+    /// <see cref="FieldKind"/> from its own <c>data-duetspad-field-kind</c> attribute (a
+    /// browser-originated commit does not carry the kind). Unlike <see cref="UpdateFieldInCanvases"/>,
+    /// this replaces only the projection's <c>State</c> at its current revision — it does not
+    /// broadcast a patch and does not advance the revision (no echo). Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private void CommitFieldValueInCanvases(Guid fieldId, string value)
+    {
+        foreach (var name in this._canvasProjections.Keys.ToList())
+        {
+            var projection = this._canvasProjections[name];
+            var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
+            if (markers.Count == 0 || kind is null)
+            {
+                continue;
+            }
+
+            var newRoot = (Element)
+                FieldMarker.ApplyValue(projection.State.Root, markers, kind.Value, value);
+            var newState = new CanvasState(newRoot);
+            if (newState.Equals(projection.State))
+            {
+                // Identical value: a true no-op. Skip so re-committing the same value does not
+                // needlessly rebuild the projection's State.
+                continue;
+            }
+
+            this._canvasProjections[name] = projection with { State = newState };
+        }
+    }
+
+    /// <summary>
+    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
+    /// marker in every Timeline entry's body, resolving each marker's <see cref="FieldKind"/> from
+    /// its own <c>data-duetspad-field-kind</c> attribute. Unlike <see cref="UpdateFieldInTimeline"/>,
+    /// this does not broadcast a <c>timeline.update</c> (no echo). Must be called while
+    /// <c>_stateLock</c> is held.
+    /// </summary>
+    private void CommitFieldValueInTimeline(Guid fieldId, string value)
+    {
+        for (var i = 0; i < this._timelineState.Count; i++)
+        {
+            var entry = this._timelineState[i];
+            var (markers, kind) = FieldMarker.FindWithKind(entry.Body, fieldId);
+            if (markers.Count == 0 || kind is null)
+            {
+                continue;
+            }
+
+            var newBody = FieldMarker.ApplyValue(entry.Body, markers, kind.Value, value);
+            if (newBody.Equals(entry.Body))
+            {
+                // Identical value: skip the redundant entry replacement.
+                continue;
+            }
+
+            var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
+            this._timelineState = this._timelineState.Replace(newEntry);
+        }
+    }
+
+    /// <summary>
+    /// Removes field-store entries whose marker is no longer reachable from any canvas projection
+    /// or Timeline entry (ADR-47: a field's value shares the lifetime of its rendered content). Must
+    /// be called while <c>_stateLock</c> is held.
+    /// </summary>
+    private void PruneFieldStore()
+    {
+        var retained = new HashSet<Guid>();
+        foreach (var projection in this._canvasProjections.Values)
+        {
+            FieldMarker.CollectIds(projection.State.Root, retained);
+        }
+
+        foreach (var entry in this._timelineState)
+        {
+            FieldMarker.CollectIds(entry.Body, retained);
+        }
+
+        this._fieldStore.Retain(retained);
+    }
+
     // Public eval entry
 
     /// <summary>
@@ -676,7 +1008,19 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         }
     }
 
-    internal async Task<InteractionInvokeResult> InvokeInteractionAsync(Guid handlerId)
+    /// <summary>
+    /// Invokes the interaction handler registered under <paramref name="handlerId"/>, optionally
+    /// first applying every entry of <paramref name="fieldSnapshot"/> as a browser-originated field
+    /// commit via <see cref="ApplyBrowserFieldCommit"/> (ADR-47: the invoke body carries a snapshot of
+    /// edited-but-not-yet-blurred field values so the handler observes the latest edit regardless of
+    /// blur timing, and so the Canvas/Timeline projection — not only the field store — reflects the
+    /// snapshot, exactly as a blur commit does). The snapshot application and the handler invocation
+    /// both run under <c>_evalSemaphore</c>.
+    /// </summary>
+    internal async Task<InteractionInvokeResult> InvokeInteractionAsync(
+        Guid handlerId,
+        IReadOnlyDictionary<Guid, string>? fieldSnapshot = null
+    )
     {
         this.Touch();
 
@@ -704,6 +1048,17 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
             if (Volatile.Read(ref this._disposed) == 1)
             {
                 return InteractionInvokeResult.StaleHandler("Session has been disposed.");
+            }
+
+            if (fieldSnapshot is { Count: > 0 })
+            {
+                lock (this._stateLock)
+                {
+                    foreach (var (snapshotFieldId, snapshotValue) in fieldSnapshot)
+                    {
+                        this.ApplyBrowserFieldCommit(snapshotFieldId, snapshotValue ?? "");
+                    }
+                }
             }
 
             Action? handler;
@@ -1061,6 +1416,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
 
                 this._canvasProjections.Clear();
                 this._interactionStore.Clear();
+                this._fieldStore.Clear();
             }
 
             this.DuetsSession.Dispose();
@@ -1204,6 +1560,8 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
                 this._timelineState = trimmedTimeline;
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
+
+            this.PruneFieldStore();
         }
     }
 
@@ -1250,6 +1608,7 @@ internal sealed class DuetsPadSession : IDisposable, ICanvasSurface, ITimelineSu
         this._interactionStore.CommitCanvasInteractions(interactions);
         this._canvasProjections[name] = new CanvasProjection(newState, revision);
         this.BroadcastCanvas(message);
+        this.PruneFieldStore();
     }
 
     private CanvasEventMessage CreateCanvasMutationMessage(

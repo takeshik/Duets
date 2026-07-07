@@ -91,6 +91,9 @@
               el.appendChild(projectNode(child));
             }
           }
+          // A freshly built element has never been focused or edited, so the
+          // live property is always applied unguarded (ADR-47).
+          applyFieldLiveValue(el);
           return el;
         }
 
@@ -257,14 +260,165 @@
     return node instanceof HTMLElement ? node : null;
   }
 
-  async function invokeInteraction(handlerId) {
+  // Form-input fields (ADR-47)
+  // Every field-marked element carries data-duetspad-field (the field id) and
+  // data-duetspad-field-kind. Text-like kinds encode their value in the "value"
+  // attribute/property; "checkbox" and "radio" encode it as the "checked"
+  // boolean attribute/property. The server is the canonical holder; the
+  // browser is a second writer that commits on blur and folds a snapshot into
+  // the invoke body so a click handler sees the latest edit regardless of
+  // blur timing.
+
+  function isFieldGuarded(el) {
+    // A focused or mid-edit (pending, not yet committed) field must not be
+    // clobbered by an incoming projection — the ordinary controlled-input
+    // concern, not a change in who owns the value.
+    return document.activeElement === el || el.dataset.duetspadPending === "1";
+  }
+
+  /**
+   * Applies the live DOM property (value/checked) a field-marked element's
+   * encoded attribute represents. Called after projecting a fresh element and
+   * after every canvas-patch attribute mutation on an existing one.
+   * @param {Element} el
+   * @param {{ checkGuard?: boolean }} [options]
+   */
+  function applyFieldLiveValue(el, options = {}) {
+    if (!(el instanceof HTMLElement)) return;
+    const kind = el.getAttribute("data-duetspad-field-kind");
+    if (!kind) return;
+    if (options.checkGuard && isFieldGuarded(el)) return;
+
+    if (kind === "checkbox" || kind === "radio") {
+      el.checked = el.hasAttribute("checked");
+    } else {
+      el.value = el.getAttribute("value") ?? "";
+    }
+  }
+
+  /**
+   * Returns the current value a field-marked element should commit, or null
+   * when it should not contribute one (an unchecked radio option).
+   * @param {Element} el
+   */
+  function fieldCurrentValue(el) {
+    const kind = el.getAttribute("data-duetspad-field-kind");
+    if (kind === "checkbox") return el.checked ? "True" : "False";
+    if (kind === "radio") return el.checked ? el.value : null;
+    return el.value;
+  }
+
+  async function commitFieldValue(el) {
+    const fieldId = el.getAttribute("data-duetspad-field");
+    if (!fieldId) return;
+    const value = fieldCurrentValue(el);
+    if (value === null) return;
+    // Capture the edit generation this commit is chasing: if a newer edit
+    // lands while the request is in flight, the generation captured here
+    // will be stale by the time the response arrives, and the pending flag
+    // must survive to keep guarding that newer, still-uncommitted edit
+    // (concurrent commits can otherwise race and clear pending too early).
+    const editGen = el.dataset.duetspadEditGen;
+    try {
+      const res = await fetch(
+        padUrl(
+          `sessions/${sessionId}/fields/${encodeURIComponent(fieldId)}/commit`,
+        ),
+        {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: value,
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`field commit failed: ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.ok !== true) {
+        throw new Error(data.error ?? "field commit rejected");
+      }
+      // Only a confirmed commit clears the pending flag, and only when no
+      // newer edit has started since this commit began: an unconfirmed or
+      // superseded edit must keep guarding the field against being
+      // clobbered by the next incoming projection.
+      if (el.dataset.duetspadEditGen === editGen) {
+        delete el.dataset.duetspadPending;
+      }
+    } catch (err) {
+      console.error("[DuetsPad] field commit failed", err);
+    }
+  }
+
+  function bindFieldElement(el, signal) {
+    const listenerOptions = signal ? { signal } : undefined;
+    el.addEventListener(
+      "input",
+      () => {
+        el.dataset.duetspadPending = "1";
+        el.dataset.duetspadEditGen = String(
+          (Number(el.dataset.duetspadEditGen) || 0) + 1,
+        );
+      },
+      listenerOptions,
+    );
+    el.addEventListener(
+      "focusout",
+      () => {
+        void commitFieldValue(el);
+      },
+      listenerOptions,
+    );
+  }
+
+  /**
+   * Binds blur-commit (and pending-flag) listeners on every field-marked
+   * element within root, including root itself when root is field-marked
+   * (a timeline entry's body can project a field element as its own root).
+   * Rebound on every full render and canvas patch, sharing the same abort
+   * signal as the canvas's interaction bindings.
+   * @param {Element} root
+   * @param {AbortSignal} [signal]
+   */
+  function bindFields(root, signal) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    if (root.matches?.("[data-duetspad-field]")) {
+      bindFieldElement(root, signal);
+    }
+    for (const el of root.querySelectorAll("[data-duetspad-field]")) {
+      bindFieldElement(el, signal);
+    }
+  }
+
+  /**
+   * Collects { fieldId: value } for every field-marked element within root,
+   * for folding into an interaction-invoke request body (ADR-47).
+   * @param {Element} root
+   */
+  function collectFieldSnapshot(root) {
+    const fields = {};
+    if (!root || typeof root.querySelectorAll !== "function") return fields;
+    for (const el of root.querySelectorAll("[data-duetspad-field]")) {
+      const fieldId = el.getAttribute("data-duetspad-field");
+      if (!fieldId) continue;
+      const value = fieldCurrentValue(el);
+      if (value === null) continue;
+      fields[fieldId] = value;
+    }
+    return fields;
+  }
+
+  async function invokeInteraction(handlerId, canvasRoot) {
     if (!handlerId) return;
     try {
       await fetch(
         padUrl(
           `sessions/${sessionId}/interactions/${encodeURIComponent(handlerId)}/invoke`,
         ),
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fields: collectFieldSnapshot(canvasRoot) }),
+        },
       );
     } catch (err) {
       console.error("[DuetsPad] interaction invoke failed", err);
@@ -288,7 +442,7 @@
         target.addEventListener(
           "click",
           () => {
-            void invokeInteraction(interaction.handlerId);
+            void invokeInteraction(interaction.handlerId, root);
           },
           signal ? { signal } : undefined,
         );
@@ -562,6 +716,7 @@
     const body = projectNode(entry.body);
     bodyEl.appendChild(body);
     applyInteractions(body, entry.interactions);
+    bindFields(body);
 
     row.appendChild(reasonEl);
     row.appendChild(bodyEl);
@@ -977,6 +1132,7 @@
     panel.appendChild(body);
     const signal = resetCanvasInteractionBindings(name);
     applyInteractions(body, msg.interactions, signal);
+    bindFields(body, signal);
     canvasRevisionMap.set(name, revision);
     return true;
   }
@@ -994,12 +1150,17 @@
         case "set-attr": {
           const target = resolveNode(root, operation.path);
           target.setAttribute(operation.name, operation.value ?? "");
+          // The differ emits value/checked changes as plain attribute ops (ADR-47); mirror
+          // them onto the live DOM property, guarding a focused/mid-edit field from being
+          // clobbered by an incoming projection.
+          applyFieldLiveValue(target, { checkGuard: true });
           break;
         }
 
         case "remove-attr": {
           const target = resolveNode(root, operation.path);
           target.removeAttribute(operation.name);
+          applyFieldLiveValue(target, { checkGuard: true });
           break;
         }
 
@@ -1468,6 +1629,7 @@
       applyCanvasPatch(body, msg.operations);
       const signal = resetCanvasInteractionBindings(name);
       applyInteractions(body, msg.interactions, signal);
+      bindFields(body, signal);
       canvasRevisionMap.set(name, revision);
       drainCanvasPatchBuffer(name);
     } catch (err) {
