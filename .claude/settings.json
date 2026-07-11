@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "dotnet \"$CLAUDE_PROJECT_DIR/scripts/format.cs\""
+            "command": "dotnet \"$CLAUDE_PROJECT_DIR/scripts/format.cs\" 1>&2"
           }
         ]
       }
