@@ -689,6 +689,5 @@ public sealed class DuetsPadService : IDisposable
         public string? CurrentSegmentRaw { get; init; }
         public int SegmentIndex { get; init; }
         public int CaretOffsetInSegment { get; init; }
-        public IReadOnlyList<string>? RawSegments { get; init; }
     }
 }
