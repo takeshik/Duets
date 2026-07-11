@@ -921,6 +921,14 @@ internal sealed class DuetsPadSession
     /// </summary>
     private void PruneFieldStore()
     {
+        // Nothing to prune — skip the full-tree marker scan (every canvas plus every Timeline
+        // entry) that would otherwise run on each Timeline append even in sessions that never
+        // create a form input.
+        if (this._fieldStore.IsEmpty)
+        {
+            return;
+        }
+
         var retained = new HashSet<Guid>();
         foreach (var projection in this._canvasProjections.Values)
         {
