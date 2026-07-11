@@ -16,6 +16,14 @@ internal sealed class FieldStore
 {
     private readonly Dictionary<Guid, string> _values = [];
 
+    /// <summary>
+    /// Returns whether the store holds no values. Lets callers skip the reachability scan that
+    /// feeds <see cref="Retain"/> entirely: pruning an empty store is a no-op, but the scan that
+    /// collects retained ids walks every canvas tree and Timeline entry and runs on every Timeline
+    /// append, so sessions that never create a form input should not pay for it.
+    /// </summary>
+    public bool IsEmpty => this._values.Count == 0;
+
     /// <summary>Returns the stored value for <paramref name="fieldId"/>, or <c>""</c> if none.</summary>
     public string GetValue(Guid fieldId) =>
         this._values.TryGetValue(fieldId, out var value) ? value : "";
