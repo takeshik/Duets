@@ -7,14 +7,16 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/Duets.Sandbox/Duets.Sandbox.csproj" />
     <Project Path="src/Duets/Duets.csproj" />
+    <Project Path="src/Duets.Pad/Duets.Pad.csproj" />
+    <Project Path="src/Duets.Sandbox/Duets.Sandbox.csproj" />
     <Project Path="src/Duets.Jint/Duets.Jint.csproj" />
 
     <Project Path="src/HttpHarker/HttpHarker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Duets.Tests/Duets.Tests.csproj" />
+    <Project Path="tests/Duets.Pad.Tests/Duets.Pad.Tests.csproj" />
     <Project Path="tests/HttpHarker.Tests/HttpHarker.Tests.csproj" />
   </Folder>
 </Solution>

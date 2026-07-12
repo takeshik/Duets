@@ -39,5 +39,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Duets.Tests$(_AssemblyNamePublicKeySuffix)" />
+    <InternalsVisibleTo Include="Duets.Pad.Tests$(_AssemblyNamePublicKeySuffix)" />
   </ItemGroup>
 </Project>

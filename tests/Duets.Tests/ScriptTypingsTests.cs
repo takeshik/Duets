@@ -381,7 +381,7 @@ public sealed class ScriptTypingsTests
 
         harness.Engine.Execute("typings.scanAssemblyOf(DuetsNs.DuetsSession)");
 
-        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Completions.*), so the
         // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
         Assert.Contains(
             harness.GetNonBuiltinDeclarations(),
@@ -433,7 +433,7 @@ public sealed class ScriptTypingsTests
 
         typings.ScanAssembly(assemblyRef);
 
-        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Completions.*), so the
         // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
         Assert.Contains(
             declarations.GetDeclarations(),
@@ -451,7 +451,7 @@ public sealed class ScriptTypingsTests
             $"typings.scanAssembly('{typeof(IScriptEngine).Assembly.FullName}')"
         );
 
-        // The Duets assembly exposes several public namespaces (e.g. Duets.Pad.*), so the
+        // The Duets assembly exposes several public namespaces (e.g. Duets.Completions.*), so the
         // scan registers more than one placeholder. Assert that the Duets placeholder is among them.
         Assert.Contains(
             harness.GetNonBuiltinDeclarations(),

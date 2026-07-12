@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Duets\Duets.csproj" />
+    <ProjectReference Include="..\Duets.Pad\Duets.Pad.csproj" />
     <ProjectReference Include="..\Duets.Jint\Duets.Jint.csproj" />
   </ItemGroup>
 
@@ -22,5 +23,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Duets.Tests$(_AssemblyNamePublicKeySuffix)" />
+    <InternalsVisibleTo Include="Duets.Pad.Tests$(_AssemblyNamePublicKeySuffix)" />
   </ItemGroup>
 </Project>

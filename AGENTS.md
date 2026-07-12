@@ -35,21 +35,25 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 - `Duets.slnx` — Solution file (XML-based slnx format)
 - `Directory.Build.props` — Shared build properties (TFM, nullable, etc.) applied to all projects
 - `src/`
-  - `Duets/` — Core library (public API): session, declarations, transpiler interface, DuetsPad browser debug pad
-    - `Resources/DuetsPadStaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `DuetsPadService` at runtime
+  - `Duets/` — Core library (public API): session, declarations, transpiler interface
     - `Resources/language-service.js` — Embedded TypeScript language service script loaded server-side by `TypeScriptService` for completions
+  - `Duets.Pad/` — DuetsPad browser debug pad package; depends on `Duets` and `HttpHarker` (see `src/Duets.Pad/README.md`)
+    - `Resources/StaticFiles/` — Embedded web assets compiled as `EmbeddedResource` and served by `DuetsPadService` at runtime
   - `Duets.Jint/` — [Jint](https://github.com/sebastienros/jint) backend package: `JintScriptEngine`,
     `BabelTranspiler`, `TypeScriptService`, `ExtensionMethodRegistry`, `DuetsSessionConfigurationExtensions`
   - `HttpHarker/` — Standalone lightweight HTTP server library (may be extracted to its own repo)
   - `Duets.Sandbox/` — Multi-mode debugging CLI (batch, repl, serve, complete); not part of the public API
   - `shared/` — `internal` utility code shared across all projects via `<Compile Include>` (not a separate assembly);
     place cross-project internal helpers here
-- `samples/` — Runnable file-based app examples (`.cs` files; run with `dotnet run samples/<file>.cs`)
+- `samples/` — Runnable file-based app examples, grouped per package (run with `dotnet run samples/<package>/<file>.cs`)
 - `docs/`
   - `architecture.md` — Architecture overview (current snapshot)
   - `decisions/` — Architecture Decision Records (ADRs)
 - `tests/`
   - `Duets.Tests/` — Unit tests (xUnit v3)
+  - `Duets.Pad.Tests/` — Unit tests for `Duets.Pad`
+  - `HttpHarker.Tests/` — Unit tests for `HttpHarker`
+  - `shared/` — test-support sources shared across test projects via `<Compile Include>`
 
 ## Architecture & Design
 

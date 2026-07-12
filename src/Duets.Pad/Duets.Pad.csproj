@@ -9,21 +9,34 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PackageId>Duets</PackageId>
+    <PackageId>Duets.Pad</PackageId>
     <Authors>takeshik</Authors>
-    <Description>Embeddable TypeScript console for .NET applications.</Description>
+    <Description>DuetsPad browser debug pad for Duets: Monaco editor, canvas, and timeline served over HTTP.</Description>
     <Copyright>Copyright © Takeshi KIRIYA (aka takeshik) &lt;takeshik@tksk.io&gt;</Copyright>
     <PackageProjectUrl>https://github.com/takeshik/Duets</PackageProjectUrl>
     <RepositoryUrl>https://github.com/takeshik/Duets</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>TypeScript JavaScript REPL debug</PackageTags>
+    <PackageTags>TypeScript JavaScript REPL debug pad</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Duets\Duets.csproj" />
+    <ProjectReference Include="..\HttpHarker\HttpHarker.csproj" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference
       Include="PolySharp"
       PrivateAssets="all"
+      Condition="'$(TargetFramework)' == 'netstandard2.1'"
+    />
+    <PackageReference
+      Include="System.Text.Json"
+      Condition="'$(TargetFramework)' == 'netstandard2.1'"
+    />
+    <PackageReference
+      Include="System.Threading.Channels"
       Condition="'$(TargetFramework)' == 'netstandard2.1'"
     />
   </ItemGroup>
@@ -37,6 +50,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Duets.Tests$(_AssemblyNamePublicKeySuffix)" />
+    <InternalsVisibleTo Include="Duets.Pad.Tests$(_AssemblyNamePublicKeySuffix)" />
   </ItemGroup>
 </Project>
