@@ -85,11 +85,30 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
         Directory.CreateDirectory(_cacheDir);
 
         var babelTask = FetchLatestAsync("@babel/standalone", "babel.js");
-        var tsTask = FetchLatestAsync("typescript", "lib/typescript.js");
+        var tsTask = FetchLatestTypeScriptAsync();
         await Task.WhenAll(babelTask, tsTask);
 
         (this.BabelJs, this.BabelVersion) = await babelTask;
         (this.TypeScriptJs, this.TypeScriptVersion) = await tsTask;
+    }
+
+    /// <summary>
+    /// Fetches the newest npm TypeScript compiler that the Jint-hosted service can still run.
+    /// TypeScript 7+ is the native (Go) distribution and ships no <c>lib/typescript.js</c> on npm
+    /// (ADR-19), so blindly following the <c>latest</c> dist-tag across that boundary produces a
+    /// 404 from unpkg. When <c>latest</c> has moved to 7+, fall back to the same JS-based-line
+    /// version that the production default in <c>TypeScriptServiceOptions</c> pins.
+    /// </summary>
+    private static async Task<(string Content, string Version)> FetchLatestTypeScriptAsync()
+    {
+        var version = await ResolveLatestVersionAsync("typescript");
+        var dot = version.IndexOf('.');
+        if (dot > 0 && int.TryParse(version[..dot], out var major) && major >= 7)
+        {
+            version = "6.0.2";
+        }
+
+        return await FetchAsync("typescript", version, "lib/typescript.js");
     }
 
     private static async Task<(string Content, string Version)> FetchLatestAsync(
@@ -98,6 +117,15 @@ public sealed class TranspilerAssetsFixture : IAsyncLifetime
     )
     {
         var version = await ResolveLatestVersionAsync(package);
+        return await FetchAsync(package, version, filePath);
+    }
+
+    private static async Task<(string Content, string Version)> FetchAsync(
+        string package,
+        string version,
+        string filePath
+    )
+    {
         var sanitized = package.TrimStart('@').Replace('/', '-');
         var cacheFile = Path.Combine(_cacheDir, $"{sanitized}-{version}.js");
 
