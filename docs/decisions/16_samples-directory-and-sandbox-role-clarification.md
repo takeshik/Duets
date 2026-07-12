@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted (partially supersedes [ADR-11](11_sandbox-multi-mode-debugging-cli.md))
+Accepted (partially supersedes [ADR-11](11_sandbox-multi-mode-debugging-cli.md)); flat file layout
+partially superseded by [ADR-48](48_extract-duets-pad-into-its-own-package.md)
+
+The `samples/` directory, its role separation from `Duets.Sandbox`, and the self-contained
+file-based-app format decided here remain in force. The flat `samples/<file>.cs` layout is
+superseded by ADR-48's per-package grouping (`samples/<package>/<file>.cs`).
 
 ## Context
 

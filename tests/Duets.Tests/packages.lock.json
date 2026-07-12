@@ -137,10 +137,7 @@
         }
       },
       "duets": {
-        "type": "Project",
-        "dependencies": {
-          "HttpHarker": "[1.0.0, )"
-        }
+        "type": "Project"
       },
       "duets.jint": {
         "type": "Project",
@@ -149,11 +146,19 @@
           "Jint": "[4.10.0, )"
         }
       },
+      "duets.pad": {
+        "type": "Project",
+        "dependencies": {
+          "Duets": "[1.0.0, )",
+          "HttpHarker": "[1.0.0, )"
+        }
+      },
       "duets.sandbox": {
         "type": "Project",
         "dependencies": {
           "Duets": "[1.0.0, )",
-          "Duets.Jint": "[1.0.0, )"
+          "Duets.Jint": "[1.0.0, )",
+          "Duets.Pad": "[1.0.0, )"
         }
       },
       "httpharker": {

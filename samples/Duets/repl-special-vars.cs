@@ -1,0 +1,66 @@
+// REPL special variables: $_, $exception, GetGlobalVariables
+//
+// DuetsSession maintains three REPL conveniences that mirror interactive
+// shell workflows:
+//
+//   $_            — the value returned by the last Evaluate call (like $_ in
+//                   PowerShell or _ in Python/Node.js REPL).  Cleared to
+//                   undefined after Execute or on any thrown exception.
+//
+//   $exception    — the exception object from the last thrown error.  Lets
+//                   you inspect error details without re-running the failing
+//                   expression.  Cleared to undefined on the next successful
+//                   call.
+//
+//   GetGlobalVariables() — returns a snapshot of every name the user has
+//                   defined, excluding built-ins and engine internals.
+#:project ../../src/Duets.Jint/Duets.Jint.csproj
+
+using Duets;
+
+using var session = await DuetsSession.CreateAsync();
+
+// $_ — last evaluated value
+session.Evaluate("Math.PI * 2");
+var lastResult = session.Evaluate("$_");
+Console.WriteLine($"$_ = {lastResult}"); // $_ = 6.283185307179586
+
+// $_ is cleared after Execute (statement, not expression)
+session.Execute("const greeting = 'hello';");
+var afterExec = session.Evaluate("$_");
+Console.WriteLine($"$_ after Execute = {afterExec}"); // $_ after Execute = undefined
+
+// $exception — captures the last thrown error
+try
+{
+    session.Evaluate("null.missingProperty");
+}
+catch
+{
+    // swallow; inspect via $exception instead
+}
+
+var exMessage = session.Evaluate("$exception ? $exception.message : String($exception)");
+Console.WriteLine($"$exception.message = {exMessage}");
+
+// $exception.message = Cannot read property 'missingProperty' of null
+
+// $exception is cleared after the next successful call
+session.Evaluate("1 + 1");
+var clearedEx = session.Evaluate("$exception");
+Console.WriteLine($"$exception after success = {clearedEx}"); // $exception after success = undefined
+
+// GetGlobalVariables — snapshot of user-defined names only
+session.Execute("var alpha = 1; var beta = 'two'; var gamma = [3];");
+var globals = session.GetGlobalVariables();
+
+Console.WriteLine("User-defined globals:");
+foreach (var (key, value) in globals)
+{
+    Console.WriteLine($"  {key} = {value}");
+}
+// User-defined globals:
+//   greeting = hello
+//   alpha = 1
+//   beta = two
+//   gamma = (1)[]

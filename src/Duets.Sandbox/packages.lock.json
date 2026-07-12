@@ -20,16 +20,20 @@
         "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
       },
       "duets": {
-        "type": "Project",
-        "dependencies": {
-          "HttpHarker": "[1.0.0, )"
-        }
+        "type": "Project"
       },
       "duets.jint": {
         "type": "Project",
         "dependencies": {
           "Duets": "[1.0.0, )",
           "Jint": "[4.10.0, )"
+        }
+      },
+      "duets.pad": {
+        "type": "Project",
+        "dependencies": {
+          "Duets": "[1.0.0, )",
+          "HttpHarker": "[1.0.0, )"
         }
       },
       "httpharker": {

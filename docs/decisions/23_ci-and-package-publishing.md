@@ -2,7 +2,17 @@
 
 ## Status
 
-Accepted — supersedes [ADR-17](17_versioning-strategy-and-ci.md)
+Accepted — supersedes [ADR-17](17_versioning-strategy-and-ci.md); package topology, `IsPackable`
+set, and signing scope partially superseded by
+[ADR-48](48_extract-duets-pad-into-its-own-package.md)
+
+The CI/publish workflow (single `publish.yml`, snapshot on push to `main`, release on tags), the
+GitHub Packages target, and the independent-packages principle decided here remain in force. The
+concrete package inventory is no longer two: `Duets.Jint`
+([ADR-27](27_split-javascript-runtime-backends-from-duets-core.md)) and `Duets.Pad`
+([ADR-48](48_extract-duets-pad-into-its-own-package.md)) were extracted later, and `Duets` no longer
+depends on `HttpHarker` (that dependency moved to `Duets.Pad`). ADR-48 records the current packable
+set and dependency graph.
 
 ## Context
 

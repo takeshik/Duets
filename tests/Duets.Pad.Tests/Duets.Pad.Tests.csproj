@@ -27,9 +27,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Duets/Duets.csproj" />
+    <ProjectReference Include="../../src/Duets.Pad/Duets.Pad.csproj" />
     <ProjectReference Include="../../src/Duets.Jint/Duets.Jint.csproj" />
 
+    <!-- Pad protocol tests drive the server through DuetsPadProtocolClient, which lives in
+         Duets.Sandbox as the protocol's reference client. -->
     <ProjectReference Include="../../src/Duets.Sandbox/Duets.Sandbox.csproj" />
   </ItemGroup>
 </Project>
