@@ -302,13 +302,9 @@ internal sealed class DuetsPadSession
                 );
             }
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
             this.AppendCanvasProjectionError(ex);
-        }
-        catch
-        {
-            // Swallow.
         }
     }
 
@@ -369,13 +365,9 @@ internal sealed class DuetsPadSession
                 );
             }
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
             this.AppendCanvasProjectionError(ex);
-        }
-        catch
-        {
-            // Swallow.
         }
     }
 
@@ -418,13 +410,9 @@ internal sealed class DuetsPadSession
                 );
             }
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
             this.AppendCanvasProjectionError(ex);
-        }
-        catch
-        {
-            // Swallow.
         }
     }
 
