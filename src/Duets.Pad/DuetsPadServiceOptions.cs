@@ -74,6 +74,30 @@ public sealed class DuetsPadServiceOptions
     public TimeSpan KeepAliveInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>
+    /// Evaluated on every session-API request (everything under <c>/sessions</c>) to decide whether
+    /// the request is authenticated; for the SSE events endpoint it is evaluated once, at connection
+    /// establishment. Static UI assets (the pad page, scripts, styles, fonts) are never authenticated.
+    /// <see langword="null"/> (the default) means no authentication is performed, which assumes
+    /// loopback-only exposure (ADR-49). For fixed-token validation, see
+    /// <see cref="DuetsPadAuthenticator.Token(string)"/>.
+    /// </summary>
+    public Func<DuetsPadAuthenticationContext, ValueTask<bool>>? Authenticate { get; set; }
+
+    /// <summary>
+    /// Maximum number of concurrent DuetsPad sessions. <see langword="null"/> means unlimited.
+    /// When the cap is reached, <c>POST /sessions</c> attempts to create a new session (as opposed
+    /// to reconnecting to an existing one) fail with <c>429</c>.
+    /// </summary>
+    public int? MaxSessions { get; set; } = 16;
+
+    /// <summary>
+    /// Maximum accepted request body size, in bytes, applied to all <c>POST</c> endpoints. Bodies
+    /// larger than this are rejected with <c>413</c>. <c>/complete</c> additionally enforces its own
+    /// stricter <see cref="TaggedTemplateCompletionMaxRequestBytes"/> cap on top of this one.
+    /// </summary>
+    public int MaxRequestBodyBytes { get; set; } = 1024 * 1024;
+
+    /// <summary>
     /// Enables tagged-template completion registration snapshots and the
     /// <c>/sessions/{id}/complete</c> endpoint.
     /// </summary>
@@ -104,8 +128,13 @@ public sealed class DuetsPadServiceOptions
     /// activity and provide a redundant secondary signal for sessions whose streams are open.
     /// </para>
     /// <para>A non-positive or <see langword="null"/> value disables automatic cleanup entirely.</para>
+    /// <para>
+    /// The default changed from <see langword="null"/> to 30 minutes per ADR-49, so abandoned
+    /// sessions are reclaimed instead of accumulating indefinitely; <see langword="null"/> still
+    /// disables cleanup for hosts that rely on eternal sessions.
+    /// </para>
     /// </remarks>
-    public TimeSpan? IdleTimeout { get; set; } = null;
+    public TimeSpan? IdleTimeout { get; set; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Testable clock used by the idle-timeout sweep. Defaults to
@@ -128,7 +157,8 @@ public sealed class DuetsPadServiceOptions
     /// deferred to first use.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <see cref="TimelineEntryLimit"/> is set to a non-positive value.
+    /// Thrown when <see cref="TimelineEntryLimit"/>, <see cref="MaxSessions"/>, or
+    /// <see cref="MaxRequestBodyBytes"/> is set to a non-positive value.
     /// </exception>
     internal void Validate()
     {
@@ -137,6 +167,22 @@ public sealed class DuetsPadServiceOptions
             throw new ArgumentOutOfRangeException(
                 nameof(this.TimelineEntryLimit),
                 "Timeline entry limit must be positive."
+            );
+        }
+
+        if (this.MaxSessions is { } maxSessions && maxSessions <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxSessions),
+                "Max sessions must be positive."
+            );
+        }
+
+        if (this.MaxRequestBodyBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxRequestBodyBytes),
+                "Max request body bytes must be positive."
             );
         }
 

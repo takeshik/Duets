@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using ConsoleAppFramework;
 
@@ -11,10 +12,28 @@ public class Commands
         OutputJson(CompleteOnce(ctx, source, position ?? source.Length));
     }
 
-    public async Task Serve(int port = 17375, CancellationToken cancellationToken = default)
+    /// <param name="port">TCP port to listen on.</param>
+    /// <param name="auth">
+    /// Require an access token (ADR-49). The token is generated and printed as part of the pad URL
+    /// rather than accepted as an option value, so an RCE-equivalent credential never lands in
+    /// shell history or a process listing.
+    /// </param>
+    public async Task Serve(
+        int port = 17375,
+        bool auth = false,
+        CancellationToken cancellationToken = default
+    )
     {
+        var token = auth ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16)) : null;
         await using var ctx = await SandboxContext.CreateAsync();
-        ctx.StartWebServer(port);
+        ctx.StartWebServer(port, token);
+        if (token is not null)
+        {
+            await Console.Error.WriteLineAsync(
+                $"Access token required — open: http://127.0.0.1:{port}/#token={token}"
+            );
+        }
+
         await Console.Error.WriteLineAsync("Press Ctrl+C to stop.");
         try
         {

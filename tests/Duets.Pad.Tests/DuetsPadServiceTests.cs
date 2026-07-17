@@ -275,34 +275,62 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
-    public async Task IdleTimeout_disabled_by_default_does_not_evict_sessions()
+    public async Task IdleTimeout_explicitly_disabled_does_not_evict_sessions()
     {
-        // Build a service with a clock we can advance, but IdleTimeout left at its default null.
+        // The default IdleTimeout changed from null to 30 minutes per ADR-49; this test exercises
+        // the still-supported explicit opt-out (IdleTimeout = null) rather than the default.
+        //
+        // This must call RemoveIdleSessions() itself (like the sibling idle tests below) rather than
+        // relying on the background cleanup timer: with IdleTimeout = null the timer never starts
+        // (see SessionRegistry's constructor), so the test would otherwise pass merely because
+        // nothing ever swept — even if a sweep, had one run, incorrectly evicted the session.
         var t0 = DateTimeOffset.UtcNow;
         var current = t0;
 
-        var opts = new DuetsPadServiceOptions
-        {
-            SessionFactory = () => JintTestRuntime.CreateSessionAsync(o => o.AllowClr()),
-            Clock = () => current,
-            // IdleTimeout intentionally not set — remains null.
-        };
+        DuetsPadService? padService = null;
 
-        // We need a real server to call HandlePostSessionAsync. Spin up the full stack.
-        await RunAsync(
-            "/",
-            o =>
+        await DuetsServerFixture.RunAsync(
+            server =>
             {
-                o.SessionFactory = opts.SessionFactory;
-                o.Clock = opts.Clock;
-                // IdleTimeout: null (default)
+                padService = server
+                    .UseContentTypeDetection()
+                    .UseDuetsPad(
+                        "/",
+                        opts =>
+                        {
+                            opts.SessionFactory = () =>
+                                JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
+                            opts.MonacoLoader = AssetSources.From(_ =>
+                                Task.FromResult("// monaco")
+                            );
+                            opts.TablerCss = AssetSources.From(_ =>
+                                Task.FromResult("/* tabler */")
+                            );
+                            opts.TablerIconsCss = AssetSources.From(_ =>
+                                Task.FromResult(
+                                    "@font-face{font-family:\"tabler-icons\";src:url(\"./fonts/tabler-icons.woff2\") format(\"woff2\")}"
+                                )
+                            );
+                            opts.TablerIconsFont = AssetSources.FromBytes(_ =>
+                                Task.FromResult("wOF2"u8.ToArray())
+                            );
+                            opts.KeepAliveInterval = TimeSpan.FromSeconds(60);
+                            opts.IdleTimeout = null;
+                            opts.Clock = () => current;
+                        }
+                    );
             },
             async (client, prefix) =>
             {
+                Assert.NotNull(padService);
+
                 var sessionId = await CreateSessionAsync(client, prefix);
 
-                // Advance the clock well beyond any reasonable idle threshold.
+                // Advance the clock well beyond any reasonable idle threshold and explicitly run
+                // the sweep — RemoveIdleSessions() itself is a no-op when IdleTimeout is null (see
+                // SessionRegistry.RemoveIdleSessions), which is exactly the behavior under test.
                 current = t0.AddHours(24);
+                padService!.RemoveIdleSessions();
 
                 // Eval must still succeed because IdleTimeout is disabled.
                 using var evalResponse = await client.PostAsync(
@@ -1738,7 +1766,7 @@ public sealed class DuetsPadServiceTests
                     prefix + $"sessions/{sessionId}/complete",
                     content
                 );
-                response.EnsureSuccessStatusCode();
+                Assert.Equal((HttpStatusCode)413, response.StatusCode);
                 var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
                 Assert.False(payload.GetProperty("ok").GetBoolean());

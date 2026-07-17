@@ -33,6 +33,7 @@ The DuetsPad browser debug pad. See [src/Duets.Pad/README.md](../src/Duets.Pad/R
 |---|---|
 | `duetspad.cs` | DuetsPad browser debug pad (Editor / Canvas / Timeline / Immediate) served over HTTP |
 | `duetspad-ui.cs` | DuetsPad `ui.*` display and form-input surface: buttons, `ui.slot`, text/checkbox inputs, layout (header comment holds a copy-pasteable TypeScript demo) |
+| `duetspad-access-token.cs` | Access-token authentication (ADR-49): a generated token gates every session-API request, delivered to the browser via the `#token=…` URL fragment |
 | `tagged-template-completion.cs` | Register a host-backed `path` tagged template with DuetsPad completions |
 
 ## HttpHarker

@@ -45,15 +45,27 @@ namespace Duets.Pad;
 /// </para>
 /// <para>
 /// The session dictionary is a <see cref="ConcurrentDictionary{TKey,TValue}"/>; all structural
-/// operations (add, remove, iterate) use its built-in lock-free semantics. The registry does not
-/// impose additional locking on the dictionary.
+/// operations (add, remove, iterate) use its built-in thread-safe semantics. A lifecycle lock makes
+/// publishing a newly constructed session atomic with registry disposal, so an asynchronous factory
+/// cannot publish a session after teardown has begun; the same lock makes request acquisition atomic
+/// with idle eviction, so a sweep cannot act on a pre-request activity timestamp.
 /// </para>
 /// </remarks>
 internal sealed class SessionRegistry : IDisposable
 {
     private readonly DuetsPadServiceOptions _options;
     private readonly ConcurrentDictionary<Guid, DuetsPadSession> _sessions = new();
+    private readonly object _lifecycleLock = new();
     private readonly Timer? _cleanupTimer;
+
+    // Admission counter for the MaxSessions cap (ADR-49). Counted separately from
+    // _sessions.Count because a slot is reserved *before* the asynchronous SessionFactory runs and
+    // released only when the session is removed: checking _sessions.Count instead would let every
+    // concurrently in-flight create observe a below-cap count and construct an engine anyway,
+    // turning a cap of 16 into as many sessions as the server has concurrent request slots.
+    // Mutated only through Interlocked, and only via TryReserveSessionSlot/ReleaseSessionSlot.
+    private int _sessionCount;
+    private int _disposed;
 
     internal SessionRegistry(DuetsPadServiceOptions options)
     {
@@ -71,13 +83,31 @@ internal sealed class SessionRegistry : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (this._cleanupTimer is not null)
+        List<DuetsPadSession> sessionsToDispose = [];
+        lock (this._lifecycleLock)
         {
-            this._cleanupTimer.Stop();
-            this._cleanupTimer.Dispose();
+            if (Interlocked.Exchange(ref this._disposed, 1) != 0)
+            {
+                return;
+            }
+
+            if (this._cleanupTimer is not null)
+            {
+                this._cleanupTimer.Stop();
+                this._cleanupTimer.Dispose();
+            }
+
+            foreach (var (id, _) in this._sessions)
+            {
+                if (this._sessions.TryRemove(id, out var session))
+                {
+                    this.ReleaseSessionSlot();
+                    sessionsToDispose.Add(session);
+                }
+            }
         }
 
-        foreach (var (_, session) in this._sessions)
+        foreach (var session in sessionsToDispose)
         {
             try
             {
@@ -89,8 +119,6 @@ internal sealed class SessionRegistry : IDisposable
                 // disposing the remaining sessions.
             }
         }
-
-        this._sessions.Clear();
     }
 
     /// <summary>
@@ -109,6 +137,28 @@ internal sealed class SessionRegistry : IDisposable
         Guid.TryParse(id, out var guid) ? this.TryGetSession(guid) : null;
 
     /// <summary>
+    /// Resolves a session for an incoming API operation and records activity atomically with
+    /// respect to idle eviction. A session returned here cannot be selected as idle based on its
+    /// pre-request timestamp by a concurrent cleanup sweep.
+    /// </summary>
+    internal DuetsPadSession? TryAcquireSession(Guid id)
+    {
+        lock (this._lifecycleLock)
+        {
+            if (!this._sessions.TryGetValue(id, out var session))
+            {
+                return null;
+            }
+
+            session.Touch();
+            return session;
+        }
+    }
+
+    internal DuetsPadSession? TryAcquireSession(string? id) =>
+        Guid.TryParse(id, out var guid) ? this.TryAcquireSession(guid) : null;
+
+    /// <summary>
     /// Returns the existing <see cref="DuetsPadSession"/> for <paramref name="existingId"/> when
     /// it is present, or creates a new session using <see cref="DuetsPadServiceOptions.SessionFactory"/>.
     /// </summary>
@@ -119,32 +169,136 @@ internal sealed class SessionRegistry : IDisposable
     /// <returns>
     /// A tuple of the session and its ID. The session is the existing one when
     /// <paramref name="existingId"/> was found, or a newly created session otherwise.
+    /// Reconnecting to an existing <paramref name="existingId"/> is always allowed regardless of
+    /// <see cref="DuetsPadServiceOptions.MaxSessions"/>; <see langword="null"/> is returned instead
+    /// when creating a brand-new session would exceed the cap (ADR-49). The cap is enforced
+    /// atomically: a slot is reserved before the session factory runs, so concurrent creates cannot
+    /// collectively exceed it.
     /// </returns>
-    internal async Task<(DuetsPadSession Session, Guid Id)> GetOrCreateSessionAsync(
+    internal async Task<(DuetsPadSession Session, Guid Id)?> GetOrCreateSessionAsync(
         Guid? existingId
     )
     {
-        if (existingId.HasValue && this._sessions.TryGetValue(existingId.Value, out var existing))
+        if (existingId.HasValue && this.TryAcquireSession(existingId.Value) is { } existing)
         {
             return (existing, existingId.Value);
         }
 
-        var duetsSession = await this._options.SessionFactory();
-        var newId = Guid.NewGuid();
-        var session = new DuetsPadSession(
-            newId,
-            duetsSession,
-            this._options.ObjectRenderers,
-            this._options.Clock,
-            this._options.TimelineEntryLimit,
-            this._options.DumpOptions,
-            this._options.EnableTaggedTemplateCompletions,
-            this._options.TaggedTemplateCompletionRateLimitPerSecond,
-            this._options.TaggedTemplateCompletionTimeout
-        );
-        this._sessions[newId] = session;
-        return (session, newId);
+        // Reserve the slot before the factory runs, so that concurrent creates cannot all pass the
+        // cap check and then build engines in parallel.
+        if (!this.TryReserveSessionSlot())
+        {
+            return null;
+        }
+
+        DuetsPadSession session;
+        DuetsSession? duetsSession = null;
+        Guid newId;
+        try
+        {
+            duetsSession = await this._options.SessionFactory();
+            newId = Guid.NewGuid();
+            session = new DuetsPadSession(
+                newId,
+                duetsSession,
+                this._options.ObjectRenderers,
+                this._options.Clock,
+                this._options.TimelineEntryLimit,
+                this._options.DumpOptions,
+                this._options.EnableTaggedTemplateCompletions,
+                this._options.TaggedTemplateCompletionRateLimitPerSecond,
+                this._options.TaggedTemplateCompletionTimeout
+            );
+
+            // DuetsPadSession now owns and disposes the DuetsSession. Clearing the local ownership
+            // marker prevents the failure cleanup below from disposing a successfully transferred
+            // session if later code is added to this try block.
+            duetsSession = null;
+        }
+        catch
+        {
+            // The reservation must not outlive a failed create, or repeated factory failures would
+            // permanently consume the cap.
+            this.ReleaseSessionSlot();
+
+            // SessionFactory may have completed before DuetsPadSession construction failed (for
+            // example while SessionBootstrap wires globals into the backend). Until construction
+            // succeeds, ownership remains here and the engine must be torn down deterministically.
+            // Preserve the original construction exception if teardown also fails.
+            try
+            {
+                duetsSession?.Dispose();
+            }
+            catch
+            {
+                // Swallow: the construction failure is the actionable error for the caller.
+            }
+
+            throw;
+        }
+
+        lock (this._lifecycleLock)
+        {
+            if (Volatile.Read(ref this._disposed) == 0)
+            {
+                this._sessions[newId] = session;
+                return (session, newId);
+            }
+        }
+
+        // The factory ran concurrently with Dispose. The lifecycle lock prevents publication after
+        // teardown, but construction happened outside that lock and still owns a reserved slot.
+        this.ReleaseSessionSlot();
+        try
+        {
+            session.Dispose();
+        }
+        catch
+        {
+            // Swallow: ObjectDisposedException remains the useful result for the caller.
+        }
+
+        throw new ObjectDisposedException(nameof(SessionRegistry));
     }
+
+    /// <summary>
+    /// Atomically claims one slot against <see cref="DuetsPadServiceOptions.MaxSessions"/>.
+    /// Returns <see langword="false"/> when the cap is already reached, in which case no slot is
+    /// consumed.
+    /// </summary>
+    private bool TryReserveSessionSlot()
+    {
+        // Compare-exchange loop rather than Increment-then-Decrement-on-overflow: the latter would
+        // let a burst of rejected requests transiently push the counter above the cap, which a
+        // concurrent reserve could observe. The counter is maintained even when MaxSessions is
+        // null so it always reflects the live + in-flight total if a retained options instance is
+        // later changed from unlimited to a finite cap.
+        while (true)
+        {
+            if (Volatile.Read(ref this._disposed) != 0)
+            {
+                return false;
+            }
+
+            var current = Volatile.Read(ref this._sessionCount);
+            if (
+                current == int.MaxValue
+                || (this._options.MaxSessions is { } maxSessions && current >= maxSessions)
+            )
+            {
+                return false;
+            }
+
+            if (
+                Interlocked.CompareExchange(ref this._sessionCount, current + 1, current) == current
+            )
+            {
+                return true;
+            }
+        }
+    }
+
+    private void ReleaseSessionSlot() => Interlocked.Decrement(ref this._sessionCount);
 
     /// <summary>
     /// Removes and disposes the session identified by <paramref name="id"/>.
@@ -159,6 +313,8 @@ internal sealed class SessionRegistry : IDisposable
         {
             return false;
         }
+
+        this.ReleaseSessionSlot();
 
         // The session is already removed from the dictionary; a dispose failure must not
         // escape into the HTTP handler. There is no logger here, so observe and continue.
@@ -187,31 +343,46 @@ internal sealed class SessionRegistry : IDisposable
             return;
         }
 
-        var now = this._options.Clock();
-        foreach (var (id, session) in this._sessions)
+        List<DuetsPadSession> sessionsToDispose = [];
+        lock (this._lifecycleLock)
         {
-            // Never evict a session that has a live SSE stream; the subscriber guard is
-            // timing-independent and takes precedence over the LastActivity check.
-            if (session.HasActiveSubscribers)
+            if (Volatile.Read(ref this._disposed) != 0)
             {
-                continue;
+                return;
             }
 
-            if (now - session.LastActivityUtc > timeout)
+            var now = this._options.Clock();
+            foreach (var (id, session) in this._sessions)
             {
-                if (this._sessions.TryRemove(id, out var removed))
+                // Never evict a session that has a live SSE stream; the subscriber guard is
+                // timing-independent and takes precedence over the LastActivity check.
+                if (session.HasActiveSubscribers)
                 {
-                    // One session's dispose failure must not abort the sweep over the others,
-                    // nor kill the cleanup timer. There is no logger here, so observe and continue.
-                    try
-                    {
-                        removed.Dispose();
-                    }
-                    catch
-                    {
-                        // Swallow and proceed to the next idle session.
-                    }
+                    continue;
                 }
+
+                if (
+                    now - session.LastActivityUtc > timeout
+                    && this._sessions.TryRemove(id, out var removed)
+                )
+                {
+                    this.ReleaseSessionSlot();
+                    sessionsToDispose.Add(removed);
+                }
+            }
+        }
+
+        foreach (var session in sessionsToDispose)
+        {
+            // One session's dispose failure must not abort the sweep over the others, nor kill the
+            // cleanup timer. There is no logger here, so observe and continue.
+            try
+            {
+                session.Dispose();
+            }
+            catch
+            {
+                // Swallow and proceed to the next idle session.
             }
         }
     }
