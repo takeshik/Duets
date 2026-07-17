@@ -304,7 +304,7 @@ internal static class SseSerializer
         var array = new JsonArray();
         foreach (var segment in path.Segments)
         {
-            array.Add(segment);
+            array.Add(JsonValue.Create(segment));
         }
 
         return array;
