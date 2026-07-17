@@ -176,7 +176,7 @@ internal sealed class SandboxContext : IAsyncDisposable
         old.Dispose();
     }
 
-    public void StartWebServer(int port = 17375)
+    public void StartWebServer(int port = 17375, string? accessToken = null)
     {
         if (this._session.Transpiler is not TypeScriptService)
         {
@@ -202,14 +202,19 @@ internal sealed class SandboxContext : IAsyncDisposable
         this._padService = this
             ._webServer.UseContentTypeDetection()
             .UseDuetsPad(configure: opts =>
+            {
                 opts.SessionFactory = () =>
                     CreateDuetsSessionAsync(
                         TranspilerKind.TypeScript,
                         this._tsFactory,
                         this._babelFactory,
                         announce: false
-                    )
-            );
+                    );
+                if (accessToken is not null)
+                {
+                    opts.Authenticate = DuetsPadAuthenticator.Token(accessToken);
+                }
+            });
         this._padProtocolClient = new DuetsPadProtocolClient(this._webServerBaseUri);
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
         Console.Error.WriteLine($"DuetsPad server started at http://127.0.0.1:{port}/");

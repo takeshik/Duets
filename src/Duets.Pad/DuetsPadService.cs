@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -13,17 +14,32 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadService : IDisposable
 {
+    // How long an oversized request body may be drained before the 413 attempt goes ahead anyway.
+    // Short on purpose: the drain is a courtesy to cooperative clients, not a service an abusive
+    // uploader may extend at will.
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(2);
+
     private readonly DuetsPadServiceOptions _options;
     private readonly AssetProvider _assets;
     private readonly SessionRegistry _registry;
+
+    // Route prefix the pad is mounted at, normalized exactly as SimpleRoutingMiddleware normalizes
+    // it. The authentication middleware must derive request paths the same way the router does, or
+    // the two could disagree about what counts as a session-API path.
+    private readonly string _routePrefix;
 
     internal DuetsPadService(HttpServer server, string root, DuetsPadServiceOptions options)
     {
         this._options = options ?? throw new ArgumentNullException(nameof(options));
         this._assets = new AssetProvider(options);
         this._registry = new SessionRegistry(options);
+        this._routePrefix = root.TrimEnd('/');
 
         server
+            // Registered ahead of the router so the gate covers the whole /sessions subtree by
+            // path, not route by route: a session-API route added later is authenticated whether or
+            // not its author remembers to opt in (ADR-49).
+            .Use(this.AuthenticateSessionApiAsync)
             .UseSimpleRouting(
                 root,
                 routes =>
@@ -82,28 +98,28 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        if (ctx.Request.ContentLength64 > this._options.TaggedTemplateCompletionMaxRequestBytes)
+        // The endpoint-specific cap never overrides the global one: whichever is stricter wins, so
+        // configuring a large TaggedTemplateCompletionMaxRequestBytes cannot smuggle a body past
+        // MaxRequestBodyBytes (ADR-49).
+        var completeMaxBytes = Math.Min(
+            this._options.TaggedTemplateCompletionMaxRequestBytes,
+            this._options.MaxRequestBodyBytes
+        );
+
+        if (ctx.Request.ContentLength64 > completeMaxBytes)
         {
-            await this.RespondCompleteErrorAsync(
-                ctx,
-                session.Id,
-                "Tagged-template completion request is too large."
-            );
+            await this.RespondCompleteBodyTooLargeAsync(ctx, session.Id, completeMaxBytes);
             return;
         }
 
         var body = await ReadRequestBodyWithinLimitAsync(
             ctx.Request.InputStream,
             ctx.Request.ContentEncoding,
-            this._options.TaggedTemplateCompletionMaxRequestBytes
+            completeMaxBytes
         );
         if (body is null)
         {
-            await this.RespondCompleteErrorAsync(
-                ctx,
-                session.Id,
-                "Tagged-template completion request is too large."
-            );
+            await this.RespondCompleteBodyTooLargeAsync(ctx, session.Id, completeMaxBytes);
             return;
         }
 
@@ -146,8 +162,10 @@ public sealed class DuetsPadService : IDisposable
 
     private async Task HandlePostSessionAsync(HttpActionContext ctx)
     {
-        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
-        var body = await reader.ReadToEndAsync();
+        if (await this.ReadBodyWithinLimitOrRespondAsync(ctx, sessionId: null) is not { } body)
+        {
+            return;
+        }
 
         Guid? existingId = null;
 
@@ -172,11 +190,23 @@ public sealed class DuetsPadService : IDisposable
             }
         }
 
-        var (_, id) = await this._registry.GetOrCreateSessionAsync(existingId);
+        if (await this._registry.GetOrCreateSessionAsync(existingId) is not { } created)
+        {
+            ctx.Response.StatusCode = 429;
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Session limit reached.",
+                }.ToJsonString()
+            );
+            return;
+        }
 
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
-            new JsonObject { ["sessionId"] = id.ToString() }.ToJsonString()
+            new JsonObject { ["sessionId"] = created.Id.ToString() }.ToJsonString()
         );
     }
 
@@ -234,8 +264,12 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
-        var code = await reader.ReadToEndAsync();
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, session.Id.ToString()) is not { } code
+        )
+        {
+            return;
+        }
 
         var source = ctx.Request.QueryString["source"];
         var appendResult = string.Equals(source, "immediate", StringComparison.OrdinalIgnoreCase);
@@ -318,7 +352,19 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        var fieldSnapshot = await ReadFieldSnapshotAsync(ctx);
+        // Read unconditionally rather than gating on ContentLength64 > 0: a chunked request reports
+        // a length of -1, and skipping the read for those would both drop the field snapshot and
+        // let the body past MaxRequestBodyBytes entirely. An absent body simply reads as empty,
+        // which ParseFieldSnapshot maps to "no snapshot".
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, session.Id.ToString()) is not { } body
+        )
+        {
+            return;
+        }
+
+        var fieldSnapshot = ParseFieldSnapshot(body);
+
         var result = await session.InvokeInteractionAsync(parsedHandlerId, fieldSnapshot);
         var response = new JsonObject
         {
@@ -365,8 +411,13 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
-        var value = await reader.ReadToEndAsync();
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, session.Id.ToString())
+            is not { } value
+        )
+        {
+            return;
+        }
 
         await session.CommitFieldValue(parsedFieldId, value);
 
@@ -382,22 +433,13 @@ public sealed class DuetsPadService : IDisposable
     }
 
     /// <summary>
-    /// Reads the optional <c>{ fields: { fieldId: value } }</c> snapshot from an interaction-invoke
+    /// Parses the optional <c>{ fields: { fieldId: value } }</c> snapshot from an interaction-invoke
     /// request body (ADR-47). Returns <see langword="null"/> when the body is empty, malformed, or
     /// carries no recognizable field entries — the invoke proceeds without merging a snapshot rather
     /// than failing.
     /// </summary>
-    private static async Task<IReadOnlyDictionary<Guid, string>?> ReadFieldSnapshotAsync(
-        HttpActionContext ctx
-    )
+    private static IReadOnlyDictionary<Guid, string>? ParseFieldSnapshot(string body)
     {
-        if (ctx.Request.ContentLength64 <= 0)
-        {
-            return null;
-        }
-
-        using var reader = new StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding);
-        var body = await reader.ReadToEndAsync();
         if (string.IsNullOrWhiteSpace(body))
         {
             return null;
@@ -461,6 +503,182 @@ public sealed class DuetsPadService : IDisposable
     // Helpers
 
     /// <summary>
+    /// Middleware that gates the whole session API with
+    /// <see cref="DuetsPadServiceOptions.Authenticate"/>. Requests outside the <c>/sessions</c>
+    /// subtree — the pad page and its static assets — are forwarded untouched, because the page
+    /// must load before it can present the token prompt (ADR-49).
+    /// </summary>
+    private async Task AuthenticateSessionApiAsync(HttpListenerContext context, Func<Task> next)
+    {
+        if (this._options.Authenticate is not { } authenticate)
+        {
+            await next();
+            return;
+        }
+
+        var path = context.Request.Url?.AbsolutePath ?? "/";
+        if (!this.IsSessionApiPath(path))
+        {
+            await next();
+            return;
+        }
+
+        var credential = ExtractBearerCredential(context.Request.Headers["Authorization"]);
+        var authContext = new DuetsPadAuthenticationContext(
+            credential,
+            path,
+            context.Request.RemoteEndPoint
+        );
+
+        if (await authenticate(authContext))
+        {
+            await next();
+            return;
+        }
+
+        // Deliberately no WWW-Authenticate header: sending one would make browsers pop their
+        // native credential prompt on a 401, which ADR-49 avoids in favor of the pad's own
+        // in-page token input.
+        var response = context.Response;
+        response.StatusCode = 401;
+        response.ContentType = "application/json; charset=utf-8";
+        var payload = Encoding.UTF8.GetBytes(
+            new JsonObject { ["ok"] = false, ["error"] = "Unauthorized." }.ToJsonString()
+        );
+        response.ContentLength64 = payload.Length;
+        await response.OutputStream.WriteAsync(payload);
+        response.Close();
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="absolutePath"/> addresses the session API (the
+    /// <c>/sessions</c> subtree beneath the pad's mount point).
+    /// </summary>
+    /// <remarks>
+    /// The comparison is case-insensitive so the gate can never be narrower than the router that
+    /// follows it: were the router ever to match a route case-insensitively, a case-varied path
+    /// would still be authenticated here rather than slipping through ungated.
+    /// </remarks>
+    private bool IsSessionApiPath(string absolutePath)
+    {
+        if (
+            this._routePrefix.Length > 0
+            && !absolutePath.StartsWith(this._routePrefix, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return false;
+        }
+
+        var relative = absolutePath[this._routePrefix.Length..];
+        const string sessions = "/sessions";
+        return relative.StartsWith(sessions, StringComparison.OrdinalIgnoreCase)
+            && (relative.Length == sessions.Length || relative[sessions.Length] == '/');
+    }
+
+    private static string? ExtractBearerCredential(string? authorizationHeader)
+    {
+        const string scheme = "Bearer ";
+        if (
+            authorizationHeader is null
+            || !authorizationHeader.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            return null;
+        }
+
+        return authorizationHeader[scheme.Length..].Trim();
+    }
+
+    /// <summary>
+    /// Reads the request body, enforcing <see cref="DuetsPadServiceOptions.MaxRequestBodyBytes"/>.
+    /// On overflow, writes a <c>413</c> JSON error response (including <paramref name="sessionId"/>
+    /// when non-null) and returns <see langword="null"/>; callers must return immediately in that case.
+    /// </summary>
+    private async Task<string?> ReadBodyWithinLimitOrRespondAsync(
+        HttpActionContext ctx,
+        string? sessionId
+    )
+    {
+        var maxBytes = this._options.MaxRequestBodyBytes;
+
+        var body =
+            ctx.Request.ContentLength64 > maxBytes
+                ? null
+                : await ReadRequestBodyWithinLimitAsync(
+                    ctx.Request.InputStream,
+                    ctx.Request.ContentEncoding,
+                    maxBytes
+                );
+        if (body is null)
+        {
+            await DrainRequestBodyAsync(ctx.Request.InputStream, maxBytes);
+            await RespondBodyTooLargeAsync(ctx, sessionId);
+            return null;
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Drains (and discards) the remaining request body, up to a bounded number of bytes and a
+    /// bounded amount of time, before a <c>413</c> response is written.
+    /// </summary>
+    /// <remarks>
+    /// Closing the connection while unread request data is still pending makes
+    /// <see cref="System.Net.HttpListener"/> reset the connection, and the client then surfaces a
+    /// network error instead of the <c>413</c>; draining a moderately-oversized body lets a
+    /// cooperative client actually read the response. Both bounds matter: the byte cap stops the
+    /// drain from becoming free bandwidth for an attacker, and the time cap stops a slow-trickle
+    /// upload from parking a request slot (the byte cap alone bounds volume, not duration). When
+    /// either bound is hit the drain simply stops — the client gets a connection reset instead of a
+    /// readable <c>413</c>, which is the safer failure mode for an abusive request.
+    /// </remarks>
+    private static async Task DrainRequestBodyAsync(Stream stream, int maxBytes)
+    {
+        // 4x the configured limit covers the realistic accidental overshoot; the 1 MiB floor keeps
+        // the cap meaningful when the configured limit is very small.
+        var drainCap = Math.Max((long)maxBytes * 4, 1024 * 1024);
+        using var timeout = new CancellationTokenSource(DrainTimeout);
+        var buffer = new byte[81920];
+        long drained = 0;
+        try
+        {
+            while (drained < drainCap)
+            {
+                var readSize = (int)Math.Min(buffer.Length, drainCap - drained);
+                var read = await stream.ReadAsync(buffer.AsMemory(0, readSize), timeout.Token);
+                if (read == 0)
+                {
+                    return;
+                }
+
+                drained += read;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Drain deadline hit: stop reading and let the response attempt proceed (it will most
+            // likely surface as a reset to the client, which is acceptable here).
+        }
+        catch (IOException)
+        {
+            // The client aborted mid-drain; the 413 will not be deliverable, which is fine.
+        }
+    }
+
+    private static Task RespondBodyTooLargeAsync(HttpActionContext ctx, string? sessionId)
+    {
+        ctx.Response.StatusCode = 413;
+        var response = new JsonObject { ["ok"] = false, ["error"] = "Request body too large." };
+        if (sessionId is not null)
+        {
+            response["sessionId"] = sessionId;
+        }
+
+        return ctx.CloseAsync("application/json; charset=utf-8", response.ToJsonString());
+    }
+
+    /// <summary>
     /// Resolves the <see cref="DuetsPadSession"/> for <paramref name="sessionId"/>.
     /// Returns the session when found; writes an <c>{ ok:false, error:"Unknown session." }</c>
     /// JSON response and returns <see langword="null"/> when the session cannot be resolved.
@@ -470,7 +688,7 @@ public sealed class DuetsPadService : IDisposable
         string? sessionId
     )
     {
-        if (this._registry.TryGetSession(sessionId) is { } session)
+        if (this._registry.TryAcquireSession(sessionId) is { } session)
         {
             return session;
         }
@@ -637,18 +855,29 @@ public sealed class DuetsPadService : IDisposable
         int maxBytes
     )
     {
-        var buffer = new byte[Math.Min(8192, maxBytes + 1)];
+        // Widened to long throughout: maxBytes may be int.MaxValue, and the "+ 1" probe byte that
+        // detects an over-limit body would otherwise overflow to a negative buffer length.
+        var buffer = new byte[Math.Min(8192L, (long)maxBytes + 1)];
         using var memory = new MemoryStream(capacity: Math.Min(maxBytes, 8192));
-        var total = 0;
+        var total = 0L;
 
         while (true)
         {
-            var remainingBeforeLimit = maxBytes - total;
-            var readSize = Math.Min(buffer.Length, remainingBeforeLimit + 1);
+            var remainingBeforeLimit = (long)maxBytes - total;
+            var readSize = (int)Math.Min(buffer.Length, remainingBeforeLimit + 1);
             var read = await stream.ReadAsync(buffer, 0, readSize);
             if (read == 0)
             {
-                return encoding.GetString(memory.ToArray());
+                // Decode through StreamReader after the bounded byte read so the previous request
+                // semantics are preserved: in particular, BOM detection strips a UTF-8/UTF-16
+                // preamble before JSON parsing or script evaluation.
+                memory.Position = 0;
+                using var reader = new StreamReader(
+                    memory,
+                    encoding,
+                    detectEncodingFromByteOrderMarks: true
+                );
+                return await reader.ReadToEndAsync();
             }
 
             total += read;
@@ -659,6 +888,21 @@ public sealed class DuetsPadService : IDisposable
 
             memory.Write(buffer, 0, read);
         }
+    }
+
+    private async Task RespondCompleteBodyTooLargeAsync(
+        HttpActionContext ctx,
+        Guid sessionId,
+        int maxBytes
+    )
+    {
+        await DrainRequestBodyAsync(ctx.Request.InputStream, maxBytes);
+        ctx.Response.StatusCode = 413;
+        await this.RespondCompleteErrorAsync(
+            ctx,
+            sessionId,
+            "Tagged-template completion request is too large."
+        );
     }
 
     private async Task RespondCompleteErrorAsync(

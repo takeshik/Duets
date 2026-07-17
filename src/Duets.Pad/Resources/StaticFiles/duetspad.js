@@ -24,6 +24,122 @@
     return new URL(path, document.baseURI).href;
   }
 
+  // Access token handling (ADR-49)
+  // The token reaches the page via the URL fragment (#token=...): the fragment is
+  // never sent to the server and never appears in access logs. It is moved into
+  // sessionStorage on load and stripped from the address bar; every session-API
+  // request then carries it explicitly in an Authorization: Bearer header. The
+  // explicit (non-ambient) attachment is what makes the scheme CSRF-immune.
+
+  const TOKEN_STORAGE_KEY = "duetspad.token";
+
+  (function captureTokenFromFragment() {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#token=")) return;
+    const raw = hash.slice("#token=".length);
+    let token;
+    try {
+      token = decodeURIComponent(raw);
+    } catch {
+      // Malformed percent-escapes: fall back to the raw text rather than letting the
+      // URIError abort client startup, which would leave no UI to prompt for a token.
+      token = raw;
+    }
+    if (token) {
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    }
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
+  })();
+
+  /**
+   * fetch wrapper for session-API requests: attaches the stored access token as an
+   * Authorization: Bearer header when one is present, and funnels 401 responses
+   * into the in-page token prompt (ADR-49). The 401 response is still returned so
+   * callers keep their existing error paths.
+   * @param {string} url - Absolute URL (already passed through padUrl).
+   * @param {object} [init] - fetch init options; headers are merged, not replaced.
+   */
+  async function padFetch(url, init = {}) {
+    const token = sessionStorage.getItem(TOKEN_STORAGE_KEY);
+    const headers = token
+      ? { ...(init.headers ?? {}), Authorization: `Bearer ${token}` }
+      : (init.headers ?? {});
+    const res = await fetch(url, { ...init, headers });
+    if (res.status === 401) {
+      showTokenPrompt();
+    }
+    return res;
+  }
+
+  let tokenPromptShown = false;
+
+  /**
+   * Shows a modal overlay asking for the access token. On submit the token is
+   * stored in sessionStorage and the page reloads — the reload re-runs the session
+   * bootstrap with the new credential, and editor content survives because it is
+   * saved on pagehide. Built with DOM APIs only (no innerHTML; see the
+   * render-node projection security note).
+   */
+  function showTokenPrompt() {
+    if (tokenPromptShown) return;
+    tokenPromptShown = true;
+
+    const overlay = document.createElement("div");
+    overlay.id = "token-prompt-overlay";
+    overlay.style.cssText =
+      "position:fixed;inset:0;z-index:2000;display:flex;align-items:center;" +
+      "justify-content:center;background:rgba(0,0,0,0.5)";
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.cssText = "max-width:22rem;width:90%";
+
+    const cardBody = document.createElement("div");
+    cardBody.className = "card-body";
+
+    const title = document.createElement("h3");
+    title.className = "card-title";
+    title.textContent = "Access token required";
+
+    const text = document.createElement("p");
+    text.className = "text-secondary";
+    text.textContent =
+      "This pad requires an access token. Enter it below, or open the pad " +
+      "through a #token=… link.";
+
+    const input = document.createElement("input");
+    input.type = "password";
+    input.className = "form-control mb-2";
+    input.placeholder = "Access token";
+    input.autofocus = true;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-primary w-100";
+    button.textContent = "Unlock";
+
+    const submit = () => {
+      const token = input.value.trim();
+      if (!token) return;
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+      window.location.reload();
+    };
+    button.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submit();
+    });
+
+    cardBody.append(title, text, input, button);
+    card.appendChild(cardBody);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    input.focus();
+  }
+
   // Session bootstrap
   // Reads sessionId from sessionStorage; POSTs to /sessions to reuse a live session
   // or obtain a fresh one; stores the returned id back into sessionStorage.
@@ -43,7 +159,7 @@
       : sessionStorage.getItem("duetspad.sessionId");
     const body = stored ? JSON.stringify({ sessionId: stored }) : "{}";
 
-    const res = await fetch(padUrl("sessions"), {
+    const res = await padFetch(padUrl("sessions"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
@@ -320,7 +436,7 @@
     // (concurrent commits can otherwise race and clear pending too early).
     const editGen = el.dataset.duetspadEditGen;
     try {
-      const res = await fetch(
+      const res = await padFetch(
         padUrl(
           `sessions/${sessionId}/fields/${encodeURIComponent(fieldId)}/commit`,
         ),
@@ -410,7 +526,7 @@
   async function invokeInteraction(handlerId, canvasRoot) {
     if (!handlerId) return;
     try {
-      await fetch(
+      await padFetch(
         padUrl(
           `sessions/${sessionId}/interactions/${encodeURIComponent(handlerId)}/invoke`,
         ),
@@ -457,7 +573,7 @@
     if (immediate) {
       url = `${url}?source=immediate`;
     }
-    const res = await fetch(url, {
+    const res = await padFetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: code,
@@ -472,7 +588,7 @@
     });
 
     try {
-      const res = await fetch(padUrl(`sessions/${sessionId}/complete`), {
+      const res = await padFetch(padUrl(`sessions/${sessionId}/complete`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request),
@@ -487,9 +603,9 @@
   // Connection state — single source of truth for whether the SSE session is live.
   let isConnected = false;
 
-  // Module-scoped EventSource reference.
+  // Module-scoped handle for the fetch-based SSE stream (see openSse).
   // Kept here so swapSession() can close the old stream before opening the new one.
-  let activeEventSource = null;
+  let activeEventStream = null;
 
   const taggedTemplateTags = new Set();
 
@@ -1473,7 +1589,7 @@
       const url = padUrl(
         `sessions/${sessionId}/canvas?name=${encodeURIComponent(name)}`,
       );
-      const res = await fetch(url);
+      const res = await padFetch(url);
       if (!res.ok) {
         throw new Error(`resync failed: ${res.status}`);
       }
@@ -1681,12 +1797,12 @@
 
   /**
    * Performs a no-reload session swap:
-   * 1. Closes the current EventSource.
+   * 1. Closes the current event stream.
    * 2. Deletes the old session on the server (best-effort).
    * 3. Creates a new session via POST /sessions.
    * 4. Updates sessionStorage and the module-level sessionId.
    * 5. Clears the Canvas and Timeline panes (the initial SSE burst will re-populate them).
-   * 6. Opens a new EventSource on the new session.
+   * 6. Opens a new event stream on the new session.
    * The editor content is intentionally left untouched.
    */
   async function swapSession() {
@@ -1696,16 +1812,16 @@
 
     const oldId = sessionId;
 
-    // Step 1: close the outgoing EventSource.
-    if (activeEventSource) {
-      activeEventSource.close();
-      activeEventSource = null;
+    // Step 1: close the outgoing event stream.
+    if (activeEventStream) {
+      activeEventStream.close();
+      activeEventStream = null;
     }
 
     // Step 2: delete the old session (best-effort).
     if (oldId) {
       try {
-        await fetch(padUrl(`sessions/${oldId}`), { method: "DELETE" });
+        await padFetch(padUrl(`sessions/${oldId}`), { method: "DELETE" });
       } catch {
         // Ignore — the old session will eventually be evicted by the server.
       }
@@ -1714,7 +1830,7 @@
     // Step 3: create a new session via POST /sessions (no prior id in the body).
     let newId;
     try {
-      const res = await fetch(padUrl("sessions"), {
+      const res = await padFetch(padUrl("sessions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -1742,7 +1858,7 @@
     resetCanvases();
     resetTimeline();
 
-    // Step 6: open the new EventSource.
+    // Step 6: open the new event stream.
     sessionSwapInProgress = false;
     if (subscribeSession) {
       subscribeSession(newId);
@@ -1864,29 +1980,123 @@
 
   // SSE helpers
 
+  // Delay before a dropped SSE connection is retried; mirrors EventSource's
+  // default reconnection delay, which this fetch-based reader replaces.
+  const SSE_RECONNECT_DELAY_MS = 3000;
+
+  /**
+   * Opens a server-sent-events stream over fetch instead of EventSource so the
+   * Authorization header can be attached — EventSource cannot set request headers
+   * (ADR-49). Returns a handle with a close() method, mirroring the EventSource
+   * surface the callers use. Reconnects after a delay on error or unexpected
+   * end-of-stream, replacing EventSource's automatic reconnection: during an
+   * intentional session swap the outgoing stream must not reconnect (the swap
+   * closes it and opens a stream on the new session), and a 401 must not retry
+   * either — the token prompt raised by padFetch takes over instead.
+   * @param {string} path - Pad-relative SSE endpoint path.
+   * @param {function(object): void} handler - Receives each parsed JSON message.
+   * @param {{onOpen?: function(): void, onError?: function(): void}} [callbacks]
+   */
   function openSse(path, handler, { onOpen, onError } = {}) {
     const url = padUrl(path);
-    const es = new EventSource(url);
-    es.onmessage = (e) => {
+    let closed = false;
+    let controller = null;
+
+    function scheduleReconnect() {
+      if (closed || sessionSwapInProgress) return;
+      setTimeout(() => {
+        if (!closed) void connect();
+      }, SSE_RECONNECT_DELAY_MS);
+    }
+
+    /**
+     * Dispatches one raw SSE event block. The server only emits single-line
+     * `data:` payloads and `:` keepalive comments (SseTransport), but multi-line
+     * data is joined per the SSE spec anyway; comment lines and non-data fields
+     * are ignored.
+     * @param {string} rawEvent - One event block, without its trailing blank line.
+     */
+    function dispatch(rawEvent) {
+      const dataLines = [];
+      for (const line of rawEvent.split("\n")) {
+        if (line.startsWith("data:")) {
+          // Strip the field name, then the single optional leading space the
+          // SSE spec allows after the colon.
+          dataLines.push(line.slice("data:".length).replace(/^ /, ""));
+        }
+      }
+      if (dataLines.length === 0) return;
       try {
-        handler(JSON.parse(e.data));
+        handler(JSON.parse(dataLines.join("\n")));
       } catch (err) {
         console.error(`[DuetsPad] SSE parse error on ${path}`, err);
       }
-    };
-    es.onopen = () => {
-      onOpen?.();
-    };
-    es.onerror = () => {
-      // During an intentional session swap the outgoing stream must be closed
-      // immediately so it does not reconnect. Outside of a swap, let EventSource
-      // attempt automatic reconnection (its default behaviour).
-      if (sessionSwapInProgress) {
-        es.close();
+    }
+
+    async function connect() {
+      controller = new AbortController();
+      try {
+        const res = await padFetch(url, {
+          headers: { Accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        if (res.status === 401) {
+          // padFetch already raised the token prompt; retrying would only
+          // hammer the server with doomed requests.
+          await res.body?.cancel();
+          onError?.();
+          return;
+        }
+        if (!res.ok || !res.body) {
+          // Release the error body explicitly: on repeated failures an
+          // un-consumed body would retain its connection until GC.
+          await res.body?.cancel();
+          onError?.();
+          scheduleReconnect();
+          return;
+        }
+
+        onOpen?.();
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        // Accumulates decoded text across chunks; SSE event blocks are separated
+        // by a blank line. The server writes LF only (SseTransport), so no CRLF
+        // normalization is needed.
+        let buffer = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let separator = buffer.indexOf("\n\n");
+          while (separator >= 0) {
+            dispatch(buffer.slice(0, separator));
+            buffer = buffer.slice(separator + 2);
+            separator = buffer.indexOf("\n\n");
+          }
+        }
+
+        // The server ended the stream without close() being called locally:
+        // treat it like a dropped connection.
+        onError?.();
+        scheduleReconnect();
+      } catch (_err) {
+        // Aborted by close(), or a network failure. close() means an intentional
+        // shutdown (session swap or page teardown) — never reconnect after it.
+        if (closed) return;
+        onError?.();
+        scheduleReconnect();
       }
-      onError?.();
+    }
+
+    void connect();
+
+    return {
+      close() {
+        closed = true;
+        controller?.abort();
+      },
     };
-    return es;
   }
 
   // Monaco setup
@@ -2054,7 +2264,7 @@
       // Open the unified event stream. Route each message to the appropriate handler by type prefix.
       // subscribeSession is exposed at module scope so swapSession() can re-subscribe after a reset.
       subscribeSession = (targetId) => {
-        activeEventSource = openSse(
+        activeEventStream = openSse(
           `sessions/${targetId}/events`,
           (msg) => {
             if (msg.type.startsWith("canvas.")) {
