@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Threading.Channels;
 using Duets.Completions;
+using Duets.Pad.Attachments;
 using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
@@ -43,7 +44,9 @@ namespace Duets.Pad;
 /// are called synchronously <em>from within</em> the eval call stack. They therefore MUST NOT
 /// re-acquire <c>_evalSemaphore</c> (deadlock). They share a separate <c>_stateLock</c>
 /// object that is also held by subscriber registration. This is the <em>only</em> lock used
-/// for state mutation + event dispatch, and it is never held across an I/O boundary.
+/// for state mutation + event dispatch, and it is never held across an I/O boundary. Reachability
+/// pruning may acquire the attachment-store lock while holding <c>_stateLock</c>; the attachment
+/// store must therefore never call back into session state while holding its own lock.
 /// </para>
 ///
 /// <para>
@@ -78,7 +81,8 @@ internal sealed class DuetsPadSession
         ICanvasSurface,
         ITimelineSurface,
         ISlotHost,
-        IFieldHost
+        IFieldHost,
+        IFilePickerHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -116,6 +120,9 @@ internal sealed class DuetsPadSession
     private readonly DisplayRenderer _renderer;
     private readonly InteractionStore _interactionStore = new();
     private readonly FieldStore _fieldStore = new();
+    private readonly AttachmentStore _attachmentStore;
+    private readonly Guid _directAttachmentClientId = Guid.NewGuid();
+    private long _directAttachmentSequence;
 
     private readonly int? _timelineEntryLimit;
     private readonly bool _taggedTemplateSnapshotsEnabled;
@@ -134,7 +141,13 @@ internal sealed class DuetsPadSession
         DumpOptions? dumpOptions = null,
         bool taggedTemplateSnapshotsEnabled = true,
         int taggedTemplateCompletionRateLimitPerSecond = 30,
-        TimeSpan? taggedTemplateCompletionTimeout = null
+        TimeSpan? taggedTemplateCompletionTimeout = null,
+        IAttachmentStorage? attachmentStorage = null,
+        long maxAttachmentBytesPerFile = DuetsPadServiceOptions.DefaultMaxAttachmentBytesPerFile,
+        long maxAttachmentBytesPerSession =
+            DuetsPadServiceOptions.DefaultMaxAttachmentBytesPerSession,
+        int maxAttachmentsPerSession = DuetsPadServiceOptions.DefaultMaxAttachmentsPerSession,
+        TimeSpan? attachmentStorageDrainTimeout = null
     )
     {
         this.Id =
@@ -165,6 +178,15 @@ internal sealed class DuetsPadSession
         this.ObjectRenderers = objectRenderers is null ? [] : [.. objectRenderers];
         this._renderer = new DisplayRenderer(this.ObjectRenderers);
         this.DumpOptions = dumpOptions ?? DumpOptions.Default;
+        this._attachmentStore = new AttachmentStore(
+            attachmentStorage
+                ?? new TemporaryFileAttachmentStorage(new AttachmentStorageContext(this.Id)),
+            maxAttachmentBytesPerFile,
+            maxAttachmentBytesPerSession,
+            maxAttachmentsPerSession,
+            attachmentStorageDrainTimeout
+                ?? DuetsPadServiceOptions.DefaultAttachmentStorageDrainTimeout
+        );
 
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
         SessionBootstrap.Bootstrap(this, this._renderer);
@@ -476,7 +498,7 @@ internal sealed class DuetsPadSession
             {
                 this.UpdateSlotInCanvases(slot.Id, content);
                 this.UpdateSlotInTimeline(slot.Id, content);
-                this.PruneFieldStore();
+                this.PruneFieldBackedState();
             }
         }
         catch (InvalidOperationException ex)
@@ -658,6 +680,305 @@ internal sealed class DuetsPadSession
         }
     }
 
+    // IFilePickerHost — transactional attachment state (ADR-50)
+
+    AttachmentPickerSnapshot IFilePickerHost.EnsureFilePicker(DisplayFilePicker picker) =>
+        this._attachmentStore.EnsurePicker(picker);
+
+    IReadOnlyList<DuetsPadFile> IFilePickerHost.GetFiles(Guid pickerId) =>
+        this._attachmentStore.GetFiles(pickerId);
+
+    Stream IFilePickerHost.OpenRead(Guid pickerId, Guid fileId) =>
+        this._attachmentStore.OpenRead(pickerId, fileId);
+
+    void IFilePickerHost.RemoveFile(DisplayFilePicker picker, Guid fileId)
+    {
+        if (this._attachmentStore.RemoveFile(picker.Id, fileId))
+        {
+            this.ProjectFilePicker(picker);
+        }
+    }
+
+    void IFilePickerHost.ClearFiles(DisplayFilePicker picker)
+    {
+        if (this._attachmentStore.ClearFiles(picker.Id))
+        {
+            this.ProjectFilePicker(picker);
+        }
+    }
+
+    internal async Task<BeginAttachmentSelectionResult> BeginAttachmentSelectionAsync(
+        Guid pickerId,
+        IReadOnlyList<AttachmentFileManifest> manifest,
+        AttachmentSelectionOrder? order = null
+    )
+    {
+        this.Touch();
+        if (!await this.TryEnterEvalSemaphoreAsync().ConfigureAwait(false))
+        {
+            return new BeginAttachmentSelectionResult(
+                false,
+                Guid.Empty,
+                0,
+                [],
+                "Session has been disposed.",
+                false
+            );
+        }
+
+        try
+        {
+            if (!this.IsLiveFilePicker(pickerId))
+            {
+                return new BeginAttachmentSelectionResult(
+                    false,
+                    Guid.Empty,
+                    0,
+                    [],
+                    "The file picker is no longer available.",
+                    false
+                );
+            }
+
+            order ??= new AttachmentSelectionOrder(
+                this._directAttachmentClientId,
+                Interlocked.Increment(ref this._directAttachmentSequence)
+            );
+            var result = this._attachmentStore.BeginSelection(pickerId, order, manifest);
+            this.ProjectFilePicker(pickerId);
+            return result;
+        }
+        finally
+        {
+            this._evalSemaphore.Release();
+        }
+    }
+
+    internal async Task<AttachmentOperationResult> UploadAttachmentFileAsync(
+        Guid pickerId,
+        Guid token,
+        Guid fileId,
+        Stream input,
+        CancellationToken cancellationToken
+    )
+    {
+        this.Touch();
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return new AttachmentOperationResult(false, true, 0, "Session has been disposed.");
+        }
+
+        AttachmentOperationResult result;
+        try
+        {
+            result = await this
+                ._attachmentStore.UploadFileAsync(pickerId, token, fileId, input, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref this._disposed) == 1)
+        {
+            return new AttachmentOperationResult(false, true, 0, "Session has been disposed.");
+        }
+        if (
+            !result.Ok
+            && !result.Stale
+            && await this.TryEnterEvalSemaphoreAsync().ConfigureAwait(false)
+        )
+        {
+            try
+            {
+                this.ProjectFilePicker(pickerId);
+            }
+            finally
+            {
+                this._evalSemaphore.Release();
+            }
+        }
+
+        return result;
+    }
+
+    internal Task<AttachmentOperationResult> CommitAttachmentSelectionAsync(
+        Guid pickerId,
+        Guid token
+    ) =>
+        this.MutateAttachmentSelectionAsync(
+            pickerId,
+            () => this._attachmentStore.CommitSelection(pickerId, token)
+        );
+
+    internal Task<AttachmentOperationResult> CancelAttachmentSelectionAsync(
+        Guid pickerId,
+        Guid token
+    ) =>
+        this.MutateAttachmentSelectionAsync(
+            pickerId,
+            () => this._attachmentStore.CancelSelection(pickerId, token)
+        );
+
+    internal Task<AttachmentOperationResult> CancelFailedAttachmentSelectionAsync(
+        Guid pickerId,
+        long expectedRevision
+    ) =>
+        this.MutateAttachmentSelectionAsync(
+            pickerId,
+            () => this._attachmentStore.CancelFailedSelection(pickerId, expectedRevision)
+        );
+
+    private async Task<AttachmentOperationResult> MutateAttachmentSelectionAsync(
+        Guid pickerId,
+        Func<AttachmentOperationResult> mutation
+    )
+    {
+        this.Touch();
+        if (!await this.TryEnterEvalSemaphoreAsync().ConfigureAwait(false))
+        {
+            return new AttachmentOperationResult(false, true, 0, "Session has been disposed.");
+        }
+
+        try
+        {
+            var result = mutation();
+            if (!result.Stale)
+            {
+                this.ProjectFilePicker(pickerId);
+            }
+
+            return result;
+        }
+        finally
+        {
+            this._evalSemaphore.Release();
+        }
+    }
+
+    private async Task<bool> TryEnterEvalSemaphoreAsync()
+    {
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return false;
+        }
+
+        try
+        {
+            await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+
+        if (Volatile.Read(ref this._disposed) == 0)
+        {
+            return true;
+        }
+
+        this._evalSemaphore.Release();
+        return false;
+    }
+
+    private bool IsLiveFilePicker(Guid pickerId)
+    {
+        lock (this._stateLock)
+        {
+            foreach (var projection in this._canvasProjections.Values)
+            {
+                var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, pickerId);
+                if (markers.Count > 0 && kind == FieldKind.File)
+                {
+                    return true;
+                }
+            }
+
+            foreach (var entry in this._timelineState)
+            {
+                var (markers, kind) = FieldMarker.FindWithKind(entry.Body, pickerId);
+                if (markers.Count > 0 && kind == FieldKind.File)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    private void ProjectFilePicker(Guid pickerId)
+    {
+        if (this._attachmentStore.TryGetHandle(pickerId) is { } picker)
+        {
+            this.ProjectFilePicker(picker);
+        }
+    }
+
+    private void ProjectFilePicker(DisplayFilePicker picker)
+    {
+        // Render enters the attachment-store lock. Complete it before taking _stateLock so this
+        // projection path never introduces the reverse of the documented lock order.
+        var content = picker.Render();
+        lock (this._stateLock)
+        {
+            foreach (var name in this._canvasProjections.Keys.ToList())
+            {
+                var projection = this._canvasProjections[name];
+                var markers = FieldMarker.Find(projection.State.Root, picker.Id);
+                if (markers.Count == 0)
+                {
+                    continue;
+                }
+
+                var newRoot = (Element)
+                    FieldMarker.Replace(projection.State.Root, markers, content.Body);
+                var newState = new CanvasState(newRoot);
+                if (newState.Equals(projection.State))
+                {
+                    continue;
+                }
+
+                var interactions = new CanvasInteractionCommitPlan(
+                    name,
+                    this._interactionStore.GetCanvasInteractions(name),
+                    replacedInteractions: [],
+                    replaceExisting: false
+                );
+                this.CommitCanvasMutation(
+                    name,
+                    existed: true,
+                    projection,
+                    newState,
+                    projection.Revision + 1,
+                    interactions
+                );
+            }
+
+            for (var i = 0; i < this._timelineState.Count; i++)
+            {
+                var entry = this._timelineState[i];
+                var markers = FieldMarker.Find(entry.Body, picker.Id);
+                if (markers.Count == 0)
+                {
+                    continue;
+                }
+
+                var newBody = FieldMarker.Replace(entry.Body, markers, content.Body);
+                if (newBody.Equals(entry.Body))
+                {
+                    continue;
+                }
+
+                var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
+                this._timelineState = this._timelineState.Replace(newEntry);
+                var interactions = this._interactionStore.TimelineInteractions.TryGetValue(
+                    entry.Id,
+                    out var existing
+                )
+                    ? existing
+                    : [];
+                this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
+            }
+        }
+    }
+
     /// <summary>
     /// Applies a browser-originated blur commit for <paramref name="fieldId"/> (ADR-47). Acquires
     /// <c>_evalSemaphore</c> before mutating state — the same discipline <see cref="InvokeInteractionAsync"/>
@@ -722,7 +1043,7 @@ internal sealed class DuetsPadSession
     /// </summary>
     private void ApplyBrowserFieldCommit(Guid fieldId, string value)
     {
-        if (!this.IsFieldReachable(fieldId))
+        if (!this.TryGetReachableFieldKind(fieldId, out var kind) || kind == FieldKind.File)
         {
             return;
         }
@@ -737,24 +1058,29 @@ internal sealed class DuetsPadSession
     /// marker placement in any canvas projection or Timeline entry. Must be called while
     /// <c>_stateLock</c> is held.
     /// </summary>
-    private bool IsFieldReachable(Guid fieldId)
+    private bool TryGetReachableFieldKind(Guid fieldId, out FieldKind kind)
     {
         foreach (var projection in this._canvasProjections.Values)
         {
-            if (FieldMarker.Find(projection.State.Root, fieldId).Count > 0)
+            var (markers, candidate) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
+            if (markers.Count > 0 && candidate is { } resolved)
             {
+                kind = resolved;
                 return true;
             }
         }
 
         foreach (var entry in this._timelineState)
         {
-            if (FieldMarker.Find(entry.Body, fieldId).Count > 0)
+            var (markers, candidate) = FieldMarker.FindWithKind(entry.Body, fieldId);
+            if (markers.Count > 0 && candidate is { } resolved)
             {
+                kind = resolved;
                 return true;
             }
         }
 
+        kind = default;
         return false;
     }
 
@@ -907,12 +1233,12 @@ internal sealed class DuetsPadSession
     /// or Timeline entry (ADR-47: a field's value shares the lifetime of its rendered content). Must
     /// be called while <c>_stateLock</c> is held.
     /// </summary>
-    private void PruneFieldStore()
+    private void PruneFieldBackedState()
     {
         // Nothing to prune — skip the full-tree marker scan (every canvas plus every Timeline
         // entry) that would otherwise run on each Timeline append even in sessions that never
         // create a form input.
-        if (this._fieldStore.IsEmpty)
+        if (this._fieldStore.IsEmpty && this._attachmentStore.IsEmpty)
         {
             return;
         }
@@ -929,6 +1255,7 @@ internal sealed class DuetsPadSession
         }
 
         this._fieldStore.Retain(retained);
+        this._attachmentStore.Retain(retained);
     }
 
     // Public eval entry
@@ -1010,12 +1337,17 @@ internal sealed class DuetsPadSession
     /// commit via <see cref="ApplyBrowserFieldCommit"/> (ADR-47: the invoke body carries a snapshot of
     /// edited-but-not-yet-blurred field values so the handler observes the latest edit regardless of
     /// blur timing, and so the Canvas/Timeline projection — not only the field store — reflects the
-    /// snapshot, exactly as a blur commit does). The snapshot application and the handler invocation
-    /// both run under <c>_evalSemaphore</c>.
+    /// snapshot, exactly as a blur commit does). Before applying fields or calling the handler,
+    /// validates <paramref name="attachmentRevisions"/> and rejects any unsettled or changed picker
+    /// state (ADR-50). Unreachable field-backed state is pruned before validation so a picker that
+    /// was rendered speculatively but never committed cannot poison the browser snapshot. Pruning,
+    /// validation, snapshot application, and handler invocation all run under
+    /// <c>_evalSemaphore</c>.
     /// </summary>
     internal async Task<InteractionInvokeResult> InvokeInteractionAsync(
         Guid handlerId,
-        IReadOnlyDictionary<Guid, string>? fieldSnapshot = null
+        IReadOnlyDictionary<Guid, string>? fieldSnapshot = null,
+        IReadOnlyDictionary<Guid, long>? attachmentRevisions = null
     )
     {
         this.Touch();
@@ -1044,6 +1376,19 @@ internal sealed class DuetsPadSession
             if (Volatile.Read(ref this._disposed) == 1)
             {
                 return InteractionInvokeResult.StaleHandler("Session has been disposed.");
+            }
+
+            lock (this._stateLock)
+            {
+                this.PruneFieldBackedState();
+            }
+
+            var attachmentValidation = this._attachmentStore.ValidateInvoke(attachmentRevisions);
+            if (!attachmentValidation.Ok)
+            {
+                return InteractionInvokeResult.AttachmentStateChanged(
+                    attachmentValidation.Error ?? "Attachment state changed before invocation."
+                );
             }
 
             if (fieldSnapshot is { Count: > 0 })
@@ -1415,7 +1760,29 @@ internal sealed class DuetsPadSession
                 this._fieldStore.Clear();
             }
 
-            this.DuetsSession.Dispose();
+            Exception? attachmentDisposeError = null;
+            try
+            {
+                this._attachmentStore.Dispose();
+            }
+            catch (Exception ex)
+            {
+                attachmentDisposeError = ex;
+            }
+
+            try
+            {
+                this.DuetsSession.Dispose();
+            }
+            catch (Exception ex) when (attachmentDisposeError is not null)
+            {
+                throw new AggregateException(attachmentDisposeError, ex);
+            }
+
+            if (attachmentDisposeError is not null)
+            {
+                throw attachmentDisposeError;
+            }
         }
         finally
         {
@@ -1557,7 +1924,7 @@ internal sealed class DuetsPadSession
                 this.BroadcastTimeline(TimelineEventMessage.Trim(removeBeforeId, marker: null));
             }
 
-            this.PruneFieldStore();
+            this.PruneFieldBackedState();
         }
     }
 
@@ -1604,7 +1971,7 @@ internal sealed class DuetsPadSession
         this._interactionStore.CommitCanvasInteractions(interactions);
         this._canvasProjections[name] = new CanvasProjection(newState, revision);
         this.BroadcastCanvas(message);
-        this.PruneFieldStore();
+        this.PruneFieldBackedState();
     }
 
     private CanvasEventMessage CreateCanvasMutationMessage(

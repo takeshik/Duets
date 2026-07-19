@@ -1,16 +1,56 @@
 using Duets.Pad;
+using Duets.Pad.Attachments;
+using Duets.Pad.Rendering;
 using Duets.Tests.TestSupport;
 
 namespace Duets.Pad.Tests;
 
 public sealed class SessionRegistryTests
 {
+    private sealed class BlockingCreateAttachmentStorage : IAttachmentStorage
+    {
+        private readonly TaskCompletionSource<Stream> _releaseCreate = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _createStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _disposed = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public Task CreateStarted => this._createStarted.Task;
+        public Task Disposed => this._disposed.Task;
+
+        public ValueTask<Stream> CreateWriteStreamAsync(
+            Guid blobId,
+            CancellationToken cancellationToken = default
+        )
+        {
+            this._createStarted.TrySetResult();
+            return new ValueTask<Stream>(this._releaseCreate.Task);
+        }
+
+        public ValueTask CommitAsync(Guid blobId, CancellationToken cancellationToken = default) =>
+            default;
+
+        public Stream OpenRead(Guid blobId) => new MemoryStream();
+
+        public ValueTask DeleteAsync(Guid blobId, CancellationToken cancellationToken = default) =>
+            default;
+
+        public void ReleaseCreate() => this._releaseCreate.TrySetResult(new MemoryStream());
+
+        public void Dispose() => this._disposed.TrySetResult();
+    }
+
     [Fact]
     public async Task Dispose_continues_disposing_sessions_after_one_session_dispose_throws()
     {
         var throwingEngine = new TestEngine(throwOnDispose: true);
         var recordingEngine = new TestEngine();
         var engines = new Queue<IScriptEngine>([throwingEngine, recordingEngine]);
+        var disposalErrors = new List<(Guid SessionId, Exception Error)>();
         using var registry = new SessionRegistry(
             new DuetsPadServiceOptions
             {
@@ -22,10 +62,15 @@ public sealed class SessionRegistryTests
                             )
                             .UseEngine(_ => engines.Dequeue())
                     ),
+                SessionDisposalErrorHandler = (sessionId, error) =>
+                {
+                    disposalErrors.Add((sessionId, error));
+                    throw new InvalidOperationException("Diagnostic callback failure.");
+                },
             }
         );
 
-        await registry.GetOrCreateSessionAsync(null);
+        var throwing = await registry.GetOrCreateSessionAsync(null);
         await registry.GetOrCreateSessionAsync(null);
 
         var exception = Record.Exception(registry.Dispose);
@@ -33,6 +78,9 @@ public sealed class SessionRegistryTests
         Assert.Null(exception);
         Assert.True(throwingEngine.Disposed);
         Assert.True(recordingEngine.Disposed);
+        var reported = Assert.Single(disposalErrors);
+        Assert.Equal(throwing!.Value.Id, reported.SessionId);
+        Assert.IsType<InvalidOperationException>(reported.Error);
     }
 
     [Fact]
@@ -64,6 +112,53 @@ public sealed class SessionRegistryTests
         // The failed construction must also release its MaxSessions reservation.
         var created = await registry.GetOrCreateSessionAsync(null);
         Assert.NotNull(created);
+    }
+
+    [Fact]
+    public async Task TryDeleteSession_reports_attachment_storage_drain_timeout()
+    {
+        var storage = new BlockingCreateAttachmentStorage();
+        var reported = new TaskCompletionSource<(Guid SessionId, Exception Error)>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        using var registry = new SessionRegistry(
+            new DuetsPadServiceOptions
+            {
+                SessionFactory = () => JintTestRuntime.CreateSessionAsync(),
+                AttachmentStorageFactory = _ => storage,
+                AttachmentStorageDrainTimeout = TimeSpan.FromMilliseconds(50),
+                SessionDisposalErrorHandler = (sessionId, error) =>
+                    reported.TrySetResult((sessionId, error)),
+            }
+        );
+        var created = await registry.GetOrCreateSessionAsync(null);
+        Assert.NotNull(created);
+        var (session, sessionId) = created.Value;
+        await session.EvaluateAsync("var picker = ui.filePicker(); canvas.add(picker);");
+        var pickerElement = Assert.IsType<Element>(session.Canvas.State.Root.Children.Single());
+        var pickerId = Guid.Parse(pickerElement.Attributes["data-duetspad-field"]!);
+        var begin = await session.BeginAttachmentSelectionAsync(
+            pickerId,
+            [new AttachmentFileManifest("blocked.bin", "application/octet-stream", 1)]
+        );
+        await using var input = new MemoryStream([1]);
+        var upload = session.UploadAttachmentFileAsync(
+            pickerId,
+            begin.Token,
+            Assert.Single(begin.Files).Id,
+            input,
+            TestContext.Current.CancellationToken
+        );
+        await storage.CreateStarted.WaitAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(registry.TryDeleteSession(sessionId));
+        var diagnostic = await reported.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(sessionId, diagnostic.SessionId);
+        Assert.IsType<TimeoutException>(diagnostic.Error);
+
+        storage.ReleaseCreate();
+        Assert.False((await upload).Ok);
+        await storage.Disposed.WaitAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]

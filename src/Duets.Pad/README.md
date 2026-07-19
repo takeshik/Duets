@@ -76,9 +76,20 @@ Available builders include text and layout primitives (`ui.text`, `ui.label`, `u
 `ui.row`/`ui.col`, `ui.card`, `ui.divider`), indicators (`ui.badge`, `ui.alert`, `ui.spinner`,
 `ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`), interactions
 (`ui.button`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
-`ui.dropDown`, `ui.slider`, `ui.radioGroup`), the in-place `ui.slot` handle, and raw escape
+`ui.dropDown`, `ui.slider`, `ui.radioGroup`, `ui.filePicker`), the in-place `ui.slot` handle, and raw escape
 hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
+
+`ui.filePicker({ multiple: true })` uploads each browser selection as one atomic transaction. A
+server-side button waits for all current uploads before its handler runs, and the handler sees only
+the fully committed selection through `picker.files`. Each file exposes sanitized `name`, untrusted
+`contentType`, `size`, a leased `openRead()` .NET stream, `readAllText()`, and `readAllBytes()` (a
+`Uint8Array` under Jint); dispose every stream opened directly. The whole-file helpers are convenient
+for bounded files, while host streaming APIs should consume larger files through `openRead()`. The
+native file input itself is ephemeral, while the committed list survives Canvas patches and
+reconnects. If a selection fails, its projected error includes a cancellation button that remains
+usable after a browser reload. Attachment quota is released after physical storage deletion succeeds,
+so clearing and immediately reselecting at the limit can briefly receive a quota rejection.
 
 ## Security
 
@@ -116,7 +127,9 @@ design. Decide your exposure deliberately (ADR-49):
   `TablerCss`, `TablerIconsCss`, and `TablerIconsFont` at self-hosted or pinned copies.
 
 Resource ceilings apply regardless of authentication: `MaxSessions` (default 16) caps concurrent
-sessions, `MaxRequestBodyBytes` (default 1 MiB) caps request bodies, and `IdleTimeout` (default
+sessions, `MaxRequestBodyBytes` (default 1 MiB) caps control-message request bodies,
+`MaxAttachmentBytesPerFile` (default 16 MiB), `MaxAttachmentBytesPerSession` (default 64 MiB), and
+`MaxAttachmentsPerSession` (default 32) bound attachment storage, and `IdleTimeout` (default
 30 minutes) reclaims abandoned sessions — a session with a live pad tab is never reclaimed.
 
 ## Configuration highlights
@@ -126,6 +139,12 @@ sessions, `MaxRequestBodyBytes` (default 1 MiB) caps request bodies, and `IdleTi
 - `SessionFactory` — creates the `DuetsSession` behind each browser session.
 - `Authenticate` — optional request authentication handler; see [Security](#security).
 - `MaxSessions` / `MaxRequestBodyBytes` — resource ceilings; see [Security](#security).
+- `MaxAttachmentBytesPerFile` / `MaxAttachmentBytesPerSession` / `MaxAttachmentsPerSession` —
+  attachment ceilings; `AttachmentStorageFactory` replaces the per-session temporary-file store.
+- `AttachmentStorageDrainTimeout` — bounds synchronous session disposal while a non-responsive
+  custom attachment store continues draining in background (default 30 seconds).
+- `SessionDisposalErrorHandler` — observes contained session-disposal failures, including attachment
+  drain timeouts, with the affected session id.
 - `TimelineEntryLimit` — optional cap on retained Timeline entries (`null` = unlimited).
 - `IdleTimeout` — automatic reclamation of idle sessions (default 30 minutes; `null` disables).
 - `ObjectRenderers` / `DumpOptions` — customize how values are rendered.

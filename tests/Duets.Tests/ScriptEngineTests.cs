@@ -272,4 +272,45 @@ public sealed class ScriptEngineTests
 
         Assert.Equal("12", result.ToString());
     }
+
+    [Fact]
+    public void Host_owned_script_byte_buffer_is_projected_as_a_Uint8Array_without_copying()
+    {
+        using var engine = JintTestRuntime.CreateEngine();
+        var source = "hello"u8.ToArray();
+        engine.SetValue(
+            "getBytes",
+            new Func<ScriptByteBuffer>(() => ScriptByteBuffer.TakeOwnership(source))
+        );
+
+        var result = engine.Evaluate(
+            "var bytes = getBytes(); bytes[0] = 42; `${bytes instanceof Uint8Array}:${bytes.length}:${Array.from(bytes).join(',')}`"
+        );
+
+        Assert.Equal("true:5:42,101,108,108,111", result.ToString());
+    }
+
+    [Fact]
+    public void Script_byte_buffer_transfers_its_backing_array_exactly_once()
+    {
+        var source = "hello"u8.ToArray();
+        var buffer = ScriptByteBuffer.TakeOwnership(source, "TestHost.GetBytes");
+
+        Assert.Same(source, buffer.Consume());
+        var error = Assert.Throws<InvalidOperationException>(buffer.Consume);
+        Assert.Contains("TestHost.GetBytes", error.Message);
+        Assert.Contains("fresh buffer", error.Message);
+    }
+
+    [Fact]
+    public void Host_read_only_byte_memory_is_not_implicitly_projected_as_a_Uint8Array()
+    {
+        using var engine = JintTestRuntime.CreateEngine();
+        var source = "hello"u8.ToArray();
+        engine.SetValue("getBytes", new Func<ReadOnlyMemory<byte>>(() => source));
+
+        var result = engine.Evaluate("getBytes() instanceof Uint8Array");
+
+        Assert.Equal("false", result.ToString());
+    }
 }

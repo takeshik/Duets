@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Duets.Completions;
+using Duets.Pad.Attachments;
 using Duets.Pad.Protocol;
 using HttpHarker;
 
@@ -63,6 +65,26 @@ public sealed class DuetsPadService : IDisposable
                         .MapPost(
                             "/sessions/{sessionId}/fields/{fieldId}/commit",
                             this.HandleCommitFieldAsync
+                        )
+                        .MapPost(
+                            "/sessions/{sessionId}/attachments/{pickerId}/selections",
+                            this.HandleBeginAttachmentSelectionAsync
+                        )
+                        .MapPost(
+                            "/sessions/{sessionId}/attachments/{pickerId}/selections/{token}/files/{fileId}",
+                            this.HandleUploadAttachmentFileAsync
+                        )
+                        .MapPost(
+                            "/sessions/{sessionId}/attachments/{pickerId}/selections/{token}/commit",
+                            this.HandleCommitAttachmentSelectionAsync
+                        )
+                        .MapDelete(
+                            "/sessions/{sessionId}/attachments/{pickerId}/selections/{token}",
+                            this.HandleCancelAttachmentSelectionAsync
+                        )
+                        .MapDelete(
+                            "/sessions/{sessionId}/attachments/{pickerId}/selections/failed",
+                            this.HandleCancelFailedAttachmentSelectionAsync
                         )
                         .MapGet("/sessions/{sessionId}/events", this.HandleEventsAsync)
             )
@@ -363,14 +385,19 @@ public sealed class DuetsPadService : IDisposable
             return;
         }
 
-        var fieldSnapshot = ParseFieldSnapshot(body);
+        var snapshot = ParseInteractionSnapshot(body);
 
-        var result = await session.InvokeInteractionAsync(parsedHandlerId, fieldSnapshot);
+        var result = await session.InvokeInteractionAsync(
+            parsedHandlerId,
+            snapshot.Fields,
+            snapshot.Attachments
+        );
         var response = new JsonObject
         {
             ["ok"] = result.Ok,
             ["error"] = result.Error,
             ["stale"] = result.Stale,
+            ["attachmentConflict"] = result.AttachmentConflict,
             ["sessionId"] = session.Id.ToString(),
             ["handlerId"] = parsedHandlerId.ToString(),
         };
@@ -432,48 +459,444 @@ public sealed class DuetsPadService : IDisposable
         );
     }
 
-    /// <summary>
-    /// Parses the optional <c>{ fields: { fieldId: value } }</c> snapshot from an interaction-invoke
-    /// request body (ADR-47). Returns <see langword="null"/> when the body is empty, malformed, or
-    /// carries no recognizable field entries — the invoke proceeds without merging a snapshot rather
-    /// than failing.
-    /// </summary>
-    private static IReadOnlyDictionary<Guid, string>? ParseFieldSnapshot(string body)
+    // Transactional attachment upload endpoints (ADR-50)
+
+    private async Task HandleBeginAttachmentSelectionAsync(HttpActionContext ctx)
     {
-        if (string.IsNullOrWhiteSpace(body))
+        if (await this.ResolveAttachmentPickerAsync(ctx) is not { } resolved)
+        {
+            return;
+        }
+
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, resolved.Session.Id.ToString())
+            is not { } body
+        )
+        {
+            return;
+        }
+
+        if (!TryParseAttachmentManifest(body, out var order, out var manifest))
+        {
+            ctx.Response.StatusCode = 400;
+            await this.RespondAttachmentErrorAsync(
+                ctx,
+                resolved.Session.Id,
+                resolved.PickerId,
+                "Invalid attachment selection manifest."
+            );
+            return;
+        }
+
+        var result = await resolved.Session.BeginAttachmentSelectionAsync(
+            resolved.PickerId,
+            manifest,
+            order
+        );
+        if (!result.Ok)
+        {
+            ctx.Response.StatusCode = result.TooLarge ? 413 : 409;
+        }
+
+        var files = new JsonArray();
+        foreach (var file in result.Files)
+        {
+            files.Add(
+                new JsonObject
+                {
+                    ["id"] = file.Id.ToString("D"),
+                    ["name"] = file.Name,
+                    ["contentType"] = file.ContentType,
+                    ["size"] = file.Size,
+                }
+            );
+        }
+
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = result.Ok,
+                ["error"] = result.Error,
+                ["sessionId"] = resolved.Session.Id.ToString(),
+                ["pickerId"] = resolved.PickerId.ToString("D"),
+                ["token"] = result.Token == Guid.Empty ? null : result.Token.ToString("D"),
+                ["revision"] = result.Revision,
+                ["files"] = files,
+            }.ToJsonString()
+        );
+    }
+
+    private async Task HandleUploadAttachmentFileAsync(HttpActionContext ctx)
+    {
+        if (
+            await this.ResolveAttachmentSelectionAsync(ctx, requireFileId: true) is not { } resolved
+        )
+        {
+            return;
+        }
+
+        // HttpListener exposes no request-aborted CancellationToken. AttachmentStore links this
+        // placeholder with the selection token, while a disconnected upload is otherwise observed
+        // as an InputStream read failure.
+        // TODO: Pass the request-aborted token if HttpHarker gains such a capability.
+        var result = await resolved.Session.UploadAttachmentFileAsync(
+            resolved.PickerId,
+            resolved.Token,
+            resolved.FileId,
+            ctx.Request.InputStream,
+            CancellationToken.None
+        );
+        if (!result.Ok)
+        {
+            ctx.Response.StatusCode = result.Stale ? 409 : 400;
+        }
+
+        await this.RespondAttachmentOperationAsync(
+            ctx,
+            resolved.Session.Id,
+            resolved.PickerId,
+            result
+        );
+    }
+
+    private async Task HandleCommitAttachmentSelectionAsync(HttpActionContext ctx)
+    {
+        if (
+            await this.ResolveAttachmentSelectionAsync(ctx, requireFileId: false)
+            is not { } resolved
+        )
+        {
+            return;
+        }
+
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, resolved.Session.Id.ToString())
+            is null
+        )
+        {
+            return;
+        }
+
+        var result = await resolved.Session.CommitAttachmentSelectionAsync(
+            resolved.PickerId,
+            resolved.Token
+        );
+        if (!result.Ok)
+        {
+            ctx.Response.StatusCode = 409;
+        }
+
+        await this.RespondAttachmentOperationAsync(
+            ctx,
+            resolved.Session.Id,
+            resolved.PickerId,
+            result
+        );
+    }
+
+    private async Task HandleCancelAttachmentSelectionAsync(HttpActionContext ctx)
+    {
+        if (
+            await this.ResolveAttachmentSelectionAsync(ctx, requireFileId: false)
+            is not { } resolved
+        )
+        {
+            return;
+        }
+
+        var result = await resolved.Session.CancelAttachmentSelectionAsync(
+            resolved.PickerId,
+            resolved.Token
+        );
+        if (!result.Ok)
+        {
+            ctx.Response.StatusCode = 409;
+        }
+
+        await this.RespondAttachmentOperationAsync(
+            ctx,
+            resolved.Session.Id,
+            resolved.PickerId,
+            result
+        );
+    }
+
+    private async Task HandleCancelFailedAttachmentSelectionAsync(HttpActionContext ctx)
+    {
+        if (await this.ResolveAttachmentPickerAsync(ctx) is not { } resolved)
+        {
+            return;
+        }
+
+        if (
+            !long.TryParse(
+                ctx.Request.QueryString["revision"],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var expectedRevision
+            )
+            || expectedRevision <= 0
+        )
+        {
+            ctx.Response.StatusCode = 400;
+            await this.RespondAttachmentErrorAsync(
+                ctx,
+                resolved.Session.Id,
+                resolved.PickerId,
+                "Invalid attachment selection revision."
+            );
+            return;
+        }
+
+        var result = await resolved.Session.CancelFailedAttachmentSelectionAsync(
+            resolved.PickerId,
+            expectedRevision
+        );
+        if (!result.Ok)
+        {
+            ctx.Response.StatusCode = 409;
+        }
+
+        await this.RespondAttachmentOperationAsync(
+            ctx,
+            resolved.Session.Id,
+            resolved.PickerId,
+            result
+        );
+    }
+
+    private async Task<ResolvedAttachmentPicker?> ResolveAttachmentPickerAsync(
+        HttpActionContext ctx
+    )
+    {
+        var sessionId = ctx.Args["sessionId"];
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
         {
             return null;
         }
 
+        if (!Guid.TryParse(ctx.Args["pickerId"], out var pickerId) || pickerId == Guid.Empty)
+        {
+            ctx.Response.StatusCode = 400;
+            await this.RespondAttachmentErrorAsync(
+                ctx,
+                session.Id,
+                Guid.Empty,
+                "Invalid file picker id."
+            );
+            return null;
+        }
+
+        return new ResolvedAttachmentPicker(session, pickerId);
+    }
+
+    private async Task<ResolvedAttachmentSelection?> ResolveAttachmentSelectionAsync(
+        HttpActionContext ctx,
+        bool requireFileId
+    )
+    {
+        if (await this.ResolveAttachmentPickerAsync(ctx) is not { } picker)
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(ctx.Args["token"], out var token) || token == Guid.Empty)
+        {
+            ctx.Response.StatusCode = 400;
+            await this.RespondAttachmentErrorAsync(
+                ctx,
+                picker.Session.Id,
+                picker.PickerId,
+                "Invalid attachment selection token."
+            );
+            return null;
+        }
+
+        var fileId = Guid.Empty;
+        if (
+            requireFileId
+            && (!Guid.TryParse(ctx.Args["fileId"], out fileId) || fileId == Guid.Empty)
+        )
+        {
+            ctx.Response.StatusCode = 400;
+            await this.RespondAttachmentErrorAsync(
+                ctx,
+                picker.Session.Id,
+                picker.PickerId,
+                "Invalid attachment file id."
+            );
+            return null;
+        }
+
+        return new ResolvedAttachmentSelection(picker.Session, picker.PickerId, token, fileId);
+    }
+
+    private Task RespondAttachmentOperationAsync(
+        HttpActionContext ctx,
+        Guid sessionId,
+        Guid pickerId,
+        AttachmentOperationResult result
+    ) =>
+        ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = result.Ok,
+                ["error"] = result.Error,
+                ["stale"] = result.Stale,
+                ["sessionId"] = sessionId.ToString(),
+                ["pickerId"] = pickerId.ToString("D"),
+                ["revision"] = result.Revision,
+            }.ToJsonString()
+        );
+
+    private Task RespondAttachmentErrorAsync(
+        HttpActionContext ctx,
+        Guid sessionId,
+        Guid pickerId,
+        string error
+    ) =>
+        ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = false,
+                ["error"] = error,
+                ["sessionId"] = sessionId.ToString(),
+                ["pickerId"] = pickerId == Guid.Empty ? null : pickerId.ToString("D"),
+            }.ToJsonString()
+        );
+
+    private static bool TryParseAttachmentManifest(
+        string body,
+        out AttachmentSelectionOrder order,
+        out IReadOnlyList<AttachmentFileManifest> manifest
+    )
+    {
+        order = new AttachmentSelectionOrder(Guid.Empty, 0);
+        manifest = [];
         try
         {
             using var doc = JsonDocument.Parse(body);
             if (
                 doc.RootElement.ValueKind != JsonValueKind.Object
-                || !doc.RootElement.TryGetProperty("fields", out var fieldsEl)
-                || fieldsEl.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("clientId", out var clientIdElement)
+                || clientIdElement.ValueKind != JsonValueKind.String
+                || !Guid.TryParse(clientIdElement.GetString(), out var clientId)
+                || clientId == Guid.Empty
+                || !doc.RootElement.TryGetProperty("generation", out var generationElement)
+                || generationElement.ValueKind != JsonValueKind.Number
+                || !generationElement.TryGetInt64(out var generation)
+                || generation <= 0
+                || !doc.RootElement.TryGetProperty("files", out var files)
+                || files.ValueKind != JsonValueKind.Array
             )
             {
-                return null;
+                return false;
             }
 
-            var snapshot = new Dictionary<Guid, string>();
-            foreach (var property in fieldsEl.EnumerateObject())
+            var parsed = new List<AttachmentFileManifest>();
+            foreach (var file in files.EnumerateArray())
             {
                 if (
-                    Guid.TryParse(property.Name, out var fieldId)
-                    && property.Value.ValueKind == JsonValueKind.String
+                    file.ValueKind != JsonValueKind.Object
+                    || !file.TryGetProperty("name", out var name)
+                    || name.ValueKind != JsonValueKind.String
+                    || !file.TryGetProperty("size", out var size)
+                    || size.ValueKind != JsonValueKind.Number
+                    || !size.TryGetInt64(out var byteLength)
                 )
                 {
-                    snapshot[fieldId] = property.Value.GetString() ?? "";
+                    return false;
                 }
+
+                var contentType =
+                    file.TryGetProperty("contentType", out var contentTypeElement)
+                    && contentTypeElement.ValueKind == JsonValueKind.String
+                        ? contentTypeElement.GetString() ?? ""
+                        : "";
+                parsed.Add(
+                    new AttachmentFileManifest(name.GetString() ?? "", contentType, byteLength)
+                );
             }
 
-            return snapshot;
+            order = new AttachmentSelectionOrder(clientId, generation);
+            manifest = parsed;
+            return true;
         }
         catch (JsonException)
         {
-            return null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Parses optional <c>fields</c> (ADR-47) and attachment-revision (ADR-50) snapshots from an
+    /// interaction-invoke request. Empty, malformed, or unrecognized members become absent
+    /// snapshots; attachment validation then safely rejects an incomplete snapshot when live file
+    /// pickers exist.
+    /// </summary>
+    private static InteractionSnapshot ParseInteractionSnapshot(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new InteractionSnapshot(null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new InteractionSnapshot(null, null);
+            }
+
+            Dictionary<Guid, string>? fields = null;
+            if (
+                doc.RootElement.TryGetProperty("fields", out var fieldsEl)
+                && fieldsEl.ValueKind == JsonValueKind.Object
+            )
+            {
+                fields = [];
+                foreach (var property in fieldsEl.EnumerateObject())
+                {
+                    if (
+                        Guid.TryParse(property.Name, out var fieldId)
+                        && property.Value.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        fields[fieldId] = property.Value.GetString() ?? "";
+                    }
+                }
+            }
+
+            Dictionary<Guid, long>? attachments = null;
+            if (
+                doc.RootElement.TryGetProperty("attachments", out var attachmentsEl)
+                && attachmentsEl.ValueKind == JsonValueKind.Object
+            )
+            {
+                attachments = [];
+                foreach (var property in attachmentsEl.EnumerateObject())
+                {
+                    if (
+                        Guid.TryParse(property.Name, out var pickerId)
+                        && property.Value.ValueKind == JsonValueKind.Number
+                        && property.Value.TryGetInt64(out var revision)
+                        && revision >= 0
+                    )
+                    {
+                        attachments[pickerId] = revision;
+                    }
+                }
+            }
+
+            return new InteractionSnapshot(fields, attachments);
+        }
+        catch (JsonException)
+        {
+            return new InteractionSnapshot(null, null);
         }
     }
 
@@ -934,4 +1357,18 @@ public sealed class DuetsPadService : IDisposable
         public int SegmentIndex { get; init; }
         public int CaretOffsetInSegment { get; init; }
     }
+
+    private sealed record InteractionSnapshot(
+        IReadOnlyDictionary<Guid, string>? Fields,
+        IReadOnlyDictionary<Guid, long>? Attachments
+    );
+
+    private sealed record ResolvedAttachmentPicker(DuetsPadSession Session, Guid PickerId);
+
+    private sealed record ResolvedAttachmentSelection(
+        DuetsPadSession Session,
+        Guid PickerId,
+        Guid Token,
+        Guid FileId
+    );
 }

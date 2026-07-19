@@ -385,6 +385,50 @@
   // the invoke body so a click handler sees the latest edit regardless of
   // blur timing.
 
+  // Picker id to the currently unsettled selection. Entries survive failures so
+  // interaction invocation remains blocked until the user makes a new selection.
+  const attachmentUploadMap = new Map();
+  const attachmentRevisionOverrideMap = new Map();
+  const attachmentProjectionWaiters = new Set();
+  const ATTACHMENT_CLIENT_ID_STORAGE_KEY = "duetspad.attachmentClientId";
+  const ATTACHMENT_GENERATION_STORAGE_KEY = "duetspad.attachmentGeneration";
+  const storedAttachmentClientId = sessionStorage.getItem(
+    ATTACHMENT_CLIENT_ID_STORAGE_KEY,
+  );
+  let attachmentClientId =
+    typeof storedAttachmentClientId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      storedAttachmentClientId,
+    )
+      ? storedAttachmentClientId
+      : crypto.randomUUID();
+  sessionStorage.setItem(ATTACHMENT_CLIENT_ID_STORAGE_KEY, attachmentClientId);
+  const storedAttachmentGeneration = Number(
+    sessionStorage.getItem(ATTACHMENT_GENERATION_STORAGE_KEY),
+  );
+  let attachmentSelectionGeneration =
+    Number.isSafeInteger(storedAttachmentGeneration) &&
+    storedAttachmentGeneration >= 0
+      ? storedAttachmentGeneration
+      : 0;
+
+  function nextAttachmentSelectionGeneration() {
+    if (attachmentSelectionGeneration >= Number.MAX_SAFE_INTEGER) {
+      attachmentClientId = crypto.randomUUID();
+      attachmentSelectionGeneration = 0;
+      sessionStorage.setItem(
+        ATTACHMENT_CLIENT_ID_STORAGE_KEY,
+        attachmentClientId,
+      );
+    }
+    attachmentSelectionGeneration++;
+    sessionStorage.setItem(
+      ATTACHMENT_GENERATION_STORAGE_KEY,
+      String(attachmentSelectionGeneration),
+    );
+    return attachmentSelectionGeneration;
+  }
+
   function isFieldGuarded(el) {
     // A focused or mid-edit (pending, not yet committed) field must not be
     // clobbered by an incoming projection — the ordinary controlled-input
@@ -403,6 +447,7 @@
     if (!(el instanceof HTMLElement)) return;
     const kind = el.getAttribute("data-duetspad-field-kind");
     if (!kind) return;
+    if (kind === "file") return;
     if (options.checkGuard && isFieldGuarded(el)) return;
 
     if (kind === "checkbox" || kind === "radio") {
@@ -419,6 +464,7 @@
    */
   function fieldCurrentValue(el) {
     const kind = el.getAttribute("data-duetspad-field-kind");
+    if (kind === "file") return null;
     if (kind === "checkbox") return el.checked ? "True" : "False";
     if (kind === "radio") return el.checked ? el.value : null;
     return el.value;
@@ -486,6 +532,233 @@
     );
   }
 
+  function attachmentSelectionUrl(pickerId, token = null) {
+    const base = `sessions/${sessionId}/attachments/${encodeURIComponent(pickerId)}/selections`;
+    return padUrl(token ? `${base}/${encodeURIComponent(token)}` : base);
+  }
+
+  async function readAttachmentResponse(res, fallback, observe = null) {
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(`${fallback}: ${res.status}`);
+    }
+    observe?.(data);
+    if (!res.ok || data.ok !== true) {
+      throw new Error(data.error ?? `${fallback}: ${res.status}`);
+    }
+    return data;
+  }
+
+  function requestAttachmentSelectionCancellation(pickerId, entry) {
+    if (!entry.token || entry.cancelRequested) return;
+    entry.cancelRequested = true;
+    void padFetch(attachmentSelectionUrl(pickerId, entry.token), {
+      method: "DELETE",
+    }).catch(() => {
+      // A newer begin also retires this token server-side; cancellation is best effort.
+    });
+  }
+
+  async function cancelFailedAttachmentSelection(wrapper, button) {
+    const pickerId = wrapper.getAttribute("data-duetspad-field");
+    const revision = Number(
+      wrapper.getAttribute("data-duetspad-attachment-revision"),
+    );
+    if (!pickerId || !isRevision(revision) || revision === 0) return;
+
+    button.disabled = true;
+    try {
+      const response = await padFetch(
+        `${attachmentSelectionUrl(pickerId)}/failed?revision=${encodeURIComponent(revision)}`,
+        { method: "DELETE" },
+      );
+      await readAttachmentResponse(
+        response,
+        "failed attachment selection cancellation failed",
+      );
+      const entry = attachmentUploadMap.get(pickerId);
+      if (entry?.revision === revision) {
+        entry.superseded = true;
+        entry.controller.abort();
+        attachmentUploadMap.delete(pickerId);
+      }
+    } catch (err) {
+      button.disabled = false;
+      setEditorStatus(String(err), true);
+    }
+  }
+
+  function notifyAttachmentProjectionChanged() {
+    for (const resolve of attachmentProjectionWaiters) resolve();
+    attachmentProjectionWaiters.clear();
+  }
+
+  function waitForAttachmentProjectionChange(timeoutMs) {
+    return new Promise((resolve) => {
+      let timeout = null;
+      const finish = () => {
+        attachmentProjectionWaiters.delete(finish);
+        if (timeout !== null) clearTimeout(timeout);
+        resolve();
+      };
+      attachmentProjectionWaiters.add(finish);
+      timeout = setTimeout(finish, timeoutMs);
+    });
+  }
+
+  function cancelAttachmentSelection(pickerId, entry) {
+    entry.superseded = true;
+    entry.controller.abort();
+    requestAttachmentSelectionCancellation(pickerId, entry);
+  }
+
+  async function uploadAttachmentSelection(pickerId, files, entry) {
+    const beginResponse = await padFetch(attachmentSelectionUrl(pickerId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: attachmentClientId,
+        generation: entry.generation,
+        files: files.map((file) => ({
+          name: file.name,
+          contentType: file.type,
+          size: file.size,
+        })),
+      }),
+    });
+    const begin = await readAttachmentResponse(
+      beginResponse,
+      "attachment selection rejected",
+      (data) => {
+        if (typeof data.token !== "string" || !isRevision(data.revision)) {
+          return;
+        }
+        entry.token = data.token;
+        entry.revision = data.revision;
+        attachmentRevisionOverrideMap.set(pickerId, data.revision);
+        if (entry.superseded) {
+          requestAttachmentSelectionCancellation(pickerId, entry);
+        }
+      },
+    );
+    if (entry.superseded) {
+      requestAttachmentSelectionCancellation(pickerId, entry);
+      return;
+    }
+    if (!Array.isArray(begin.files) || begin.files.length !== files.length) {
+      throw new Error(
+        "attachment selection response did not match the manifest",
+      );
+    }
+
+    try {
+      await Promise.all(
+        files.map(async (file, index) => {
+          const serverFile = begin.files[index];
+          const uploadResponse = await padFetch(
+            `${attachmentSelectionUrl(pickerId, entry.token)}/files/${encodeURIComponent(serverFile.id)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/octet-stream" },
+              body: file,
+              signal: entry.controller.signal,
+            },
+          );
+          await readAttachmentResponse(
+            uploadResponse,
+            "attachment upload failed",
+          );
+        }),
+      );
+    } catch (err) {
+      entry.controller.abort();
+      throw err;
+    }
+
+    const commitResponse = await padFetch(
+      `${attachmentSelectionUrl(pickerId, entry.token)}/commit`,
+      { method: "POST", signal: entry.controller.signal },
+    );
+    const committed = await readAttachmentResponse(
+      commitResponse,
+      "attachment commit failed",
+    );
+    attachmentRevisionOverrideMap.set(pickerId, committed.revision);
+  }
+
+  function startAttachmentSelection(wrapper, selectedFiles) {
+    const pickerId = wrapper.getAttribute("data-duetspad-field");
+    if (!pickerId) return;
+
+    const previous = attachmentUploadMap.get(pickerId);
+    if (previous) {
+      cancelAttachmentSelection(pickerId, previous);
+    }
+
+    const entry = {
+      generation: nextAttachmentSelectionGeneration(),
+      controller: new AbortController(),
+      token: null,
+      revision: null,
+      cancelRequested: false,
+      promise: null,
+      failed: false,
+      superseded: false,
+      reconciledStable: false,
+    };
+    entry.promise = uploadAttachmentSelection(pickerId, selectedFiles, entry)
+      .then(() => {
+        if (attachmentUploadMap.get(pickerId) === entry) {
+          attachmentUploadMap.delete(pickerId);
+        }
+      })
+      .catch((err) => {
+        if (entry.superseded || entry.reconciledStable) return;
+        if (attachmentUploadMap.get(pickerId) === entry) {
+          entry.failed = true;
+          setEditorStatus(String(err), true);
+        }
+        throw err;
+      });
+    // The rejection is observed here as well as by awaitAttachmentUploads, avoiding
+    // an unhandled-rejection report when no interaction is clicked after a failure.
+    entry.promise.catch(() => {});
+    attachmentUploadMap.set(pickerId, entry);
+  }
+
+  function bindFilePicker(wrapper, signal) {
+    const input = wrapper.querySelector("[data-duetspad-file-input]");
+    if (!(input instanceof HTMLInputElement)) return;
+    input.addEventListener(
+      "change",
+      () => {
+        const files = Array.from(input.files ?? []);
+        input.value = "";
+        startAttachmentSelection(wrapper, files);
+      },
+      signal ? { signal } : undefined,
+    );
+    const cancel = wrapper.querySelector("[data-duetspad-attachment-cancel]");
+    if (cancel instanceof HTMLButtonElement) {
+      cancel.addEventListener(
+        "click",
+        () => {
+          void cancelFailedAttachmentSelection(wrapper, cancel);
+        },
+        signal ? { signal } : undefined,
+      );
+    }
+  }
+
+  function fieldElements(root) {
+    if (!root || typeof root.querySelectorAll !== "function") return [];
+    const fields = Array.from(root.querySelectorAll("[data-duetspad-field]"));
+    if (root.matches?.("[data-duetspad-field]")) fields.unshift(root);
+    return fields;
+  }
+
   /**
    * Binds blur-commit (and pending-flag) listeners on every field-marked
    * element within root, including root itself when root is field-marked
@@ -496,13 +769,15 @@
    * @param {AbortSignal} [signal]
    */
   function bindFields(root, signal) {
-    if (!root || typeof root.querySelectorAll !== "function") return;
-    if (root.matches?.("[data-duetspad-field]")) {
-      bindFieldElement(root, signal);
+    for (const el of fieldElements(root)) {
+      if (el.getAttribute("data-duetspad-field-kind") === "file") {
+        bindFilePicker(el, signal);
+      } else {
+        bindFieldElement(el, signal);
+      }
     }
-    for (const el of root.querySelectorAll("[data-duetspad-field]")) {
-      bindFieldElement(el, signal);
-    }
+    queueMicrotask(reconcileAttachmentUploads);
+    notifyAttachmentProjectionChanged();
   }
 
   /**
@@ -513,7 +788,8 @@
   function collectFieldSnapshot(root) {
     const fields = {};
     if (!root || typeof root.querySelectorAll !== "function") return fields;
-    for (const el of root.querySelectorAll("[data-duetspad-field]")) {
+    for (const el of fieldElements(root)) {
+      if (el.getAttribute("data-duetspad-field-kind") === "file") continue;
       const fieldId = el.getAttribute("data-duetspad-field");
       if (!fieldId) continue;
       const value = fieldCurrentValue(el);
@@ -523,21 +799,110 @@
     return fields;
   }
 
+  function retainedAttachmentPickerStates() {
+    const pickers = new Map();
+    const roots = [...canvasPanelMap.values(), ...timelineEntryMap.values()];
+    for (const root of roots) {
+      for (const el of fieldElements(root)) {
+        if (el.getAttribute("data-duetspad-field-kind") !== "file") continue;
+        const pickerId = el.getAttribute("data-duetspad-field");
+        const revision = Number(
+          el.getAttribute("data-duetspad-attachment-revision"),
+        );
+        if (pickerId && isRevision(revision)) {
+          const current = pickers.get(pickerId);
+          if (current === undefined || revision > current.revision) {
+            pickers.set(pickerId, {
+              revision,
+              status: el.getAttribute("data-duetspad-attachment-status"),
+            });
+          }
+        }
+      }
+    }
+    return pickers;
+  }
+
+  function reconcileAttachmentUploads() {
+    const retained = retainedAttachmentPickerStates();
+    for (const [pickerId, entry] of attachmentUploadMap) {
+      if (!retained.has(pickerId)) {
+        cancelAttachmentSelection(pickerId, entry);
+        attachmentUploadMap.delete(pickerId);
+        attachmentRevisionOverrideMap.delete(pickerId);
+        continue;
+      }
+
+      const state = retained.get(pickerId);
+      if (
+        entry.revision !== null &&
+        state.status === "stable" &&
+        state.revision >= entry.revision
+      ) {
+        entry.reconciledStable = true;
+        attachmentUploadMap.delete(pickerId);
+      }
+    }
+    for (const [pickerId, overrideRevision] of attachmentRevisionOverrideMap) {
+      const domRevision = retained.get(pickerId)?.revision;
+      if (
+        (!retained.has(pickerId) && !attachmentUploadMap.has(pickerId)) ||
+        (domRevision !== undefined && domRevision >= overrideRevision)
+      ) {
+        attachmentRevisionOverrideMap.delete(pickerId);
+      }
+    }
+  }
+
+  async function awaitAttachmentUploads() {
+    while (true) {
+      const unsettled = Array.from(attachmentUploadMap.values());
+      if (unsettled.length === 0) return;
+      await Promise.all(unsettled.map((entry) => entry.promise));
+      if (attachmentUploadMap.size === 0) return;
+    }
+  }
+
+  function collectAttachmentSnapshot() {
+    const attachments = {};
+    for (const [pickerId, state] of retainedAttachmentPickerStates()) {
+      attachments[pickerId] =
+        attachmentRevisionOverrideMap.get(pickerId) ?? state.revision;
+    }
+    return attachments;
+  }
+
   async function invokeInteraction(handlerId, canvasRoot) {
     if (!handlerId) return;
     try {
-      await padFetch(
-        padUrl(
-          `sessions/${sessionId}/interactions/${encodeURIComponent(handlerId)}/invoke`,
-        ),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fields: collectFieldSnapshot(canvasRoot) }),
-        },
-      );
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await awaitAttachmentUploads();
+        const res = await padFetch(
+          padUrl(
+            `sessions/${sessionId}/interactions/${encodeURIComponent(handlerId)}/invoke`,
+          ),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fields: collectFieldSnapshot(canvasRoot),
+              attachments: collectAttachmentSnapshot(),
+            }),
+          },
+        );
+        const data = await res.json();
+        if (res.ok && data.ok === true) return;
+        if (data.attachmentConflict === true && attempt < 2) {
+          await waitForAttachmentProjectionChange(50 * 2 ** attempt);
+          continue;
+        }
+        throw new Error(
+          data.error ?? `interaction invoke failed: ${res.status}`,
+        );
+      }
     } catch (err) {
       console.error("[DuetsPad] interaction invoke failed", err);
+      setEditorStatus(String(err), true);
     }
   }
 
@@ -808,6 +1173,7 @@
     const content = document.getElementById("timeline-content");
     if (content) content.textContent = "";
     timelineEntryMap.clear();
+    queueMicrotask(reconcileAttachmentUploads);
   }
 
   function renderTimelineEntry(entry) {
@@ -904,6 +1270,7 @@
             content.appendChild(markerRow);
           }
         }
+        queueMicrotask(reconcileAttachmentUploads);
         break;
       }
 
@@ -1782,6 +2149,7 @@
     }
     canvasInteractionControllerMap.clear();
     activeCanvasName = "default";
+    queueMicrotask(reconcileAttachmentUploads);
 
     // Notify the UI layer so it can rebuild canvas tabs.
     if (onCanvasCreatedCallback) {

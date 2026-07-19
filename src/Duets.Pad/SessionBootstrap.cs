@@ -55,7 +55,9 @@ internal static class SessionBootstrap
         );
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
-        // Register per-session d.ts declarations for canvases, canvas, ui, dump, and pad.
+        // Register CLR types referenced by the per-session declarations, then the declarations for
+        // canvases, canvas, ui, dump, and pad.
+        duetsSession.Declarations.RegisterType(typeof(Stream));
         duetsSession.Declarations.RegisterDeclaration(
             """
             // DuetsPad per-session globals
@@ -99,6 +101,32 @@ internal static class SessionBootstrap
             interface DuetsPadInput {
                 /** The field's current value. Assigning re-projects every placement of this field. */
                 value: string;
+            }
+
+            /** Immutable metadata and read capability for a committed attachment. */
+            interface DuetsPadFile {
+                readonly id: string;
+                readonly name: string;
+                readonly contentType: string;
+                readonly size: number;
+                /** Opens a fresh leased stream positioned at zero. */
+                openRead(): System.IO.Stream;
+                // TODO: Negotiate native byte-buffer declarations through a backend capability
+                // before DuetsPad supports a second script backend (ADR-51).
+                /** Reads the complete file into a JavaScript-owned byte array. */
+                readAllBytes(): Uint8Array;
+                /** Reads the complete file as UTF-8 text, honoring a Unicode byte-order mark. */
+                readAllText(): string;
+            }
+
+            /** A server-canonical file picker with atomically committed selections. */
+            interface DuetsPadFilePicker {
+                /** A snapshot of the currently committed files. */
+                readonly files: readonly DuetsPadFile[];
+                /** Removes one committed file by its opaque id. */
+                remove(fileId: string): void;
+                /** Removes all committed files and cancels an unsettled selection. */
+                clear(): void;
             }
 
             declare const ui: {
@@ -154,6 +182,8 @@ internal static class SessionBootstrap
                 slider(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
                 /** Returns a radio-button group field. A value absent from items is retained but leaves every option unchecked. */
                 radioGroup(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                /** Returns a transactional file picker. Interaction handlers run only after all current uploads commit. */
+                filePicker(options?: { accept?: string; multiple?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadFilePicker;
             };
 
             declare const pad: {

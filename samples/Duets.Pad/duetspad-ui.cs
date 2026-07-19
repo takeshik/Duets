@@ -18,11 +18,22 @@
 const nameBox = ui.textBox({ name: "name", placeholder: "Your name", value: "World" });
 const subscribe = ui.checkBox({ label: "Subscribe to updates", checked: false });
 const greeting = ui.slot(ui.text("(click Greet to render a greeting here)"));
+const attachments = ui.filePicker({ accept: "text/plain", multiple: true });
+const attachmentSummary = ui.slot(ui.text("No files attached."));
 
 const greet = () => {
   // Handlers run server-side; reading .value here always reflects the
   // server-canonical current value of the input, not a client-side echo.
   greeting.content = ui.text(`Hello, ${nameBox.value}! Subscribed: ${subscribe.value}`);
+};
+
+const summarizeAttachments = () => {
+  const files = attachments.files;
+  attachmentSummary.content = ui.text(
+    files.length === 0
+      ? "No files attached."
+      : files.map((file) => `${file.name} (${file.size} bytes)`).join(", ")
+  );
 };
 
 canvas.set(
@@ -31,6 +42,10 @@ canvas.set(
       ui.row([ui.col([ui.label("Name"), nameBox]), ui.col([subscribe])]),
       ui.button("Greet", greet),
       greeting,
+      ui.divider({ text: "Attachments" }),
+      attachments,
+      ui.button("Summarize attachments", summarizeAttachments),
+      attachmentSummary,
     ],
     { title: "ui.* demo" }
   )
