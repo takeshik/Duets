@@ -1,4 +1,5 @@
 using System.Globalization;
+using Duets.Pad.Attachments;
 
 namespace Duets.Pad.Rendering;
 
@@ -384,6 +385,164 @@ public sealed record DisplayContent
                 new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, handler),
             ]);
         return new DisplayContent(body, interactions);
+    }
+
+    /// <summary>Builds a server-canonical file-picker wrapper. (JS: <c>ui.filePicker</c>)</summary>
+    internal static DisplayContent FilePicker(
+        Guid id,
+        AttachmentPickerSnapshot snapshot,
+        FilePickerOptions options
+    )
+    {
+        var wrapperAttributes = new List<KeyValuePair<string, string?>>
+        {
+            new(FieldMarker.AttributeName, id.ToString("D")),
+            new(FieldMarker.KindAttributeName, FieldKind.File.ToAttributeValue()),
+            new(
+                "data-duetspad-attachment-revision",
+                snapshot.Revision.ToString(CultureInfo.InvariantCulture)
+            ),
+            new("data-duetspad-attachment-status", snapshot.Status.ToString().ToLowerInvariant()),
+            new("class", ResolveClassName(options.ClassName, "duetspad-file-picker")),
+        };
+        if (!string.IsNullOrWhiteSpace(snapshot.Error))
+        {
+            wrapperAttributes.Add(new("data-duetspad-attachment-error", snapshot.Error));
+        }
+
+        var inputAttributes = new List<KeyValuePair<string, string?>>
+        {
+            new("type", "file"),
+            new("class", "form-control"),
+            new("data-duetspad-file-input", null),
+        };
+        if (!string.IsNullOrWhiteSpace(options.Accept))
+        {
+            inputAttributes.Add(new("accept", options.Accept));
+        }
+
+        if (options.Multiple)
+        {
+            inputAttributes.Add(new("multiple", null));
+        }
+
+        if (options.Disabled)
+        {
+            inputAttributes.Add(new("disabled", null));
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Title))
+        {
+            inputAttributes.Add(new("title", options.Title));
+        }
+
+        var fileRows = snapshot.Files.Select(file =>
+            (ITerminalRenderNode)
+                new Element(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "duetspad-file-picker-item"),
+                        new KeyValuePair<string, string?>("data-duetspad-file-id", file.Id)
+                    ),
+                    new ElementChildren(
+                        new Element(
+                            "span",
+                            new ElementAttributes(
+                                new KeyValuePair<string, string?>(
+                                    "class",
+                                    "duetspad-file-picker-name"
+                                )
+                            ),
+                            new ElementChildren(new Text(file.Name))
+                        ),
+                        new Element(
+                            "span",
+                            new ElementAttributes(
+                                new KeyValuePair<string, string?>(
+                                    "class",
+                                    "duetspad-file-picker-size"
+                                )
+                            ),
+                            new ElementChildren(
+                                new Text(
+                                    file.Size.ToString(CultureInfo.InvariantCulture) + " bytes"
+                                )
+                            )
+                        )
+                    )
+                )
+        );
+        var listChildren =
+            snapshot.Files.Count == 0
+                ? new ElementChildren(
+                    new Element(
+                        "div",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>("class", "duetspad-file-picker-empty")
+                        ),
+                        new ElementChildren(new Text("No files attached."))
+                    )
+                )
+                : [.. fileRows];
+
+        var children = new List<ITerminalRenderNode>
+        {
+            new Element("input", new ElementAttributes(inputAttributes), ElementChildren.Empty),
+            new Element(
+                "div",
+                new ElementAttributes(
+                    new KeyValuePair<string, string?>("class", "duetspad-file-picker-list")
+                ),
+                listChildren
+            ),
+        };
+        if (snapshot.Status == AttachmentSelectionStatus.Uploading)
+        {
+            children.Add(
+                new Element(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "duetspad-file-picker-status")
+                    ),
+                    new ElementChildren(new Text("Uploading files…"))
+                )
+            );
+        }
+
+        if (!string.IsNullOrWhiteSpace(snapshot.Error))
+        {
+            children.Add(
+                new Element(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "duetspad-file-picker-error")
+                    ),
+                    new ElementChildren(new Text(snapshot.Error))
+                )
+            );
+        }
+
+        if (snapshot.Status == AttachmentSelectionStatus.Failed)
+        {
+            children.Add(
+                new Element(
+                    "button",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("type", "button"),
+                        new KeyValuePair<string, string?>(
+                            "class",
+                            "btn btn-sm btn-outline-secondary duetspad-file-picker-cancel"
+                        ),
+                        new KeyValuePair<string, string?>("data-duetspad-attachment-cancel", null)
+                    ),
+                    new ElementChildren(new Text("Cancel failed selection"))
+                )
+            );
+        }
+
+        return new DisplayContent(
+            new Element("div", new ElementAttributes(wrapperAttributes), [.. children])
+        );
     }
 
     /// <summary>

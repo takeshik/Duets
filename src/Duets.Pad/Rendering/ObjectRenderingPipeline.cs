@@ -75,6 +75,13 @@ internal class DisplayRenderer(IReadOnlyList<IObjectRenderer> renderers)
             return input.Render();
         }
 
+        // Step 4.7: file-picker handle — renders an ephemeral native selector plus the
+        // server-canonical committed attachment list (ADR-50).
+        if (value is DisplayFilePicker filePicker)
+        {
+            return filePicker.Render();
+        }
+
         // Step 5: cycle detection — only for reference types (not strings, not value types)
         var isRef = value is not string && !value.GetType().IsValueType;
         if (isRef)

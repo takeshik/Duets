@@ -37,7 +37,8 @@ namespace Duets.Pad;
 ///   <item>
 ///     <description>
 ///       <b>Correct disposal.</b> Sessions removed by DELETE or by the idle sweep are disposed
-///       after they are removed from the dictionary. A dispose failure is swallowed so it cannot
+///       after they are removed from the dictionary. A dispose failure is reported through
+///       <see cref="DuetsPadServiceOptions.SessionDisposalErrorHandler"/> and contained so it cannot
 ///       abort a sweep iteration or kill the cleanup timer.
 ///     </description>
 ///   </item>
@@ -83,7 +84,7 @@ internal sealed class SessionRegistry : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        List<DuetsPadSession> sessionsToDispose = [];
+        List<(Guid Id, DuetsPadSession Session)> sessionsToDispose = [];
         lock (this._lifecycleLock)
         {
             if (Interlocked.Exchange(ref this._disposed, 1) != 0)
@@ -102,22 +103,14 @@ internal sealed class SessionRegistry : IDisposable
                 if (this._sessions.TryRemove(id, out var session))
                 {
                     this.ReleaseSessionSlot();
-                    sessionsToDispose.Add(session);
+                    sessionsToDispose.Add((id, session));
                 }
             }
         }
 
-        foreach (var session in sessionsToDispose)
+        foreach (var (id, session) in sessionsToDispose)
         {
-            try
-            {
-                session.Dispose();
-            }
-            catch
-            {
-                // Swallow: one session's teardown failure must not prevent the registry from
-                // disposing the remaining sessions.
-            }
+            this.DisposeSessionAndReport(id, session);
         }
     }
 
@@ -193,11 +186,17 @@ internal sealed class SessionRegistry : IDisposable
 
         DuetsPadSession session;
         DuetsSession? duetsSession = null;
+        IAttachmentStorage? attachmentStorage = null;
         Guid newId;
         try
         {
             duetsSession = await this._options.SessionFactory();
             newId = Guid.NewGuid();
+            attachmentStorage =
+                this._options.AttachmentStorageFactory(new AttachmentStorageContext(newId))
+                ?? throw new InvalidOperationException(
+                    "The attachment storage factory returned null."
+                );
             session = new DuetsPadSession(
                 newId,
                 duetsSession,
@@ -207,13 +206,19 @@ internal sealed class SessionRegistry : IDisposable
                 this._options.DumpOptions,
                 this._options.EnableTaggedTemplateCompletions,
                 this._options.TaggedTemplateCompletionRateLimitPerSecond,
-                this._options.TaggedTemplateCompletionTimeout
+                this._options.TaggedTemplateCompletionTimeout,
+                attachmentStorage,
+                this._options.MaxAttachmentBytesPerFile,
+                this._options.MaxAttachmentBytesPerSession,
+                this._options.MaxAttachmentsPerSession,
+                this._options.AttachmentStorageDrainTimeout
             );
 
-            // DuetsPadSession now owns and disposes the DuetsSession. Clearing the local ownership
-            // marker prevents the failure cleanup below from disposing a successfully transferred
-            // session if later code is added to this try block.
+            // DuetsPadSession now owns and disposes both resources. Clearing the local ownership
+            // markers prevents failure cleanup from disposing successfully transferred resources
+            // if later code is added to this try block.
             duetsSession = null;
+            attachmentStorage = null;
         }
         catch
         {
@@ -228,6 +233,15 @@ internal sealed class SessionRegistry : IDisposable
             try
             {
                 duetsSession?.Dispose();
+            }
+            catch
+            {
+                // Swallow: the construction failure is the actionable error for the caller.
+            }
+
+            try
+            {
+                attachmentStorage?.Dispose();
             }
             catch
             {
@@ -249,14 +263,7 @@ internal sealed class SessionRegistry : IDisposable
         // The factory ran concurrently with Dispose. The lifecycle lock prevents publication after
         // teardown, but construction happened outside that lock and still owns a reserved slot.
         this.ReleaseSessionSlot();
-        try
-        {
-            session.Dispose();
-        }
-        catch
-        {
-            // Swallow: ObjectDisposedException remains the useful result for the caller.
-        }
+        this.DisposeSessionAndReport(newId, session);
 
         throw new ObjectDisposedException(nameof(SessionRegistry));
     }
@@ -316,16 +323,9 @@ internal sealed class SessionRegistry : IDisposable
 
         this.ReleaseSessionSlot();
 
-        // The session is already removed from the dictionary; a dispose failure must not
-        // escape into the HTTP handler. There is no logger here, so observe and continue.
-        try
-        {
-            session.Dispose();
-        }
-        catch
-        {
-            // Swallow: the session is orphaned but unreachable; nothing more to do.
-        }
+        // The session is already removed from the dictionary; report a dispose failure without
+        // letting it escape into the HTTP handler.
+        this.DisposeSessionAndReport(id, session);
 
         return true;
     }
@@ -343,7 +343,7 @@ internal sealed class SessionRegistry : IDisposable
             return;
         }
 
-        List<DuetsPadSession> sessionsToDispose = [];
+        List<(Guid Id, DuetsPadSession Session)> sessionsToDispose = [];
         lock (this._lifecycleLock)
         {
             if (Volatile.Read(ref this._disposed) != 0)
@@ -367,22 +367,34 @@ internal sealed class SessionRegistry : IDisposable
                 )
                 {
                     this.ReleaseSessionSlot();
-                    sessionsToDispose.Add(removed);
+                    sessionsToDispose.Add((id, removed));
                 }
             }
         }
 
-        foreach (var session in sessionsToDispose)
+        foreach (var (id, session) in sessionsToDispose)
         {
-            // One session's dispose failure must not abort the sweep over the others, nor kill the
-            // cleanup timer. There is no logger here, so observe and continue.
+            this.DisposeSessionAndReport(id, session);
+        }
+    }
+
+    private void DisposeSessionAndReport(Guid id, DuetsPadSession session)
+    {
+        try
+        {
+            session.Dispose();
+        }
+        catch (Exception ex)
+        {
+            // A teardown failure must not abort a registry sweep or escape into an HTTP handler.
+            // Give the host an observation path, while isolating failures in its diagnostic code.
             try
             {
-                session.Dispose();
+                this._options.SessionDisposalErrorHandler?.Invoke(id, ex);
             }
             catch
             {
-                // Swallow and proceed to the next idle session.
+                // Diagnostics are best-effort and cannot become a second teardown failure.
             }
         }
     }

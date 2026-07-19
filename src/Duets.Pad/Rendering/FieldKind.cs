@@ -13,6 +13,7 @@ internal enum FieldKind
     DropDown,
     Slider,
     Radio,
+    File,
 }
 
 internal static class FieldKindExtensions
@@ -30,6 +31,7 @@ internal static class FieldKindExtensions
             FieldKind.DropDown => "dropdown",
             FieldKind.Slider => "slider",
             FieldKind.Radio => "radio",
+            FieldKind.File => "file",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
@@ -62,6 +64,9 @@ internal static class FieldKindExtensions
                 return true;
             case "radio":
                 kind = FieldKind.Radio;
+                return true;
+            case "file":
+                kind = FieldKind.File;
                 return true;
             default:
                 kind = default;

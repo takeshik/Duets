@@ -18,6 +18,7 @@ internal sealed class JintScriptEngine : ScriptEngine<JsValue>, ITaggedTemplateS
         this._jintEngine = new Engine(opts =>
         {
             configure?.Invoke(opts);
+            opts.AddObjectConverter(new ScriptByteBufferObjectConverter());
             opts.AddObjectConverter(new ClrArrayObjectConverter());
 
             var hostAccessor = opts.Interop.MemberAccessor;

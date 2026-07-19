@@ -1,3 +1,4 @@
+using Duets.Pad.Attachments;
 using Duets.Pad.Rendering;
 
 namespace Duets.Pad;
@@ -7,6 +8,13 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadServiceOptions
 {
+    internal const long DefaultMaxAttachmentBytesPerFile = 16 * 1024 * 1024;
+    internal const long DefaultMaxAttachmentBytesPerSession = 64 * 1024 * 1024;
+    internal const int DefaultMaxAttachmentsPerSession = 32;
+    internal static readonly TimeSpan DefaultAttachmentStorageDrainTimeout = TimeSpan.FromSeconds(
+        30
+    );
+
     /// <summary>
     /// Creates a fresh DuetsSession for each DuetsPad browser session.
     /// </summary>
@@ -91,11 +99,55 @@ public sealed class DuetsPadServiceOptions
     public int? MaxSessions { get; set; } = 16;
 
     /// <summary>
-    /// Maximum accepted request body size, in bytes, applied to all <c>POST</c> endpoints. Bodies
-    /// larger than this are rejected with <c>413</c>. <c>/complete</c> additionally enforces its own
-    /// stricter <see cref="TaggedTemplateCompletionMaxRequestBytes"/> cap on top of this one.
+    /// Maximum accepted request body size, in bytes, applied to control-message <c>POST</c>
+    /// endpoints, including attachment begin and commit. Bodies larger than this are rejected with
+    /// <c>413</c>. Raw attachment bodies use <see cref="MaxAttachmentBytesPerFile"/> instead;
+    /// <c>/complete</c> additionally enforces its own stricter
+    /// <see cref="TaggedTemplateCompletionMaxRequestBytes"/> cap.
     /// </summary>
     public int MaxRequestBodyBytes { get; set; } = 1024 * 1024;
+
+    /// <summary>Maximum accepted bytes for one uploaded attachment.</summary>
+    public long MaxAttachmentBytesPerFile { get; set; } = DefaultMaxAttachmentBytesPerFile;
+
+    /// <summary>
+    /// Maximum total attachment bytes retained or reserved by one session, including committed
+    /// files, staging files, and uploads pending physical cleanup.
+    /// </summary>
+    public long MaxAttachmentBytesPerSession { get; set; } = DefaultMaxAttachmentBytesPerSession;
+
+    /// <summary>
+    /// Maximum attachment file count retained or reserved by one session, including committed and
+    /// staging files.
+    /// </summary>
+    public int MaxAttachmentsPerSession { get; set; } = DefaultMaxAttachmentsPerSession;
+
+    /// <summary>
+    /// Creates the blob storage owned by each DuetsPad session. The default streams to a private
+    /// per-session temporary directory.
+    /// </summary>
+    public Func<
+        AttachmentStorageContext,
+        IAttachmentStorage
+    > AttachmentStorageFactory { get; set; } =
+        context => new TemporaryFileAttachmentStorage(context);
+
+    /// <summary>
+    /// Maximum time synchronous session disposal waits for attachment storage operations to drain.
+    /// When the limit is exceeded, disposal throws <see cref="TimeoutException"/> to release the
+    /// caller while storage cleanup continues in the background and retains ownership until all
+    /// operations finish.
+    /// </summary>
+    public TimeSpan AttachmentStorageDrainTimeout { get; set; } =
+        DefaultAttachmentStorageDrainTimeout;
+
+    /// <summary>
+    /// Optional diagnostic callback invoked when disposal of a registered DuetsPad session throws.
+    /// The first argument is the session identifier and the second is the disposal exception.
+    /// Calls for different sessions may overlap. Callback exceptions are ignored so diagnostics
+    /// cannot interrupt registry teardown or idle reclamation.
+    /// </summary>
+    public Action<Guid, Exception>? SessionDisposalErrorHandler { get; set; }
 
     /// <summary>
     /// Enables tagged-template completion registration snapshots and the
@@ -157,8 +209,10 @@ public sealed class DuetsPadServiceOptions
     /// deferred to first use.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <see cref="TimelineEntryLimit"/>, <see cref="MaxSessions"/>, or
-    /// <see cref="MaxRequestBodyBytes"/> is set to a non-positive value.
+    /// Thrown when a configured count, byte, rate, or timeout limit is outside its supported range.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <see cref="AttachmentStorageFactory"/> is <see langword="null"/>.
     /// </exception>
     internal void Validate()
     {
@@ -183,6 +237,46 @@ public sealed class DuetsPadServiceOptions
             throw new ArgumentOutOfRangeException(
                 nameof(this.MaxRequestBodyBytes),
                 "Max request body bytes must be positive."
+            );
+        }
+
+        if (this.MaxAttachmentBytesPerFile <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxAttachmentBytesPerFile),
+                "Maximum attachment bytes per file must be positive."
+            );
+        }
+
+        if (this.MaxAttachmentBytesPerSession < this.MaxAttachmentBytesPerFile)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxAttachmentBytesPerSession),
+                "Maximum attachment bytes per session must be at least the per-file limit."
+            );
+        }
+
+        if (this.MaxAttachmentsPerSession <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxAttachmentsPerSession),
+                "Maximum attachments per session must be positive."
+            );
+        }
+
+        if (this.AttachmentStorageFactory is null)
+        {
+            throw new ArgumentNullException(nameof(this.AttachmentStorageFactory));
+        }
+
+        if (
+            this.AttachmentStorageDrainTimeout <= TimeSpan.Zero
+            || this.AttachmentStorageDrainTimeout.TotalMilliseconds > int.MaxValue
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.AttachmentStorageDrainTimeout),
+                $"Attachment storage drain timeout must be greater than zero and no greater than {int.MaxValue} milliseconds."
             );
         }
 

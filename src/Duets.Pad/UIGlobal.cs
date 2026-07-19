@@ -172,6 +172,24 @@ internal sealed class UIGlobal(
         );
     }
 
+    /// <summary>
+    /// Returns a transactional file picker whose committed files are exposed through its
+    /// read-only <c>files</c> collection. (JS: <c>ui.filePicker</c>)
+    /// </summary>
+    public DisplayFilePicker FilePicker(object? options = null)
+    {
+        var host =
+            this._fieldHost as Attachments.IFilePickerHost
+            ?? throw new InvalidOperationException(
+                "ui.filePicker is not available because no file-picker host was provided."
+            );
+        return new DisplayFilePicker(
+            host,
+            Guid.NewGuid(),
+            BuildFilePickerOptions(CoerceOptionsDictionary(options))
+        );
+    }
+
     private IFieldHost RequireFieldHost() =>
         this._fieldHost
         ?? throw new InvalidOperationException(
@@ -922,6 +940,54 @@ internal sealed class UIGlobal(
         if (dict.TryGetValue("title", out var title) && title is not null)
         {
             result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static FilePickerOptions BuildFilePickerOptions(IDictionary<string, object?>? dict)
+    {
+        var result = new FilePickerOptions();
+        if (dict is null)
+        {
+            return result;
+        }
+
+        if (dict.TryGetValue("accept", out var accept) && accept is not null)
+        {
+            result = result with
+            {
+                Accept = Convert.ToString(accept, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("multiple", out var multiple) && multiple is not null)
+        {
+            result = result with
+            {
+                Multiple = Convert.ToBoolean(multiple, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
+        {
+            result = result with
+            {
+                Disabled = Convert.ToBoolean(disabled, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("title", out var title) && title is not null)
+        {
+            result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
+        }
+
+        if (dict.TryGetValue("className", out var className) && className is not null)
+        {
+            result = result with
+            {
+                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+            };
         }
 
         return result;

@@ -1,9 +1,9 @@
 namespace Duets.Pad.Rendering;
 
 /// <summary>
-/// Helpers for the locatable marker attribute a <see cref="DisplayInput"/> emits directly on its
-/// rendered element (ADR-47). Unlike <see cref="SlotMarker"/>, there is no wrapper element: the
-/// marked element itself carries the field's identity and value-encoding attribute.
+/// Helpers for the locatable marker attribute emitted by <see cref="DisplayInput"/> (ADR-47) and
+/// <see cref="DisplayFilePicker"/> (ADR-50). Unlike <see cref="SlotMarker"/>, the marked element
+/// itself carries the field-backed state's identity and kind.
 /// </summary>
 internal static class FieldMarker
 {
@@ -56,7 +56,8 @@ internal static class FieldMarker
     /// <summary>
     /// Collects the ids of every field marker reachable from <paramref name="root"/> into
     /// <paramref name="into"/>. Used to garbage-collect field-store entries whose markers are no
-    /// longer reachable from any Canvas or Timeline content.
+    /// longer reachable from any Canvas or Timeline content. The same retained set is supplied to
+    /// the attachment store for file-picker cleanup (ADR-50).
     /// </summary>
     public static void CollectIds(ITerminalRenderNode root, ISet<Guid> into)
     {
@@ -109,6 +110,40 @@ internal static class FieldMarker
         return result;
     }
 
+    /// <summary>
+    /// Replaces every marked element at <paramref name="markerPaths"/> with
+    /// <paramref name="replacement"/>.
+    /// </summary>
+    public static ITerminalRenderNode Replace(
+        ITerminalRenderNode root,
+        IReadOnlyList<DisplayPath> markerPaths,
+        ITerminalRenderNode replacement
+    )
+    {
+        if (root is null)
+        {
+            throw new ArgumentNullException(nameof(root));
+        }
+
+        if (markerPaths is null)
+        {
+            throw new ArgumentNullException(nameof(markerPaths));
+        }
+
+        if (replacement is null)
+        {
+            throw new ArgumentNullException(nameof(replacement));
+        }
+
+        var result = root;
+        foreach (var markerPath in markerPaths)
+        {
+            result = ReplaceNode(result, markerPath.Segments, 0, replacement);
+        }
+
+        return result;
+    }
+
     private static Element TransformElement(Element element, FieldKind kind, string value)
     {
         switch (kind)
@@ -130,6 +165,34 @@ internal static class FieldMarker
             default:
                 return ReplaceAttribute(element, ValueAttributeName, value);
         }
+    }
+
+    private static ITerminalRenderNode ReplaceNode(
+        ITerminalRenderNode node,
+        IReadOnlyList<int> segments,
+        int depth,
+        ITerminalRenderNode replacement
+    )
+    {
+        if (depth == segments.Count)
+        {
+            return replacement;
+        }
+
+        if (node is not Element element)
+        {
+            throw new InvalidOperationException("A field marker path crossed a non-element node.");
+        }
+
+        var childIndex = segments[depth];
+        if (childIndex < 0 || childIndex >= element.Children.Count)
+        {
+            throw new InvalidOperationException("A field marker path is outside the render tree.");
+        }
+
+        var children = element.Children.ToArray();
+        children[childIndex] = ReplaceNode(children[childIndex], segments, depth + 1, replacement);
+        return new Element(element.Tag, element.Attributes, [.. children]);
     }
 
     private static Element ReplaceAttribute(Element element, string name, string? value)

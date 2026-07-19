@@ -799,6 +799,48 @@ html[data-bs-theme="light"] .immediate-console {
     flex-direction: row;
 }
 
+.duetspad-file-picker {
+    display: grid;
+    gap: 6px;
+    min-width: min(100%, 18rem);
+}
+
+.duetspad-file-picker-list {
+    display: grid;
+    gap: 3px;
+}
+
+.duetspad-file-picker-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 3px 6px;
+    border: 1px solid var(--common-border);
+    border-radius: 4px;
+}
+
+.duetspad-file-picker-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.duetspad-file-picker-size,
+.duetspad-file-picker-empty,
+.duetspad-file-picker-status {
+    color: var(--common-text-muted);
+    font-size: var(--common-data-size);
+}
+
+.duetspad-file-picker-error {
+    color: var(--tblr-danger);
+    font-size: var(--common-data-size);
+}
+
+.duetspad-file-picker-cancel {
+    justify-self: start;
+}
+
 /* View mode: Tabs — the bar is a Tabler .nav.nav-tabs; we only toggle its
    visibility and give it the surface background + density. */
 .workspace-tabbar {
