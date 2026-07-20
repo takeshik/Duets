@@ -4,7 +4,7 @@ namespace Duets.Pad.Interactions;
 
 /// <summary>
 /// Owns the interaction lifecycle within a single DuetsPad session: committing pending
-/// interactions, keyed storage by Timeline entry id or canvas, and handler lookup/release.
+/// interactions, keyed storage by Timeline entry id, canvas, or dialog, and handler lookup/release.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,12 +25,100 @@ internal sealed class InteractionStore
     private readonly Dictionary<string, IReadOnlyList<CommittedInteraction>> _canvasInteractions =
         new(StringComparer.Ordinal);
 
+    // Committed interactions keyed by dialog id.
+    private readonly Dictionary<Guid, IReadOnlyList<CommittedInteraction>> _dialogInteractions = [];
+
     /// <summary>
     /// Returns the committed interactions for the canvas with the given <paramref name="name"/>,
     /// or an empty list if no interactions have been committed for that canvas.
     /// </summary>
     public IReadOnlyList<CommittedInteraction> GetCanvasInteractions(string name) =>
         this._canvasInteractions.TryGetValue(name, out var interactions) ? interactions : [];
+
+    /// <summary>
+    /// Returns the committed interactions for <paramref name="dialogId"/>.
+    /// </summary>
+    public IReadOnlyList<CommittedInteraction> GetDialogInteractions(Guid dialogId) =>
+        this._dialogInteractions.TryGetValue(dialogId, out var interactions) ? interactions : [];
+
+    /// <summary>
+    /// Prepares a complete interaction set for a dialog without publishing its handlers.
+    /// </summary>
+    public DialogInteractionCommitPlan PrepareSetDialogInteractions(
+        Guid dialogId,
+        PendingInteractions pending,
+        int? childIndex = null
+    )
+    {
+        var prepared = this.Prepare(pending, childIndex);
+        return new DialogInteractionCommitPlan(
+            dialogId,
+            prepared.Interactions,
+            this.GetDialogInteractions(dialogId),
+            prepared.Registrations
+        );
+    }
+
+    /// <summary>
+    /// Prepares replacement of interactions nested below dialog slot markers.
+    /// </summary>
+    public DialogInteractionCommitPlan PrepareReplaceDialogSlots(
+        Guid dialogId,
+        IReadOnlyList<SlotInteractionReplacement> replacements
+    )
+    {
+        var (kept, replaced, committed, registrations) = this.PlanSlotReplacements(
+            this.GetDialogInteractions(dialogId),
+            replacements
+        );
+        return new DialogInteractionCommitPlan(
+            dialogId,
+            [.. kept, .. committed],
+            replaced,
+            registrations
+        );
+    }
+
+    /// <summary>
+    /// Publishes a prepared dialog interaction set and releases the replaced handlers.
+    /// </summary>
+    public IReadOnlyList<CommittedInteraction> CommitDialogInteractions(
+        DialogInteractionCommitPlan plan
+    )
+    {
+        if (plan is null)
+        {
+            throw new ArgumentNullException(nameof(plan));
+        }
+
+        foreach (var registration in plan.Registrations)
+        {
+            this._registry.Commit(registration);
+        }
+
+        if (plan.Interactions.Count > 0)
+        {
+            this._dialogInteractions[plan.DialogId] = plan.Interactions;
+        }
+        else
+        {
+            this._dialogInteractions.Remove(plan.DialogId);
+        }
+
+        this.Release(plan.ReplacedInteractions);
+        return plan.Interactions;
+    }
+
+    /// <summary>
+    /// Removes and unregisters every interaction owned by <paramref name="dialogId"/>.
+    /// </summary>
+    public void ClearDialogInteractions(Guid dialogId)
+    {
+        if (this._dialogInteractions.Remove(dialogId, out var interactions))
+        {
+            this.Release(interactions);
+        }
+    }
 
     /// <summary>
     /// Commits <paramref name="pending"/> interactions as the new canvas interaction set for the
@@ -309,7 +397,7 @@ internal sealed class InteractionStore
         this._registry.TryGet(handlerId, out handler);
 
     /// <summary>
-    /// Clears all interactions (canvas and timeline) and unregisters all handlers.
+    /// Clears all interactions and unregisters all handlers.
     /// Called on session dispose under <c>_stateLock</c>.
     /// </summary>
     public void Clear()
@@ -317,6 +405,7 @@ internal sealed class InteractionStore
         this._registry.Clear();
         this._canvasInteractions.Clear();
         this._timelineInteractions.Clear();
+        this._dialogInteractions.Clear();
     }
 
     private IReadOnlyList<CommittedInteraction> Commit(
@@ -432,3 +521,10 @@ internal sealed record CanvasInteractionCommitPlan
 
     public IReadOnlyList<PreparedInteractionRegistration> Registrations { get; }
 }
+
+internal sealed record DialogInteractionCommitPlan(
+    Guid DialogId,
+    IReadOnlyList<CommittedInteraction> Interactions,
+    IReadOnlyList<CommittedInteraction> ReplacedInteractions,
+    IReadOnlyList<PreparedInteractionRegistration> Registrations
+);

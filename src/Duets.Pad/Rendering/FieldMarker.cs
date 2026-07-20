@@ -56,8 +56,8 @@ internal static class FieldMarker
     /// <summary>
     /// Collects the ids of every field marker reachable from <paramref name="root"/> into
     /// <paramref name="into"/>. Used to garbage-collect field-store entries whose markers are no
-    /// longer reachable from any Canvas or Timeline content. The same retained set is supplied to
-    /// the attachment store for file-picker cleanup (ADR-50).
+    /// longer reachable from any Canvas, Timeline, or Dialog content. The same retained set is
+    /// supplied to the attachment store for file-picker cleanup (ADR-50).
     /// </summary>
     public static void CollectIds(ITerminalRenderNode root, ISet<Guid> into)
     {

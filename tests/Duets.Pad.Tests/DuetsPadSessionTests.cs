@@ -739,7 +739,8 @@ public sealed class DuetsPadSessionTests
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        // Drain the initial burst (canvas.snapshot, timeline.reset, dialog.snapshot,
+        // type.declaration(s)).
         while (channel.Reader.TryRead(out _)) { }
 
         session.Dispose();
@@ -766,7 +767,8 @@ public sealed class DuetsPadSessionTests
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
 
-        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        // Drain the initial burst (canvas.snapshot, timeline.reset, dialog.snapshot,
+        // type.declaration(s)).
         while (channel.Reader.TryRead(out _)) { }
 
         session.Dispose();
@@ -1255,7 +1257,8 @@ public sealed class DuetsPadSessionTests
 
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
-        // Drain the initial burst (canvas.snapshot, timeline.reset, type.declaration(s)).
+        // Drain the initial burst (canvas.snapshot, timeline.reset, dialog.snapshot,
+        // type.declaration(s)).
         while (channel.Reader.TryRead(out _)) { }
 
         // Append several entries via dump.

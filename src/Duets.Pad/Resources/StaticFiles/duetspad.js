@@ -14,6 +14,11 @@
     timelineAppend: "timeline.append",
     timelineUpdate: "timeline.update",
     timelineTrim: "timeline.trim",
+    dialogSnapshot: "dialog.snapshot",
+    dialogOpen: "dialog.open",
+    dialogPatch: "dialog.patch",
+    dialogReplace: "dialog.replace",
+    dialogClose: "dialog.close",
     typeDeclaration: "type.declaration",
     taggedTemplateSnapshot: "taggedTemplate.snapshot",
   };
@@ -801,7 +806,11 @@
 
   function retainedAttachmentPickerStates() {
     const pickers = new Map();
-    const roots = [...canvasPanelMap.values(), ...timelineEntryMap.values()];
+    const roots = [
+      ...canvasPanelMap.values(),
+      ...timelineEntryMap.values(),
+      ...Array.from(dialogMap.values(), (entry) => entry.root),
+    ];
     for (const root of roots) {
       for (const el of fieldElements(root)) {
         if (el.getAttribute("data-duetspad-field-kind") !== "file") continue;
@@ -872,8 +881,8 @@
     return attachments;
   }
 
-  async function invokeInteraction(handlerId, canvasRoot) {
-    if (!handlerId) return;
+  async function invokeInteraction(handlerId, surfaceRoot) {
+    if (!handlerId) return false;
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         await awaitAttachmentUploads();
@@ -885,13 +894,13 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              fields: collectFieldSnapshot(canvasRoot),
+              fields: collectFieldSnapshot(surfaceRoot),
               attachments: collectAttachmentSnapshot(),
             }),
           },
         );
         const data = await res.json();
-        if (res.ok && data.ok === true) return;
+        if (res.ok && data.ok === true) return true;
         if (data.attachmentConflict === true && attempt < 2) {
           await waitForAttachmentProjectionChange(50 * 2 ** attempt);
           continue;
@@ -903,10 +912,12 @@
     } catch (err) {
       console.error("[DuetsPad] interaction invoke failed", err);
       setEditorStatus(String(err), true);
+      return false;
     }
+    return false;
   }
 
-  function applyInteractions(root, interactions, signal) {
+  function applyInteractions(root, interactions, signal, onInvoke) {
     if (!Array.isArray(interactions)) return;
 
     for (const interaction of interactions) {
@@ -923,7 +934,8 @@
         target.addEventListener(
           "click",
           () => {
-            void invokeInteraction(interaction.handlerId, root);
+            const pending = invokeInteraction(interaction.handlerId, root);
+            onInvoke?.(pending, target);
           },
           signal ? { signal } : undefined,
         );
@@ -2161,6 +2173,431 @@
     }
   }
 
+  // Dialog state
+
+  const dialogMap = new Map();
+  const dialogOrder = [];
+  const dialogSizes = new Set(["sm", "md", "lg", "xl"]);
+  let dialogRestoreFocus = null;
+  let dialogResyncScheduled = false;
+
+  function dialogActionButton(root, actionId) {
+    for (const wrapper of root.querySelectorAll(
+      "[data-duetspad-dialog-action]",
+    )) {
+      if (wrapper.getAttribute("data-duetspad-dialog-action") === actionId) {
+        return wrapper.querySelector("button");
+      }
+    }
+    return null;
+  }
+
+  function setDialogPending(entry, pending) {
+    entry.pending = pending;
+    entry.root.inert = pending;
+    for (const button of entry.layer.querySelectorAll("button")) {
+      button.disabled = pending;
+    }
+  }
+
+  function bindDialogProjection(entry, interactions) {
+    entry.controller?.abort();
+    entry.controller = new AbortController();
+    const signal = entry.controller.signal;
+    applyInteractions(entry.root, interactions, signal, (pending, target) => {
+      const closesDialog =
+        target.matches?.("[data-duetspad-dialog-dismiss-handler]") ||
+        target.closest?.("[data-duetspad-dialog-action]");
+      if (!closesDialog) return;
+      setDialogPending(entry, true);
+      void pending.then((ok) => {
+        if (!ok && dialogMap.get(entry.id) === entry) {
+          setDialogPending(entry, false);
+          if (target.isConnected && typeof target.focus === "function") {
+            target.focus();
+          }
+        }
+      });
+    });
+    bindFields(entry.root, signal);
+
+    entry.layer.addEventListener(
+      "click",
+      (event) => {
+        if (event.target === entry.layer) requestDialogDismiss(entry);
+      },
+      { signal },
+    );
+    entry.closeButton?.addEventListener(
+      "click",
+      () => requestDialogDismiss(entry),
+      { signal },
+    );
+    entry.layer.addEventListener(
+      "keydown",
+      (event) => handleDialogKeydown(entry, event),
+      { signal },
+    );
+  }
+
+  function requestDialogDismiss(entry) {
+    if (!entry.canDismiss || entry.pending || dialogOrder[0] !== entry.id)
+      return;
+    const dismiss = entry.root.querySelector(
+      "[data-duetspad-dialog-dismiss-handler]",
+    );
+    dismiss?.click();
+  }
+
+  function handleDialogKeydown(entry, event) {
+    if (dialogOrder[0] !== entry.id) return;
+    if (event.key === "Escape" && entry.canDismiss) {
+      event.preventDefault();
+      requestDialogDismiss(entry);
+      return;
+    }
+    if (
+      event.key === "Enter" &&
+      !event.isComposing &&
+      entry.defaultButtonId &&
+      !(event.target instanceof HTMLTextAreaElement) &&
+      !(event.target instanceof HTMLSelectElement) &&
+      !(event.target instanceof HTMLButtonElement) &&
+      !(event.target instanceof HTMLAnchorElement) &&
+      !event.target.isContentEditable
+    ) {
+      const button = dialogActionButton(entry.root, entry.defaultButtonId);
+      if (button && !button.disabled) {
+        event.preventDefault();
+        button.click();
+      }
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = Array.from(
+      entry.dialog.querySelectorAll(
+        'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !element.closest("[hidden]"));
+    if (focusable.length === 0) {
+      event.preventDefault();
+      entry.dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function createDialogEntry(projection) {
+    if (
+      typeof projection.dialogId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        projection.dialogId,
+      )
+    ) {
+      throw new Error("dialog projection id is invalid");
+    }
+    if (
+      (projection.title !== null && typeof projection.title !== "string") ||
+      !dialogSizes.has(projection.size) ||
+      (projection.defaultButtonId !== null &&
+        typeof projection.defaultButtonId !== "string") ||
+      typeof projection.canDismiss !== "boolean" ||
+      (projection.dismissButtonId !== null &&
+        typeof projection.dismissButtonId !== "string") ||
+      typeof projection.claimed !== "boolean"
+    ) {
+      throw new Error("dialog projection options are invalid");
+    }
+    assertCanvasRootNode(projection.state);
+    const root = projectNode(projection.state);
+    assertInteractionSet(root, projection.interactions);
+
+    const layer = document.createElement("div");
+    layer.className = "duetspad-dialog-layer";
+
+    const dialog = document.createElement("section");
+    dialog.className = `duetspad-dialog duetspad-dialog-${projection.size ?? "md"}`;
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
+
+    let closeButton = null;
+    if (projection.title || projection.canDismiss) {
+      const header = document.createElement("header");
+      header.className = "duetspad-dialog-header";
+      const title = document.createElement("h2");
+      title.className = "duetspad-dialog-title";
+      title.textContent = projection.title ?? "Dialog";
+      const titleId = `duetspad-dialog-title-${projection.dialogId}`;
+      title.id = titleId;
+      dialog.setAttribute("aria-labelledby", titleId);
+      header.appendChild(title);
+      if (projection.canDismiss) {
+        closeButton = document.createElement("button");
+        closeButton.type = "button";
+        closeButton.className = "btn-close";
+        closeButton.setAttribute("aria-label", "Close dialog");
+        header.appendChild(closeButton);
+      }
+      dialog.appendChild(header);
+    } else {
+      dialog.setAttribute("aria-label", "Dialog");
+    }
+
+    dialog.appendChild(root);
+    layer.appendChild(dialog);
+    return {
+      id: projection.dialogId,
+      revision: projection.revision,
+      root,
+      layer,
+      dialog,
+      closeButton,
+      canDismiss: projection.canDismiss === true,
+      defaultButtonId: projection.defaultButtonId ?? null,
+      controller: null,
+      pending: projection.claimed === true,
+    };
+  }
+
+  function captureDialogEdits(entry) {
+    const occurrences = new Map();
+    const edits = [];
+    for (const field of fieldElements(entry.root)) {
+      const fieldId = field.getAttribute("data-duetspad-field");
+      const kind = field.getAttribute("data-duetspad-field-kind");
+      if (!fieldId || !kind) continue;
+      const option =
+        kind === "radio" ? (field.getAttribute("value") ?? "") : "";
+      const key = `${fieldId}\u0000${kind}\u0000${option}`;
+      const occurrence = occurrences.get(key) ?? 0;
+      occurrences.set(key, occurrence + 1);
+      if (!isFieldGuarded(field)) continue;
+
+      edits.push({
+        key,
+        occurrence,
+        value: fieldCurrentValue(field),
+        checked: "checked" in field ? field.checked : null,
+        editGen: field.dataset.duetspadEditGen,
+        pending: field.dataset.duetspadPending,
+        focused: document.activeElement === field,
+        selectionStart: "selectionStart" in field ? field.selectionStart : null,
+        selectionEnd: "selectionEnd" in field ? field.selectionEnd : null,
+        selectionDirection:
+          "selectionDirection" in field ? field.selectionDirection : null,
+      });
+    }
+    return edits;
+  }
+
+  function restoreDialogEdits(entry, edits) {
+    if (edits.length === 0) return;
+    const candidates = new Map();
+    for (const field of fieldElements(entry.root)) {
+      const fieldId = field.getAttribute("data-duetspad-field");
+      const kind = field.getAttribute("data-duetspad-field-kind");
+      if (!fieldId || !kind) continue;
+      const option =
+        kind === "radio" ? (field.getAttribute("value") ?? "") : "";
+      const key = `${fieldId}\u0000${kind}\u0000${option}`;
+      const fields = candidates.get(key) ?? [];
+      fields.push(field);
+      candidates.set(key, fields);
+    }
+
+    for (const edit of edits) {
+      const field = candidates.get(edit.key)?.[edit.occurrence];
+      if (!(field instanceof HTMLElement)) continue;
+      if (edit.checked !== null && "checked" in field) {
+        field.checked = edit.checked;
+      } else if (edit.value !== null && "value" in field) {
+        field.value = edit.value;
+      }
+      if (edit.editGen !== undefined)
+        field.dataset.duetspadEditGen = edit.editGen;
+      if (edit.pending !== undefined)
+        field.dataset.duetspadPending = edit.pending;
+
+      if (edit.focused) {
+        field.focus();
+        if (
+          edit.selectionStart !== null &&
+          edit.selectionEnd !== null &&
+          typeof field.setSelectionRange === "function"
+        ) {
+          field.setSelectionRange(
+            edit.selectionStart,
+            edit.selectionEnd,
+            edit.selectionDirection ?? undefined,
+          );
+        }
+      }
+    }
+  }
+
+  function addOrReplaceDialog(projection) {
+    if (!projection || typeof projection.dialogId !== "string") {
+      throw new Error("dialog projection id is invalid");
+    }
+    if (!isRevision(projection.revision)) {
+      throw new Error("dialog projection revision is invalid");
+    }
+    const existing = dialogMap.get(projection.dialogId);
+    if (existing && projection.revision <= existing.revision) return;
+
+    const edits = existing ? captureDialogEdits(existing) : [];
+    const entry = createDialogEntry(projection);
+    const container = document.getElementById("dialog-container");
+    if (!container) return;
+    if (existing) {
+      existing.controller?.abort();
+      entry.layer.hidden = existing.layer.hidden;
+      existing.layer.replaceWith(entry.layer);
+    } else {
+      dialogOrder.push(entry.id);
+      container.appendChild(entry.layer);
+    }
+    restoreDialogEdits(entry, edits);
+    dialogMap.set(entry.id, entry);
+    bindDialogProjection(entry, projection.interactions);
+    if (entry.pending) setDialogPending(entry, true);
+    updateDialogPresentation();
+  }
+
+  function removeDialog(dialogId) {
+    const entry = dialogMap.get(dialogId);
+    if (!entry) return;
+    entry.controller?.abort();
+    entry.layer.remove();
+    dialogMap.delete(dialogId);
+    const index = dialogOrder.indexOf(dialogId);
+    if (index >= 0) dialogOrder.splice(index, 1);
+    updateDialogPresentation();
+    queueMicrotask(reconcileAttachmentUploads);
+  }
+
+  function updateDialogPresentation() {
+    const activeId = dialogOrder[0];
+    const app = document.getElementById("app");
+    const toasts = document.getElementById("toast-container");
+    const hasDialog = activeId !== undefined;
+    if (hasDialog && !dialogRestoreFocus) {
+      dialogRestoreFocus = document.activeElement;
+    }
+    if (app) app.inert = hasDialog;
+    if (toasts) toasts.inert = hasDialog;
+
+    for (const [id, entry] of dialogMap) {
+      entry.layer.hidden = id !== activeId;
+    }
+
+    if (hasDialog) {
+      const entry = dialogMap.get(activeId);
+      queueMicrotask(() => {
+        if (dialogOrder[0] !== activeId) return;
+        if (entry.dialog.contains(document.activeElement)) return;
+        const preferred =
+          !entry.pending && entry.defaultButtonId
+            ? dialogActionButton(entry.root, entry.defaultButtonId)
+            : null;
+        const first = entry.pending
+          ? null
+          : entry.dialog.querySelector(
+              'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]):not([tabindex="-1"]), a[href]',
+            );
+        (preferred ?? first ?? entry.dialog).focus();
+      });
+    } else if (dialogRestoreFocus) {
+      const restore = dialogRestoreFocus;
+      dialogRestoreFocus = null;
+      if (restore.isConnected && typeof restore.focus === "function")
+        restore.focus();
+    }
+  }
+
+  function resetDialogs() {
+    for (const entry of dialogMap.values()) entry.controller?.abort();
+    dialogMap.clear();
+    dialogOrder.length = 0;
+    const container = document.getElementById("dialog-container");
+    if (container) container.textContent = "";
+    updateDialogPresentation();
+    queueMicrotask(reconcileAttachmentUploads);
+  }
+
+  function requestDialogResync() {
+    if (dialogResyncScheduled) return;
+    dialogResyncScheduled = true;
+    queueMicrotask(() => {
+      dialogResyncScheduled = false;
+      activeEventStream?.close();
+      activeEventStream = null;
+      subscribeSession?.(sessionId);
+    });
+  }
+
+  function handleDialogEvent(msg) {
+    try {
+      if (msg.type === PAD_EVENTS.dialogSnapshot) {
+        if (!Array.isArray(msg.dialogs)) {
+          throw new Error("dialog snapshot must contain an array");
+        }
+        const retainedIds = new Set();
+        for (const projection of msg.dialogs) {
+          if (!projection || typeof projection.dialogId !== "string") {
+            throw new Error("dialog snapshot projection id is invalid");
+          }
+          if (retainedIds.has(projection.dialogId)) {
+            throw new Error("dialog snapshot contains a duplicate id");
+          }
+          retainedIds.add(projection.dialogId);
+        }
+        for (const dialogId of [...dialogOrder]) {
+          if (!retainedIds.has(dialogId)) removeDialog(dialogId);
+        }
+        for (const projection of msg.dialogs) addOrReplaceDialog(projection);
+        dialogOrder.splice(0, dialogOrder.length, ...retainedIds);
+        updateDialogPresentation();
+      } else if (
+        msg.type === PAD_EVENTS.dialogOpen ||
+        msg.type === PAD_EVENTS.dialogReplace
+      ) {
+        addOrReplaceDialog(msg.dialog);
+      } else if (msg.type === PAD_EVENTS.dialogPatch) {
+        const entry = dialogMap.get(msg.dialogId);
+        if (
+          !entry ||
+          !isRevision(msg.baseRevision) ||
+          !isRevision(msg.revision) ||
+          msg.revision !== msg.baseRevision + 1 ||
+          entry.revision !== msg.baseRevision
+        ) {
+          requestDialogResync();
+          return;
+        }
+        preflightCanvasPatch(entry.root, msg.operations, msg.interactions);
+        applyCanvasPatch(entry.root, msg.operations);
+        entry.revision = msg.revision;
+        bindDialogProjection(entry, msg.interactions);
+      } else if (msg.type === PAD_EVENTS.dialogClose) {
+        removeDialog(msg.dialogId);
+      }
+    } catch (err) {
+      console.error("[DuetsPad] dialog projection rejected", err);
+      requestDialogResync();
+    }
+  }
+
   // Session swap
 
   /**
@@ -2169,7 +2606,7 @@
    * 2. Deletes the old session on the server (best-effort).
    * 3. Creates a new session via POST /sessions.
    * 4. Updates sessionStorage and the module-level sessionId.
-   * 5. Clears the Canvas and Timeline panes (the initial SSE burst will re-populate them).
+   * 5. Clears Canvas, Timeline, and Dialog state (the initial SSE burst will re-populate them).
    * 6. Opens a new event stream on the new session.
    * The editor content is intentionally left untouched.
    */
@@ -2221,10 +2658,11 @@
     sessionId = newId;
     sessionStorage.setItem("duetspad.sessionId", newId);
 
-    // Step 5: clear Canvas and Timeline panes before the new stream arrives
+    // Step 5: clear projected surfaces before the new stream arrives
     // so the old content does not persist during the brief gap.
     resetCanvases();
     resetTimeline();
+    resetDialogs();
 
     // Step 6: open the new event stream.
     sessionSwapInProgress = false;
@@ -2426,6 +2864,7 @@
      * @param {string} rawEvent - One event block, without its trailing blank line.
      */
     function dispatch(rawEvent) {
+      if (closed) return;
       const dataLines = [];
       for (const line of rawEvent.split("\n")) {
         if (line.startsWith("data:")) {
@@ -2680,6 +3119,8 @@
               handleCanvasEvent(msg);
             } else if (msg.type.startsWith("timeline.")) {
               handleTimelineEvent(msg);
+            } else if (msg.type.startsWith("dialog.")) {
+              handleDialogEvent(msg);
             } else if (msg.type === PAD_EVENTS.typeDeclaration) {
               addExtraLib(msg);
             } else if (msg.type === PAD_EVENTS.taggedTemplateSnapshot) {

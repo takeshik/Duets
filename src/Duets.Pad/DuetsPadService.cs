@@ -409,8 +409,8 @@ public sealed class DuetsPadService : IDisposable
 
     /// <summary>
     /// Browser-originated field-value commit (ADR-47): stores the raw request body as the field's
-    /// value and updates the authoritative Canvas/Timeline state in place, but never broadcasts —
-    /// the committing browser already reflects the value it is sending, so echoing it back would be
+    /// value and updates authoritative projected state in place, but never broadcasts — the
+    /// committing browser already reflects the value it is sending, so echoing it back would be
     /// redundant (and updating the authoritative state without a broadcast is what lets a later SSE
     /// reconnect see the committed value instead of reverting to the pre-commit projection).
     /// </summary>

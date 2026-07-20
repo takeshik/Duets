@@ -1,12 +1,21 @@
 using Duets.Pad;
+using Duets.Pad.Dialogs;
 using Duets.Pad.Rendering;
 
 namespace Duets.Pad.Tests;
 
 public sealed class UIGlobalTests
 {
-    private static UIGlobal CreateUIGlobal(IToastHost? toastHost = null) =>
-        new(new DisplayRenderer([]), DumpOptions.Default, toastHost: toastHost);
+    private static UIGlobal CreateUIGlobal(
+        IToastHost? toastHost = null,
+        IDialogHost? dialogHost = null
+    ) =>
+        new(
+            new DisplayRenderer([]),
+            DumpOptions.Default,
+            toastHost: toastHost,
+            dialogHost: dialogHost
+        );
 
     // Positive: Toast
 
@@ -88,6 +97,81 @@ public sealed class UIGlobalTests
         ui.Toast("Saved", new Dictionary<string, object?> { ["durationMs"] = 600_000 });
 
         Assert.Equal(600_000, host.Options?.DurationMilliseconds);
+    }
+
+    // Positive: Dialog
+
+    [Fact]
+    public void Dialog_coerces_and_trims_supported_options()
+    {
+        var host = new RecordingDialogHost();
+        var ui = CreateUIGlobal(dialogHost: host);
+
+        var handle = ui.Dialog(
+            "body",
+            _ => { },
+            new Dictionary<string, object?>
+            {
+                ["title"] = "  Confirm  ",
+                ["buttons"] = new object?[]
+                {
+                    " Cancel ",
+                    new Dictionary<string, object?>
+                    {
+                        ["id"] = " save ",
+                        ["label"] = " Save ",
+                        ["variant"] = "primary",
+                    },
+                },
+                ["defaultButtonId"] = " save ",
+                ["dismissButtonId"] = " Cancel ",
+                ["size"] = "lg",
+            }
+        );
+
+        Assert.True(handle.IsOpen);
+        Assert.Equal("Confirm", host.Options?.Title);
+        Assert.Equal(["Cancel", "save"], host.Options!.Buttons.Select(button => button.Id));
+        Assert.Equal("Save", host.Options.Buttons[1].Label);
+        Assert.Equal("save", host.Options.DefaultButtonId);
+        Assert.Equal("Cancel", host.Options.DismissButtonId);
+        Assert.Equal("lg", host.Options.Size);
+    }
+
+    [Fact]
+    public void Dialog_with_explicit_null_dismiss_button_disables_dismissal()
+    {
+        var host = new RecordingDialogHost();
+        var ui = CreateUIGlobal(dialogHost: host);
+
+        ui.Dialog("body", _ => { }, new Dictionary<string, object?> { ["dismissButtonId"] = null });
+
+        Assert.False(host.Options!.CanDismiss);
+        Assert.Null(host.Options.DismissButtonId);
+    }
+
+    [Fact]
+    public void Dialog_with_duplicate_button_ids_throws()
+    {
+        var ui = CreateUIGlobal(dialogHost: new RecordingDialogHost());
+
+        Assert.Throws<ArgumentException>(() =>
+            ui.Dialog(
+                "body",
+                _ => { },
+                new Dictionary<string, object?> { ["buttons"] = new object?[] { "Same", " Same " } }
+            )
+        );
+    }
+
+    [Fact]
+    public void Dialog_without_host_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ui.Dialog("body", _ => { }));
+
+        Assert.Contains("no dialog host", ex.Message, StringComparison.Ordinal);
     }
 
     // Positive: RawHtml
@@ -1247,6 +1331,34 @@ public sealed class UIGlobalTests
         {
             this.Message = message;
             this.Options = options;
+        }
+    }
+
+    private sealed class RecordingDialogHost : IDialogHost
+    {
+        private readonly Guid _id = Guid.NewGuid();
+        private bool _isOpen = true;
+
+        public DialogOptions? Options { get; private set; }
+
+        public DisplayDialog ShowDialog(
+            object? body,
+            Action<DialogResult> onResult,
+            DialogOptions options
+        )
+        {
+            this.Options = options;
+            return new DisplayDialog(this, this._id);
+        }
+
+        public bool IsDialogOpen(Guid dialogId) => this._isOpen && dialogId == this._id;
+
+        public void CloseDialog(Guid dialogId)
+        {
+            if (dialogId == this._id)
+            {
+                this._isOpen = false;
+            }
         }
     }
 

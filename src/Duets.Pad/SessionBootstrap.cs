@@ -51,7 +51,14 @@ internal static class SessionBootstrap
         duetsSession.SetValue("canvas", canvasesGlobal.Get("default"));
         duetsSession.SetValue(
             "ui",
-            new UIGlobal(renderer, padSession.DumpOptions, padSession, padSession, padSession)
+            new UIGlobal(
+                renderer,
+                padSession.DumpOptions,
+                padSession,
+                padSession,
+                padSession,
+                padSession
+            )
         );
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
@@ -129,6 +136,25 @@ internal static class SessionBootstrap
                 clear(): void;
             }
 
+            /** Result delivered when a user completes a modal dialog. */
+            interface DuetsPadDialogResult {
+                readonly reason: "action" | "dismiss";
+                readonly actionId: string | null;
+            }
+
+            /** Session-bound handle for a modal dialog. */
+            interface DuetsPadDialog {
+                readonly isOpen: boolean;
+                /** Closes the dialog without invoking its result callback. */
+                close(): void;
+            }
+
+            interface DuetsPadDialogButton {
+                id: string;
+                label: string;
+                variant?: "default" | "primary" | "danger";
+            }
+
             declare const ui: {
                 /** Returns a raw-HTML escape-hatch node (use sparingly). */
                 rawHtml(content: string): any;
@@ -186,6 +212,20 @@ internal static class SessionBootstrap
                 filePicker(options?: { accept?: string; multiple?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadFilePicker;
                 /** Shows a transient browser notification. durationMs defaults to 5000, accepts 0 through 600000, and 0 keeps it visible until dismissed. */
                 toast(message: string, options?: { title?: string; variant?: "info" | "success" | "warning" | "danger"; durationMs?: number }): void;
+                /** Opens a server-canonical modal and reports its result in a later interaction turn. A body render failure is recorded in the Timeline and returns a closed handle. */
+                dialog(
+                    body: any,
+                    onResult: (result: DuetsPadDialogResult) => void,
+                    options?: {
+                        title?: string;
+                        /** Footer actions. An empty list with dismissButtonId: null makes the dialog closeable only through its handle. */
+                        buttons?: (string | DuetsPadDialogButton)[];
+                        defaultButtonId?: string;
+                        /** Maps Escape, backdrop, and header close to an action id. Explicit null disables those gestures. */
+                        dismissButtonId?: string | null;
+                        size?: "sm" | "md" | "lg" | "xl";
+                    }
+                ): DuetsPadDialog;
             };
 
             declare const pad: {
