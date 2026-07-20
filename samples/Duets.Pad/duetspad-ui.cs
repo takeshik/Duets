@@ -37,11 +37,45 @@ const summarizeAttachments = () => {
   );
 };
 
+const openProfileDialog = () => {
+  const alias = ui.textBox({ placeholder: "Display name", value: nameBox.value });
+  const preview = ui.slot(ui.text("Edit the value, then update this preview."));
+  ui.dialog(
+    ui.stack([
+      ui.label("Display name"),
+      alias,
+      ui.button("Update preview", () => {
+        preview.content = ui.badge(alias.value || "(empty)", { color: "blue" });
+      }),
+      preview,
+    ]),
+    result => {
+      if (result.reason === "action" && result.actionId === "save") {
+        nameBox.value = alias.value;
+        greet();
+      } else {
+        ui.toast(`Dialog closed: ${result.actionId ?? result.reason}`);
+      }
+    },
+    {
+      title: "Edit profile",
+      buttons: [
+        { id: "cancel", label: "Cancel" },
+        { id: "save", label: "Save", variant: "primary" },
+      ],
+      defaultButtonId: "save",
+      dismissButtonId: "cancel",
+      size: "md",
+    }
+  );
+};
+
 canvas.set(
   ui.card(
     [
       ui.row([ui.col([ui.label("Name"), nameBox]), ui.col([subscribe])]),
       ui.button("Greet", greet),
+      ui.button("Open profile dialog", openProfileDialog),
       greeting,
       ui.divider({ text: "Attachments" }),
       attachments,

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
+using Duets.Pad.Dialogs;
 using Duets.Pad.Interactions;
 using Duets.Pad.Rendering;
 using Duets.Pad.State;
@@ -9,9 +10,8 @@ using Duets.Pad.Timeline;
 namespace Duets.Pad.Protocol;
 
 /// <summary>
-/// Serializes <see cref="CanvasEventMessage"/>, <see cref="TimelineEventMessage"/>, and
-/// <see cref="PadEventMessage"/> to the JSON string placed on an SSE <c>data:</c> line (without
-/// the <c>data: </c> prefix).
+/// Serializes DuetsPad surface events to the JSON string placed on an SSE <c>data:</c> line
+/// (without the <c>data: </c> prefix).
 /// </summary>
 internal static class SseSerializer
 {
@@ -152,12 +152,79 @@ internal static class SseSerializer
         {
             PadEventMessage.Canvas c => Serialize(c.Message),
             PadEventMessage.Timeline t => Serialize(t.Message),
+            PadEventMessage.Dialog d => Serialize(d.Message),
             PadEventMessage.TypeDeclaration d => SerializeTypeDeclaration(d.Declaration),
             PadEventMessage.TaggedTemplateSnapshot s => SerializeTaggedTemplateSnapshot(s.Snapshot),
             PadEventMessage.Control ctrl => SerializeControl(ctrl.Op, ctrl.Payload),
             _ => throw new InvalidOperationException(
                 $"Unrecognised PadEventMessage type '{m.GetType().Name}'."
             ),
+        };
+
+    internal static string Serialize(DialogEventMessage message)
+    {
+        if (message is null)
+        {
+            throw new ArgumentNullException(nameof(message));
+        }
+
+        var result = message switch
+        {
+            DialogEventMessage.SnapshotMessage snapshot => SerializeDialogSnapshot(snapshot),
+            DialogEventMessage.FullStateMessage full => new JsonObject
+            {
+                ["type"] = full.Type,
+                ["dialog"] = SerializeDialogProjection(full.Projection, full.Interactions),
+            },
+            DialogEventMessage.PatchMessage patch => new JsonObject
+            {
+                ["type"] = DialogEventTypes.Patch,
+                ["dialogId"] = patch.DialogId.ToString("D"),
+                ["baseRevision"] = patch.BaseRevision,
+                ["revision"] = patch.Revision,
+                ["operations"] = SerializePatchOperations(patch.Operations),
+                ["interactions"] = SerializeInteractions(patch.Interactions),
+            },
+            DialogEventMessage.CloseMessage close => new JsonObject
+            {
+                ["type"] = DialogEventTypes.Close,
+                ["dialogId"] = close.DialogId.ToString("D"),
+            },
+            _ => throw new InvalidOperationException(
+                $"Unrecognised DialogEventMessage type '{message.GetType().Name}'."
+            ),
+        };
+
+        return result.ToJsonString();
+    }
+
+    private static JsonObject SerializeDialogSnapshot(DialogEventMessage.SnapshotMessage snapshot)
+    {
+        var dialogs = new JsonArray();
+        foreach (var item in snapshot.Dialogs)
+        {
+            dialogs.Add(SerializeDialogProjection(item.Projection, item.Interactions));
+        }
+
+        return new JsonObject { ["type"] = DialogEventTypes.Snapshot, ["dialogs"] = dialogs };
+    }
+
+    private static JsonObject SerializeDialogProjection(
+        DialogProjection projection,
+        IReadOnlyList<CommittedInteraction> interactions
+    ) =>
+        new()
+        {
+            ["dialogId"] = projection.Id.ToString("D"),
+            ["revision"] = projection.Revision,
+            ["title"] = projection.Options.Title,
+            ["size"] = projection.Options.Size,
+            ["defaultButtonId"] = projection.Options.DefaultButtonId,
+            ["canDismiss"] = projection.Options.CanDismiss,
+            ["dismissButtonId"] = projection.Options.DismissButtonId,
+            ["claimed"] = projection.Claimed,
+            ["state"] = _canvasSerializer.Serialize(projection.State),
+            ["interactions"] = SerializeInteractions(interactions),
         };
 
     private static string SerializeControl(string op, IReadOnlyDictionary<string, object?> payload)

@@ -752,6 +752,15 @@ public sealed class DuetsPadAccessControlTests
     }
 
     [Fact]
+    public void UseDuetsPad_throws_ArgumentOutOfRangeException_when_MaxActiveDialogs_is_zero()
+    {
+        using var server = new HttpServer("http://127.0.0.1:0/");
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            server.UseDuetsPad("/", opts => opts.MaxActiveDialogs = 0)
+        );
+    }
+
+    [Fact]
     public void UseDuetsPad_throws_ArgumentOutOfRangeException_when_MaxRequestBodyBytes_is_zero()
     {
         using var server = new HttpServer("http://127.0.0.1:0/");

@@ -2,7 +2,7 @@ namespace Duets.Pad.Protocol;
 
 /// <summary>
 /// Discriminated union of all event types sent on the unified <c>GET /sessions/{sessionId}/events</c>
-/// SSE stream. Each variant wraps one of the three surface event types.
+/// SSE stream. Each variant wraps a projected surface event or an imperative command.
 /// </summary>
 internal abstract class PadEventMessage
 {
@@ -18,6 +18,12 @@ internal abstract class PadEventMessage
     internal sealed class Timeline(TimelineEventMessage message) : PadEventMessage
     {
         public TimelineEventMessage Message { get; } = message;
+    }
+
+    /// <summary>Wraps a <see cref="DialogEventMessage"/>.</summary>
+    internal sealed class Dialog(DialogEventMessage message) : PadEventMessage
+    {
+        public DialogEventMessage Message { get; } = message;
     }
 
     /// <summary>Wraps a <see cref="TypeDeclaration"/>.</summary>

@@ -8,6 +8,7 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadServiceOptions
 {
+    internal const int DefaultMaxActiveDialogs = 8;
     internal const long DefaultMaxAttachmentBytesPerFile = 16 * 1024 * 1024;
     internal const long DefaultMaxAttachmentBytesPerSession = 64 * 1024 * 1024;
     internal const int DefaultMaxAttachmentsPerSession = 32;
@@ -99,6 +100,12 @@ public sealed class DuetsPadServiceOptions
     public int? MaxSessions { get; set; } = 16;
 
     /// <summary>
+    /// Maximum number of active modal dialogs retained by one session. <see langword="null"/>
+    /// means unlimited. The default is 8.
+    /// </summary>
+    public int? MaxActiveDialogs { get; set; } = DefaultMaxActiveDialogs;
+
+    /// <summary>
     /// Maximum accepted request body size, in bytes, applied to control-message <c>POST</c>
     /// endpoints, including attachment begin and commit. Bodies larger than this are rejected with
     /// <c>413</c>. Raw attachment bodies use <see cref="MaxAttachmentBytesPerFile"/> instead;
@@ -173,8 +180,8 @@ public sealed class DuetsPadServiceOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A session that has at least one active SSE subscriber (Canvas, Timeline, or type-declaration
-    /// stream) is never evicted regardless of its last-activity timestamp; the subscriber-presence
+    /// A session that has at least one active unified SSE subscriber is never evicted regardless of
+    /// its last-activity timestamp; the subscriber-presence
     /// guard takes precedence. Only sessions with no live stream and no activity within this
     /// threshold are reclaimed. <see cref="KeepAliveInterval"/> keepalive pings also count as
     /// activity and provide a redundant secondary signal for sessions whose streams are open.
@@ -229,6 +236,14 @@ public sealed class DuetsPadServiceOptions
             throw new ArgumentOutOfRangeException(
                 nameof(this.MaxSessions),
                 "Max sessions must be positive."
+            );
+        }
+
+        if (this.MaxActiveDialogs is { } maxActiveDialogs && maxActiveDialogs <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(this.MaxActiveDialogs),
+                "Maximum active dialogs must be positive."
             );
         }
 

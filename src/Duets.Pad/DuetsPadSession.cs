@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.Channels;
 using Duets.Completions;
 using Duets.Pad.Attachments;
+using Duets.Pad.Dialogs;
 using Duets.Pad.Interactions;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
@@ -17,7 +18,7 @@ namespace Duets.Pad;
 /// <remarks>
 /// <para>
 /// A DuetsPad session owns one DuetsSession and keeps the associated Canvas,
-/// Timeline, and object-renderer state together. The service layer is
+/// Timeline, Dialog, and object-renderer state together. The service layer is
 /// responsible for creating session identifiers, routing HTTP/SSE requests to
 /// the matching session, and disposing idle or explicitly reset sessions.
 /// </para>
@@ -55,7 +56,8 @@ namespace Duets.Pad;
 /// as new as any update the subscriber could subsequently receive. To guarantee this without a
 /// TOCTOU gap, <see cref="SubscribeEvents"/> acquires <c>_stateLock</c> and, <em>while still
 /// holding it</em>, both registers the writer and immediately enqueues the current-state initial
-/// events (<c>canvas.snapshot</c>, <c>timeline.reset</c>, and any existing type declarations)
+/// events (<c>canvas.snapshot</c>, <c>timeline.reset</c>, <c>dialog.snapshot</c>, and any existing
+/// type declarations)
 /// to that writer. Subsequent mutations enqueue to all registered writers under the same lock.
 /// As a result a subscriber either (a) registers before a mutation and therefore sees the
 /// initial events followed by the update, or (b) registers after the mutation and sees the
@@ -83,7 +85,8 @@ internal sealed class DuetsPadSession
         ISlotHost,
         IFieldHost,
         IFilePickerHost,
-        IToastHost
+        IToastHost,
+        IDialogHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -126,6 +129,7 @@ internal sealed class DuetsPadSession
     private long _directAttachmentSequence;
 
     private readonly int? _timelineEntryLimit;
+    private readonly int? _maxActiveDialogs;
     private readonly bool _taggedTemplateSnapshotsEnabled;
     private readonly int _taggedTemplateCompletionRateLimitPerSecond;
     private readonly TimeSpan _taggedTemplateCompletionTimeout;
@@ -148,7 +152,8 @@ internal sealed class DuetsPadSession
         long maxAttachmentBytesPerSession =
             DuetsPadServiceOptions.DefaultMaxAttachmentBytesPerSession,
         int maxAttachmentsPerSession = DuetsPadServiceOptions.DefaultMaxAttachmentsPerSession,
-        TimeSpan? attachmentStorageDrainTimeout = null
+        TimeSpan? attachmentStorageDrainTimeout = null,
+        int? maxActiveDialogs = DuetsPadServiceOptions.DefaultMaxActiveDialogs
     )
     {
         this.Id =
@@ -162,6 +167,12 @@ internal sealed class DuetsPadSession
             : throw new ArgumentOutOfRangeException(
                 nameof(timelineEntryLimit),
                 "Timeline entry limit must be positive."
+            );
+        this._maxActiveDialogs = maxActiveDialogs is null or > 0
+            ? maxActiveDialogs
+            : throw new ArgumentOutOfRangeException(
+                nameof(maxActiveDialogs),
+                "Maximum active dialogs must be positive."
             );
         this._taggedTemplateSnapshotsEnabled = taggedTemplateSnapshotsEnabled;
         this._taggedTemplateCompletionRateLimitPerSecond =
@@ -226,6 +237,8 @@ internal sealed class DuetsPadSession
         ["default"] = new(CanvasState.Empty, Revision: 0),
     };
     private TimelineState _timelineState = TimelineState.Empty;
+    private readonly Dictionary<Guid, DialogProjection> _dialogProjections = [];
+    private readonly List<Guid> _dialogOrder = [];
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; }
 
@@ -464,9 +477,10 @@ internal sealed class DuetsPadSession
     }
 
     /// <summary>
-    /// Re-renders <paramref name="slot"/>'s current content and updates every Canvas and Timeline
-    /// location where the slot is currently placed. Called synchronously from the eval call stack
-    /// when script assigns <c>slot.content</c>; must not acquire <c>_evalSemaphore</c>. Never throws.
+    /// Re-renders <paramref name="slot"/>'s current content and updates every Canvas, Timeline, and
+    /// Dialog location where the slot is currently placed. Called synchronously from the eval call
+    /// stack when script assigns <c>slot.content</c>; must not acquire <c>_evalSemaphore</c>. Never
+    /// throws.
     /// </summary>
     void ISlotHost.UpdateSlot(DisplaySlot slot)
     {
@@ -499,6 +513,7 @@ internal sealed class DuetsPadSession
             {
                 this.UpdateSlotInCanvases(slot.Id, content);
                 this.UpdateSlotInTimeline(slot.Id, content);
+                this.UpdateSlotInDialogs(slot.Id, content);
                 this.PruneFieldBackedState();
             }
         }
@@ -595,6 +610,42 @@ internal sealed class DuetsPadSession
         }
     }
 
+    private void UpdateSlotInDialogs(Guid slotId, DisplayContent content)
+    {
+        foreach (var dialogId in this._dialogOrder.ToList())
+        {
+            var projection = this._dialogProjections[dialogId];
+            if (projection.Claimed)
+            {
+                continue;
+            }
+
+            var markers = SlotMarker.Find(projection.State.Root, slotId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newRoot = projection.State.Root;
+            foreach (var markerPath in markers)
+            {
+                newRoot = (Element)SlotMarker.ReplaceContent(newRoot, markerPath, content.Body);
+            }
+
+            var newState = new CanvasState(newRoot);
+            if (newState.Equals(projection.State) && content.Interactions.Count == 0)
+            {
+                continue;
+            }
+
+            var plan = this._interactionStore.PrepareReplaceDialogSlots(
+                dialogId,
+                [.. markers.Select(m => new SlotInteractionReplacement(m, content.Interactions))]
+            );
+            this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+        }
+    }
+
     /// <summary>
     /// Returns whether the slot identified by <paramref name="slotId"/> currently has at least one
     /// marker placement in any canvas projection or Timeline entry. Must be called while
@@ -613,6 +664,14 @@ internal sealed class DuetsPadSession
         foreach (var entry in this._timelineState)
         {
             if (SlotMarker.Find(entry.Body, slotId).Count > 0)
+            {
+                return true;
+            }
+        }
+
+        foreach (var projection in this._dialogProjections.Values)
+        {
+            if (SlotMarker.Find(projection.State.Root, slotId).Count > 0)
             {
                 return true;
             }
@@ -649,8 +708,8 @@ internal sealed class DuetsPadSession
 
     /// <summary>
     /// Stores <paramref name="value"/> for <paramref name="fieldId"/> and re-projects every
-    /// placement of the field's marker in Canvas and Timeline output. Called synchronously from the
-    /// eval call stack when script assigns <c>input.value</c>; must not acquire
+    /// placement of the field's marker in Canvas, Timeline, and Dialog output. Called synchronously
+    /// from the eval call stack when script assigns <c>input.value</c>; must not acquire
     /// <c>_evalSemaphore</c>. Never throws.
     /// </summary>
     void IFieldHost.SetFieldValue(Guid fieldId, FieldKind kind, string value)
@@ -663,6 +722,7 @@ internal sealed class DuetsPadSession
                 this._fieldStore.SetValue(fieldId, normalized);
                 this.UpdateFieldInCanvases(fieldId, kind, normalized);
                 this.UpdateFieldInTimeline(fieldId, kind, normalized);
+                this.UpdateFieldInDialogs(fieldId, kind, normalized);
 
                 // No explicit prune here: a value update only touches markers that are already
                 // placed (UpdateFieldInCanvases already prunes via CommitCanvasMutation when it
@@ -900,6 +960,15 @@ internal sealed class DuetsPadSession
                 }
             }
 
+            foreach (var projection in this._dialogProjections.Values)
+            {
+                var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, pickerId);
+                if (markers.Count > 0 && kind == FieldKind.File)
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
     }
@@ -977,6 +1046,37 @@ internal sealed class DuetsPadSession
                     : [];
                 this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
             }
+
+            foreach (var dialogId in this._dialogOrder.ToList())
+            {
+                var projection = this._dialogProjections[dialogId];
+                if (projection.Claimed)
+                {
+                    continue;
+                }
+
+                var markers = FieldMarker.Find(projection.State.Root, picker.Id);
+                if (markers.Count == 0)
+                {
+                    continue;
+                }
+
+                var newRoot = (Element)
+                    FieldMarker.Replace(projection.State.Root, markers, content.Body);
+                var newState = new CanvasState(newRoot);
+                if (newState.Equals(projection.State))
+                {
+                    continue;
+                }
+
+                var plan = new DialogInteractionCommitPlan(
+                    dialogId,
+                    this._interactionStore.GetDialogInteractions(dialogId),
+                    [],
+                    []
+                );
+                this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+            }
         }
     }
 
@@ -987,8 +1087,8 @@ internal sealed class DuetsPadSession
     /// endpoint (which runs outside the eval call stack) cannot land between an in-progress eval's
     /// out-of-lock render step and its in-lock projection commit and desynchronize the projection.
     /// Delegates to <see cref="ApplyBrowserFieldCommit"/>, which discards the commit rather than
-    /// reviving the store entry when the field's marker is no longer reachable from any canvas or
-    /// Timeline content. Never throws.
+    /// reviving the store entry when the field's marker is no longer reachable from any projected
+    /// surface. Never throws.
     /// </summary>
     internal async Task CommitFieldValue(Guid fieldId, string value)
     {
@@ -1033,10 +1133,10 @@ internal sealed class DuetsPadSession
 
     /// <summary>
     /// Applies a browser-originated commit of <paramref name="value"/> for <paramref name="fieldId"/>:
-    /// a no-op when the field's marker is no longer reachable from any canvas projection or Timeline
-    /// entry (a stale, delayed commit from a since-removed control must not revive a value whose
+    /// a no-op when the field's marker is no longer reachable from any projected surface (a stale,
+    /// delayed commit from a since-removed control must not revive a value whose
     /// rendered content no longer exists, ADR-47), otherwise stores the value and updates the
-    /// authoritative Canvas/Timeline state in place without broadcasting (no echo — the committing
+    /// authoritative projected state in place without broadcasting (no echo — the committing
     /// browser's own DOM already reflects the value). Shared by <see cref="CommitFieldValue"/> (the
     /// blur-commit HTTP path) and <see cref="InvokeInteractionAsync"/> (the invoke-body snapshot path)
     /// so both browser-originated commit routes apply the same liveness guard and projection update.
@@ -1052,6 +1152,7 @@ internal sealed class DuetsPadSession
         this._fieldStore.SetValue(fieldId, value);
         this.CommitFieldValueInCanvases(fieldId, value);
         this.CommitFieldValueInTimeline(fieldId, value);
+        this.CommitFieldValueInDialogs(fieldId, value);
     }
 
     /// <summary>
@@ -1074,6 +1175,16 @@ internal sealed class DuetsPadSession
         foreach (var entry in this._timelineState)
         {
             var (markers, candidate) = FieldMarker.FindWithKind(entry.Body, fieldId);
+            if (markers.Count > 0 && candidate is { } resolved)
+            {
+                kind = resolved;
+                return true;
+            }
+        }
+
+        foreach (var projection in this._dialogProjections.Values)
+        {
+            var (markers, candidate) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
             if (markers.Count > 0 && candidate is { } resolved)
             {
                 kind = resolved;
@@ -1165,6 +1276,40 @@ internal sealed class DuetsPadSession
         }
     }
 
+    private void UpdateFieldInDialogs(Guid fieldId, FieldKind kind, string value)
+    {
+        foreach (var dialogId in this._dialogOrder.ToList())
+        {
+            var projection = this._dialogProjections[dialogId];
+            if (projection.Claimed)
+            {
+                continue;
+            }
+
+            var markers = FieldMarker.Find(projection.State.Root, fieldId);
+            if (markers.Count == 0)
+            {
+                continue;
+            }
+
+            var newRoot = (Element)
+                FieldMarker.ApplyValue(projection.State.Root, markers, kind, value);
+            var newState = new CanvasState(newRoot);
+            if (newState.Equals(projection.State))
+            {
+                continue;
+            }
+
+            var plan = new DialogInteractionCommitPlan(
+                dialogId,
+                this._interactionStore.GetDialogInteractions(dialogId),
+                [],
+                []
+            );
+            this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+        }
+    }
+
     /// <summary>
     /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
     /// marker in every canvas projection's <see cref="CanvasState"/>, resolving each marker's
@@ -1229,9 +1374,33 @@ internal sealed class DuetsPadSession
         }
     }
 
+    private void CommitFieldValueInDialogs(Guid fieldId, string value)
+    {
+        // This path cannot interleave with a claimed dialog: invoke snapshots are applied before
+        // the handler claims it, while standalone HTTP commits wait for the same eval semaphore and
+        // therefore run only after the claiming callback has closed the dialog.
+        foreach (var dialogId in this._dialogOrder.ToList())
+        {
+            var projection = this._dialogProjections[dialogId];
+            var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
+            if (markers.Count == 0 || kind is null)
+            {
+                continue;
+            }
+
+            var newRoot = (Element)
+                FieldMarker.ApplyValue(projection.State.Root, markers, kind.Value, value);
+            var newState = new CanvasState(newRoot);
+            if (!newState.Equals(projection.State))
+            {
+                this._dialogProjections[dialogId] = projection with { State = newState };
+            }
+        }
+    }
+
     /// <summary>
-    /// Removes field-store entries whose marker is no longer reachable from any canvas projection
-    /// or Timeline entry (ADR-47: a field's value shares the lifetime of its rendered content). Must
+    /// Removes field-store entries whose marker is no longer reachable from any projected surface
+    /// (ADR-47: a field's value shares the lifetime of its rendered content). Must
     /// be called while <c>_stateLock</c> is held.
     /// </summary>
     private void PruneFieldBackedState()
@@ -1253,6 +1422,11 @@ internal sealed class DuetsPadSession
         foreach (var entry in this._timelineState)
         {
             FieldMarker.CollectIds(entry.Body, retained);
+        }
+
+        foreach (var projection in this._dialogProjections.Values)
+        {
+            FieldMarker.CollectIds(projection.State.Root, retained);
         }
 
         this._fieldStore.Retain(retained);
@@ -1337,7 +1511,7 @@ internal sealed class DuetsPadSession
     /// first applying every entry of <paramref name="fieldSnapshot"/> as a browser-originated field
     /// commit via <see cref="ApplyBrowserFieldCommit"/> (ADR-47: the invoke body carries a snapshot of
     /// edited-but-not-yet-blurred field values so the handler observes the latest edit regardless of
-    /// blur timing, and so the Canvas/Timeline projection — not only the field store — reflects the
+    /// blur timing, and so every projected surface — not only the field store — reflects the
     /// snapshot, exactly as a blur commit does). Before applying fields or calling the handler,
     /// validates <paramref name="attachmentRevisions"/> and rejects any unsettled or changed picker
     /// state (ADR-50). Unreachable field-backed state is pruned before validation so a picker that
@@ -1675,6 +1849,217 @@ internal sealed class DuetsPadSession
         );
     }
 
+    DisplayDialog IDialogHost.ShowDialog(
+        object? body,
+        Action<DialogResult> onResult,
+        DialogOptions options
+    )
+    {
+        lock (this._stateLock)
+        {
+            this.ThrowIfDialogLimitReached();
+        }
+
+        var dialogId = Guid.NewGuid();
+        var handle = new DisplayDialog(this, dialogId);
+        var (renderedBody, isError) = this.TryRenderContent(body, this.DumpOptions);
+        if (isError)
+        {
+            this.AppendTimelineEntry("render-error", renderedBody);
+            return handle;
+        }
+
+        var content = this.BuildDialogContent(dialogId, renderedBody, onResult, options);
+        var state = CanvasState.Empty.Set(new ElementChildren(content.Body));
+
+        lock (this._stateLock)
+        {
+            this.ThrowIfDialogLimitReached();
+
+            ValidateCanvasInteractions(state, [], content.Interactions, childIndex: 0);
+            var plan = this._interactionStore.PrepareSetDialogInteractions(
+                dialogId,
+                content.Interactions,
+                childIndex: 0
+            );
+            var projection = new DialogProjection(dialogId, state, 0, options);
+            var interactions = this._interactionStore.CommitDialogInteractions(plan);
+            this._dialogProjections.Add(dialogId, projection);
+            this._dialogOrder.Add(dialogId);
+            this.BroadcastDialog(DialogEventMessage.Open(projection, interactions));
+            this.PruneFieldBackedState();
+        }
+
+        return handle;
+    }
+
+    // Must be called while _stateLock is held so the final commit check remains authoritative.
+    private void ThrowIfDialogLimitReached()
+    {
+        if (this._maxActiveDialogs is int maximum && this._dialogProjections.Count >= maximum)
+        {
+            throw new InvalidOperationException(
+                $"The session cannot retain more than {maximum} active dialogs."
+            );
+        }
+    }
+
+    bool IDialogHost.IsDialogOpen(Guid dialogId)
+    {
+        lock (this._stateLock)
+        {
+            return this._dialogProjections.ContainsKey(dialogId);
+        }
+    }
+
+    void IDialogHost.CloseDialog(Guid dialogId)
+    {
+        lock (this._stateLock)
+        {
+            this.CloseDialog(dialogId, allowClaimed: false);
+        }
+    }
+
+    private DisplayContent BuildDialogContent(
+        Guid dialogId,
+        DisplayContent body,
+        Action<DialogResult> onResult,
+        DialogOptions options
+    )
+    {
+        var bodyContainer = DisplayContent.Element(
+            "div",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "modal-body")),
+            [body]
+        );
+        var footerButtons = options.Buttons.Select(button =>
+            DisplayContent.Element(
+                "span",
+                new ElementAttributes(
+                    new KeyValuePair<string, string?>("data-duetspad-dialog-action", button.Id)
+                ),
+                [
+                    DisplayContent.Button(
+                        button.Label,
+                        () =>
+                            this.ResolveDialog(
+                                dialogId,
+                                onResult,
+                                new DialogResult("action", button.Id)
+                            ),
+                        new ButtonOptions { ClassName = ResolveDialogButtonClass(button.Variant) }
+                    ),
+                ]
+            )
+        );
+        var children = new List<DisplayContent> { bodyContainer };
+        if (options.Buttons.Count > 0)
+        {
+            children.Add(
+                DisplayContent.Element(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "modal-footer")
+                    ),
+                    footerButtons
+                )
+            );
+        }
+
+        if (options.CanDismiss)
+        {
+            var dismiss = new DisplayContent(
+                new Element(
+                    "button",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>(
+                            "data-duetspad-dialog-dismiss-handler",
+                            null
+                        ),
+                        new KeyValuePair<string, string?>("class", "d-none"),
+                        new KeyValuePair<string, string?>("tabindex", "-1"),
+                        new KeyValuePair<string, string?>("aria-hidden", "true")
+                    )
+                ),
+                new PendingInteractions([
+                    new PendingInteraction(
+                        DisplayPath.Root,
+                        InteractionEvent.Click,
+                        () =>
+                            this.ResolveDialog(
+                                dialogId,
+                                onResult,
+                                new DialogResult("dismiss", options.DismissButtonId)
+                            )
+                    ),
+                ])
+            );
+            children.Add(dismiss);
+        }
+
+        return DisplayContent.Element(
+            "div",
+            new ElementAttributes(
+                new KeyValuePair<string, string?>("data-duetspad-dialog-content", null)
+            ),
+            children
+        );
+    }
+
+    private static string ResolveDialogButtonClass(string variant) =>
+        variant switch
+        {
+            "primary" => "btn btn-primary",
+            "danger" => "btn btn-danger",
+            _ => "btn btn-outline-secondary",
+        };
+
+    private void ResolveDialog(Guid dialogId, Action<DialogResult> onResult, DialogResult result)
+    {
+        lock (this._stateLock)
+        {
+            if (
+                !this._dialogProjections.TryGetValue(dialogId, out var projection)
+                || projection.Claimed
+            )
+            {
+                return;
+            }
+
+            this._dialogProjections[dialogId] = projection with { Claimed = true };
+            this._interactionStore.ClearDialogInteractions(dialogId);
+        }
+
+        try
+        {
+            onResult(result);
+        }
+        finally
+        {
+            lock (this._stateLock)
+            {
+                this.CloseDialog(dialogId, allowClaimed: true);
+            }
+        }
+    }
+
+    private void CloseDialog(Guid dialogId, bool allowClaimed)
+    {
+        if (
+            !this._dialogProjections.TryGetValue(dialogId, out var projection)
+            || (projection.Claimed && !allowClaimed)
+        )
+        {
+            return;
+        }
+
+        this._dialogProjections.Remove(dialogId);
+        this._dialogOrder.Remove(dialogId);
+        this._interactionStore.ClearDialogInteractions(dialogId);
+        this.BroadcastDialog(DialogEventMessage.Close(dialogId));
+        this.PruneFieldBackedState();
+    }
+
     /// <summary>
     /// Broadcasts all pending control commands to subscribers in the order they were enqueued,
     /// then clears the pending list. Called after eval or interaction-handler completion (in
@@ -1771,6 +2156,8 @@ internal sealed class DuetsPadSession
                 this._eventSubscribers.Clear();
 
                 this._canvasProjections.Clear();
+                this._dialogProjections.Clear();
+                this._dialogOrder.Clear();
                 this._interactionStore.Clear();
                 this._fieldStore.Clear();
             }
@@ -2016,6 +2403,32 @@ internal sealed class DuetsPadSession
         return SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
     }
 
+    private void CommitDialogMutation(
+        DialogProjection oldProjection,
+        CanvasState newState,
+        long revision,
+        DialogInteractionCommitPlan interactions
+    )
+    {
+        ValidateCanvasInteractions(newState, interactions.Interactions);
+        var projection = oldProjection with { State = newState, Revision = revision };
+        var replace = DialogEventMessage.Replace(projection, interactions.Interactions);
+        var operations = this._canvasDiffer.Diff(oldProjection.State, newState);
+        var patch = DialogEventMessage.Patch(
+            oldProjection.Id,
+            oldProjection.Revision,
+            revision,
+            operations,
+            interactions.Interactions
+        );
+        var message = SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
+
+        this._interactionStore.CommitDialogInteractions(interactions);
+        this._dialogProjections[oldProjection.Id] = projection;
+        this.BroadcastDialog(message);
+        this.PruneFieldBackedState();
+    }
+
     /// <summary>
     /// Enqueues a Canvas event to all registered subscribers. Must be called while
     /// <c>_stateLock</c> is held.
@@ -2029,7 +2442,19 @@ internal sealed class DuetsPadSession
         }
     }
 
+    private void BroadcastDialog(DialogEventMessage message)
+    {
+        var padMessage = new PadEventMessage.Dialog(message);
+        foreach (var (_, writer) in this._eventSubscribers)
+        {
+            writer.TryWrite(padMessage);
+        }
+    }
+
     private static int SerializedByteLength(CanvasEventMessage message) =>
+        Encoding.UTF8.GetByteCount(SseSerializer.Serialize(message));
+
+    private static int SerializedByteLength(DialogEventMessage message) =>
         Encoding.UTF8.GetByteCount(SseSerializer.Serialize(message));
 
     private static bool CanvasInteractionsEqual(
@@ -2263,10 +2688,10 @@ internal sealed class DuetsPadSession
     }
 
     /// <summary>
-    /// Registers a unified SSE subscriber that receives canvas, timeline, and type-declaration
-    /// events on a single channel. The initial snapshot is enqueued under <c>_stateLock</c> in
-    /// the order: <c>canvas.snapshot</c> → <c>timeline.reset</c> → <c>type.declaration</c>
-    /// (one per registered declaration).
+    /// Registers a unified SSE subscriber that receives projected-surface, type-declaration, and
+    /// control events on a single channel. The initial snapshot is enqueued under
+    /// <c>_stateLock</c> in the order: <c>canvas.snapshot</c> → <c>timeline.reset</c> →
+    /// <c>dialog.snapshot</c> → <c>type.declaration</c> (one per registered declaration).
     /// </summary>
     /// <param name="writer">The channel writer to receive <see cref="PadEventMessage"/> items.</param>
     /// <param name="declarations">
@@ -2305,7 +2730,8 @@ internal sealed class DuetsPadSession
 
             this._eventSubscribers[key] = writer;
 
-            // Initial snapshot order: canvas.snapshot (one per canvas) → timeline.reset → type.declaration(s).
+            // Initial snapshot order: canvas.snapshot (one per canvas) → timeline.reset →
+            // dialog.snapshot → type.declaration(s).
             foreach (var (canvasName, projection) in this._canvasProjections)
             {
                 writer.TryWrite(
@@ -2327,6 +2753,17 @@ internal sealed class DuetsPadSession
                         "initial",
                         this._interactionStore.TimelineInteractions
                     )
+                )
+            );
+
+            writer.TryWrite(
+                new PadEventMessage.Dialog(
+                    DialogEventMessage.Snapshot([
+                        .. this._dialogOrder.Select(dialogId => new DialogSnapshotItem(
+                            this._dialogProjections[dialogId],
+                            this._interactionStore.GetDialogInteractions(dialogId)
+                        )),
+                    ])
                 )
             );
 

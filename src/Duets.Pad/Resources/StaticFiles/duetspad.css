@@ -922,6 +922,79 @@ html[data-bs-theme="light"] .immediate-console {
     margin-bottom: 0.125rem;
 }
 
+#dialog-container {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    pointer-events: none;
+}
+
+.duetspad-dialog-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    overflow: auto;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.duetspad-dialog-layer[hidden] {
+    display: none;
+}
+
+.duetspad-dialog {
+    width: min(100%, 32rem);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    color: var(--common-text);
+    background: var(--common-elevated);
+    border: 1px solid var(--common-border);
+    border-radius: var(--tblr-border-radius-lg, 0.5rem);
+    box-shadow: var(--tblr-box-shadow-lg);
+}
+
+.duetspad-dialog-sm {
+    width: min(100%, 24rem);
+}
+
+.duetspad-dialog-lg {
+    width: min(100%, 48rem);
+}
+
+.duetspad-dialog-xl {
+    width: min(100%, 64rem);
+}
+
+.duetspad-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--common-border);
+}
+
+.duetspad-dialog-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.duetspad-dialog .modal-body {
+    padding: 1rem;
+}
+
+.duetspad-dialog .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--common-border);
+}
+
 /* Responsive — narrow viewports stack */
 @media (max-width: 720px) {
     .brand-tag {

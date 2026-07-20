@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Globalization;
+using Duets.Pad.Dialogs;
 using Duets.Pad.Rendering;
 
 namespace Duets.Pad;
@@ -12,14 +13,15 @@ namespace Duets.Pad;
 /// <see cref="Table"/>, and the form-input factories (<see cref="TextBox"/>, <see cref="TextArea"/>,
 /// <see cref="NumberBox"/>, <see cref="CheckBox"/>, <see cref="DropDown"/>, <see cref="Slider"/>,
 /// <see cref="RadioGroup"/>) that return a <see cref="DisplayInput"/> (ADR-47), plus the
-/// imperative <see cref="Toast"/> notification command.
+/// imperative <see cref="Toast"/> notification command and <see cref="Dialog"/> modal surface.
 /// </summary>
 internal sealed class UIGlobal(
     DisplayRenderer renderer,
     DumpOptions dumpOptions,
     ISlotHost? slotHost = null,
     IFieldHost? fieldHost = null,
-    IToastHost? toastHost = null
+    IToastHost? toastHost = null,
+    IDialogHost? dialogHost = null
 )
 {
     private readonly DisplayRenderer _renderer =
@@ -36,6 +38,9 @@ internal sealed class UIGlobal(
 
     // Null only in rendering-focused unit tests that never call Toast; production always supplies it.
     private readonly IToastHost? _toastHost = toastHost;
+
+    // Null only in rendering-focused unit tests that never call Dialog; production always supplies it.
+    private readonly IDialogHost? _dialogHost = dialogHost;
 
     /// <summary>
     /// Returns a mutable <see cref="DisplaySlot"/> whose <c>content</c> can be reassigned to update
@@ -218,6 +223,33 @@ internal sealed class UIGlobal(
                 "ui.toast is not available because no toast host was provided."
             );
         host.ShowToast(message, BuildToastOptions(options));
+    }
+
+    /// <summary>
+    /// Opens a server-canonical modal containing arbitrary rendered content and invokes
+    /// <paramref name="onResult"/> in a later interaction turn. (JS: <c>ui.dialog</c>)
+    /// </summary>
+    /// <returns>
+    /// A session-bound dialog handle. If <paramref name="body"/> cannot be rendered, the failure is
+    /// appended to the Timeline and the returned handle is already closed.
+    /// </returns>
+    /// <remarks>
+    /// An empty button list combined with an explicit <c>dismissButtonId: null</c> creates a
+    /// programmatic-only dialog that can be closed only through the returned handle.
+    /// </remarks>
+    public DisplayDialog Dialog(object? body, Action<DialogResult> onResult, object? options = null)
+    {
+        if (onResult is null)
+        {
+            throw new ArgumentNullException(nameof(onResult));
+        }
+
+        var host =
+            this._dialogHost
+            ?? throw new InvalidOperationException(
+                "ui.dialog is not available because no dialog host was provided."
+            );
+        return host.ShowDialog(body, onResult, BuildDialogOptions(options));
     }
 
     /// <summary>
@@ -679,6 +711,149 @@ internal sealed class UIGlobal(
 
         return new ToastOptions(title, variant, durationMilliseconds);
     }
+
+    private static DialogOptions BuildDialogOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var title = ExtractOptionalStringOption(dict, "title")?.Trim();
+        if (title?.Length == 0)
+        {
+            title = null;
+        }
+
+        var buttons = BuildDialogButtons(dict);
+        var defaultButtonId = ExtractOptionalStringOption(dict, "defaultButtonId")?.Trim();
+        if (defaultButtonId?.Length == 0)
+        {
+            throw new ArgumentException("defaultButtonId cannot be empty.", nameof(options));
+        }
+
+        object? dismissValue = null;
+        var hasDismissOption =
+            dict is not null && dict.TryGetValue("dismissButtonId", out dismissValue);
+        var canDismiss = !hasDismissOption || dismissValue is not null;
+        var dismissButtonId = dismissValue is null
+            ? null
+            : Convert.ToString(dismissValue, CultureInfo.InvariantCulture)?.Trim();
+        if (canDismiss && dismissButtonId?.Length == 0)
+        {
+            throw new ArgumentException("dismissButtonId cannot be empty.", nameof(options));
+        }
+
+        var buttonIds = buttons.Select(button => button.Id).ToHashSet(StringComparer.Ordinal);
+        if (defaultButtonId is not null && !buttonIds.Contains(defaultButtonId))
+        {
+            throw new ArgumentException(
+                "defaultButtonId must reference a dialog button.",
+                nameof(options)
+            );
+        }
+
+        if (dismissButtonId is not null && !buttonIds.Contains(dismissButtonId))
+        {
+            throw new ArgumentException(
+                "dismissButtonId must reference a dialog button.",
+                nameof(options)
+            );
+        }
+
+        var size = ExtractOptionalStringOption(dict, "size")?.Trim() ?? "md";
+        if (size is not ("sm" or "md" or "lg" or "xl"))
+        {
+            throw new ArgumentException(
+                "size must be \"sm\", \"md\", \"lg\", or \"xl\".",
+                nameof(options)
+            );
+        }
+
+        return new DialogOptions(
+            title,
+            buttons,
+            defaultButtonId,
+            canDismiss,
+            dismissButtonId,
+            size
+        );
+    }
+
+    private static IReadOnlyList<DialogButtonDefinition> BuildDialogButtons(
+        IDictionary<string, object?>? options
+    )
+    {
+        if (options is null || !options.TryGetValue("buttons", out var value) || value is null)
+        {
+            return [];
+        }
+
+        if (value is string || value is not IEnumerable values)
+        {
+            throw new ArgumentException("buttons must be an array.", nameof(options));
+        }
+
+        var result = new List<DialogButtonDefinition>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in values)
+        {
+            string id;
+            string label;
+            string variant;
+            if (item is string text)
+            {
+                id = text.Trim();
+                label = id;
+                variant = "default";
+            }
+            else
+            {
+                var dict =
+                    CoerceOptionsDictionary(item)
+                    ?? throw new ArgumentException(
+                        "Each button must be a string or an object.",
+                        nameof(options)
+                    );
+                id = ExtractRequiredDialogButtonString(dict, "id", options);
+                label = ExtractRequiredDialogButtonString(dict, "label", options);
+                variant = ExtractOptionalStringOption(dict, "variant")?.Trim() ?? "default";
+            }
+
+            if (id.Length == 0 || label.Length == 0)
+            {
+                throw new ArgumentException(
+                    "Dialog button ids and labels cannot be empty.",
+                    nameof(options)
+                );
+            }
+
+            if (!ids.Add(id))
+            {
+                throw new ArgumentException(
+                    $"Dialog button id '{id}' is duplicated.",
+                    nameof(options)
+                );
+            }
+
+            if (variant is not ("default" or "primary" or "danger"))
+            {
+                throw new ArgumentException(
+                    "Dialog button variant must be \"default\", \"primary\", or \"danger\".",
+                    nameof(options)
+                );
+            }
+
+            result.Add(new DialogButtonDefinition(id, label, variant));
+        }
+
+        return result;
+    }
+
+    private static string ExtractRequiredDialogButtonString(
+        IDictionary<string, object?> button,
+        string name,
+        object? options
+    ) =>
+        button.TryGetValue(name, out var value) && value is not null
+            ? Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? ""
+            : throw new ArgumentException($"Dialog button {name} is required.", nameof(options));
 
     private static string? ExtractOptionalStringOption(
         IDictionary<string, object?>? options,

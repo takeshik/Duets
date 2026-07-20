@@ -3,9 +3,9 @@ namespace Duets.Pad.Rendering;
 /// <summary>
 /// Per-session server-canonical store of form-input field values (ADR-47): a simple
 /// <see cref="Guid"/>-keyed string map. Values are retained for exactly as long as the field's
-/// marker is reachable from Canvas or Timeline content; <see cref="Retain"/> prunes entries whose
-/// marker has become unreachable (a full canvas rebuild, a clear, or a replace that drops the
-/// field's placement).
+/// marker is reachable from Canvas, Timeline, or Dialog content; <see cref="Retain"/> prunes entries
+/// whose marker has become unreachable (a full surface rebuild, a clear, or a replace that drops
+/// the field's placement).
 /// </summary>
 /// <remarks>
 /// <b>Thread safety:</b> this type has no internal locking. The caller (<see cref="DuetsPadSession"/>)
