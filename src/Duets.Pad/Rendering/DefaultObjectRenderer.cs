@@ -73,7 +73,8 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
             return RenderNamedMemberObject(
                 value,
                 dynamicMembers,
-                showTypeHeader: false,
+                typeHeaderText: "Object",
+                includeSummary: false,
                 allowEmptyTable: true,
                 context
             );
@@ -94,12 +95,14 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
         }
 
         // 4. Ordinary CLR object → named-member object (Form A).
+        var type = value.GetType();
         var members = RecordProjector.Project(value);
-        var showTypeHeader = !IsAnonymousOrCompilerGenerated(value.GetType());
+        var typeHeaderText = IsAnonymousOrCompilerGenerated(type) ? "Object" : type.Name;
         return RenderNamedMemberObject(
             value,
             members,
-            showTypeHeader,
+            typeHeaderText,
+            includeSummary: !IsAnonymousOrCompilerGenerated(type),
             allowEmptyTable: false,
             context
         );
@@ -398,6 +401,16 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     /// member (member name → rendered value). Used for ordinary CLR objects, JS object literals
     /// / dynamic-object values, and anonymous types.
     /// </summary>
+    /// <param name="typeHeaderText">
+    /// The conceptual type name displayed in the always-present collapsible header. Dynamic and
+    /// anonymous objects use <c>Object</c> so implementation-specific CLR type names do not leak
+    /// into script output.
+    /// </param>
+    /// <param name="includeSummary">
+    /// Whether an overridden <c>ToString()</c> may produce a summary row. Dynamic and anonymous
+    /// objects keep this disabled so CLR implementation details cannot leak beneath their
+    /// conceptual <c>Object</c> header.
+    /// </param>
     /// <param name="allowEmptyTable">
     /// When <see langword="true" />, a value with zero projectable members still renders as an
     /// empty object table (used for dynamic/JS objects, where <c>ToString()</c> would leak the
@@ -408,7 +421,8 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     private static DisplayContent RenderNamedMemberObject(
         object value,
         IReadOnlyList<KeyValuePair<string, object?>> members,
-        bool showTypeHeader,
+        string typeHeaderText,
+        bool includeSummary,
         bool allowEmptyTable,
         RenderContext context
     )
@@ -438,91 +452,63 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
 
         var tbody = new Element("tbody", ElementAttributes.Empty, [.. rows]);
 
-        ElementChildren tableChildren;
-        if (showTypeHeader)
+        var type = value.GetType();
+        var theadRows = new List<ITerminalRenderNode>
         {
-            var type = value.GetType();
-            var theadRows = new List<ITerminalRenderNode>
-            {
-                // Type name header row.
-                new Element(
-                    "tr",
-                    ElementAttributes.Empty,
-                    new ElementChildren(
-                        new Element(
-                            "th",
-                            new ElementAttributes(
-                                new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
-                                new KeyValuePair<string, string?>("colspan", "2")
-                            ),
-                            new ElementChildren(new Text(type.Name))
-                        )
-                    )
-                ),
-            };
+            TableRenderBuilder.BuildTypeheaderRow(typeHeaderText, columnCount: 2),
+        };
 
-            // Summary row: only when the type overrides ToString() and is not compiler-generated.
-            // The ToString() call is wrapped in try/catch: a throwing ToString() must not fail
-            // the object render — the summary row is optional display metadata.
-            if (
-                OverridesToString(value)
-                && !Attribute.IsDefined(type, typeof(CompilerGeneratedAttribute))
-            )
+        // Summary row: only when the type overrides ToString() and is not compiler-generated.
+        // The ToString() call is wrapped in try/catch: a throwing ToString() must not fail
+        // the object render — the summary row is optional display metadata.
+        if (
+            includeSummary
+            && OverridesToString(value)
+            && !Attribute.IsDefined(type, typeof(CompilerGeneratedAttribute))
+        )
+        {
+            string? summary;
+            try
             {
-                string? summary;
-                try
-                {
-                    summary = value.ToString();
-                }
-                catch
-                {
-                    summary = null;
-                }
-
-                if (summary is not null)
-                {
-                    theadRows.Add(
-                        new Element(
-                            "tr",
-                            ElementAttributes.Empty,
-                            new ElementChildren(
-                                new Element(
-                                    "td",
-                                    new ElementAttributes(
-                                        new KeyValuePair<string, string?>(
-                                            "class",
-                                            "duetspad-summary"
-                                        ),
-                                        new KeyValuePair<string, string?>("colspan", "2")
-                                    ),
-                                    new ElementChildren(new Text(summary))
-                                )
-                            )
-                        )
-                    );
-                }
+                summary = value.ToString();
+            }
+            catch
+            {
+                summary = null;
             }
 
-            var thead = new Element("thead", ElementAttributes.Empty, [.. theadRows]);
-            tableChildren = new ElementChildren(thead, tbody);
+            if (summary is not null)
+            {
+                theadRows.Add(
+                    new Element(
+                        "tr",
+                        ElementAttributes.Empty,
+                        new ElementChildren(
+                            new Element(
+                                "td",
+                                new ElementAttributes(
+                                    new KeyValuePair<string, string?>("class", "duetspad-summary"),
+                                    new KeyValuePair<string, string?>("colspan", "2")
+                                ),
+                                new ElementChildren(new Text(summary))
+                            )
+                        )
+                    )
+                );
+            }
         }
-        else
-        {
-            tableChildren = new ElementChildren(tbody);
-        }
+
+        var thead = new Element("thead", ElementAttributes.Empty, [.. theadRows]);
 
         var body = new Element(
             "table",
             new ElementAttributes(new KeyValuePair<string, string?>("class", "duetspad-object")),
-            tableChildren
+            new ElementChildren(thead, tbody)
         );
-        var tbodyIndex = showTypeHeader ? 1 : 0;
         return new DisplayContent(
             body,
             PendingInteractions.Merge(
-                interactions.Select(
-                    (items, rowIndex) => items.PrependPath(tbodyIndex, rowIndex, 1, 0)
-                )
+                interactions.Select((items, rowIndex) => items.PrependPath(1, rowIndex, 1, 0))
             )
         );
     }
