@@ -11,13 +11,15 @@ namespace Duets.Pad;
 /// <see cref="Link"/>, <see cref="Button"/>, <see cref="Divider"/>, Tabler components,
 /// <see cref="Table"/>, and the form-input factories (<see cref="TextBox"/>, <see cref="TextArea"/>,
 /// <see cref="NumberBox"/>, <see cref="CheckBox"/>, <see cref="DropDown"/>, <see cref="Slider"/>,
-/// <see cref="RadioGroup"/>) that return a <see cref="DisplayInput"/> (ADR-47).
+/// <see cref="RadioGroup"/>) that return a <see cref="DisplayInput"/> (ADR-47), plus the
+/// imperative <see cref="Toast"/> notification command.
 /// </summary>
 internal sealed class UIGlobal(
     DisplayRenderer renderer,
     DumpOptions dumpOptions,
     ISlotHost? slotHost = null,
-    IFieldHost? fieldHost = null
+    IFieldHost? fieldHost = null,
+    IToastHost? toastHost = null
 )
 {
     private readonly DisplayRenderer _renderer =
@@ -31,6 +33,9 @@ internal sealed class UIGlobal(
     // Null only in rendering-focused unit tests that never call an input factory; production
     // always supplies it.
     private readonly IFieldHost? _fieldHost = fieldHost;
+
+    // Null only in rendering-focused unit tests that never call Toast; production always supplies it.
+    private readonly IToastHost? _toastHost = toastHost;
 
     /// <summary>
     /// Returns a mutable <see cref="DisplaySlot"/> whose <c>content</c> can be reassigned to update
@@ -195,6 +200,25 @@ internal sealed class UIGlobal(
         ?? throw new InvalidOperationException(
             "This ui.* input factory is not available because no field host was provided."
         );
+
+    /// <summary>
+    /// Queues a transient browser toast notification. The command is delivered after the current
+    /// evaluation or interaction handler completes. (JS: <c>ui.toast</c>)
+    /// </summary>
+    public void Toast(string message, object? options = null)
+    {
+        if (message is null)
+        {
+            throw new ArgumentNullException(nameof(message));
+        }
+
+        var host =
+            this._toastHost
+            ?? throw new InvalidOperationException(
+                "ui.toast is not available because no toast host was provided."
+            );
+        host.ShowToast(message, BuildToastOptions(options));
+    }
 
     /// <summary>
     /// Returns a <see cref="Rendering.RawHtml"/> node. This is the only raw-HTML escape hatch.
@@ -615,6 +639,54 @@ internal sealed class UIGlobal(
 
         return result;
     }
+
+    private static ToastOptions BuildToastOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        var title = ExtractOptionalStringOption(dict, "title");
+        var variant =
+            dict is not null
+            && dict.TryGetValue("variant", out var rawVariant)
+            && rawVariant is not null
+                ? Convert.ToString(rawVariant, CultureInfo.InvariantCulture)
+                    ?? ToastOptions.DefaultVariant
+                : ToastOptions.DefaultVariant;
+        if (!ToastOptions.SupportedVariants.Contains(variant))
+        {
+            throw new ArgumentException(
+                "variant must be \"info\", \"success\", \"warning\", or \"danger\".",
+                nameof(options)
+            );
+        }
+
+        var durationMilliseconds = ToastOptions.DefaultDurationMilliseconds;
+        if (
+            dict is not null
+            && dict.TryGetValue("durationMs", out var rawDuration)
+            && rawDuration is not null
+        )
+        {
+            durationMilliseconds = CoerceInteger(rawDuration, "durationMs");
+        }
+
+        if (durationMilliseconds is < 0 or > ToastOptions.MaximumDurationMilliseconds)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                $"durationMs must be between 0 and {ToastOptions.MaximumDurationMilliseconds}."
+            );
+        }
+
+        return new ToastOptions(title, variant, durationMilliseconds);
+    }
+
+    private static string? ExtractOptionalStringOption(
+        IDictionary<string, object?>? options,
+        string name
+    ) =>
+        options is not null && options.TryGetValue(name, out var value) && value is not null
+            ? Convert.ToString(value, CultureInfo.InvariantCulture)
+            : null;
 
     private static BadgeOptions? BuildBadgeOptions(object? options)
     {

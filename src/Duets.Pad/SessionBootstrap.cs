@@ -51,7 +51,7 @@ internal static class SessionBootstrap
         duetsSession.SetValue("canvas", canvasesGlobal.Get("default"));
         duetsSession.SetValue(
             "ui",
-            new UIGlobal(renderer, padSession.DumpOptions, padSession, padSession)
+            new UIGlobal(renderer, padSession.DumpOptions, padSession, padSession, padSession)
         );
         duetsSession.SetValue("pad", new PadGlobal(padSession));
 
@@ -184,6 +184,8 @@ internal static class SessionBootstrap
                 radioGroup(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
                 /** Returns a transactional file picker. Interaction handlers run only after all current uploads commit. */
                 filePicker(options?: { accept?: string; multiple?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadFilePicker;
+                /** Shows a transient browser notification. durationMs defaults to 5000, accepts 0 through 600000, and 0 keeps it visible until dismissed. */
+                toast(message: string, options?: { title?: string; variant?: "info" | "success" | "warning" | "danger"; durationMs?: number }): void;
             };
 
             declare const pad: {

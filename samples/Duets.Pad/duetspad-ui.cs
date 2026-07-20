@@ -25,6 +25,7 @@ const greet = () => {
   // Handlers run server-side; reading .value here always reflects the
   // server-canonical current value of the input, not a client-side echo.
   greeting.content = ui.text(`Hello, ${nameBox.value}! Subscribed: ${subscribe.value}`);
+  ui.toast("Greeting updated.", { variant: "success" });
 };
 
 const summarizeAttachments = () => {

@@ -1559,6 +1559,47 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("ack", ctrl.Op);
     }
 
+    // ui toast command
+
+    [Fact]
+    public async Task Ui_toast_delivers_control_event_with_options_after_eval()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync(
+            """ui.toast("Saved", { title: "Project", variant: "success", durationMs: 0 })"""
+        );
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        var ctrl = Assert.Single(controls);
+        Assert.Equal(ControlEventTypes.Toast, ctrl.Op);
+        Assert.Equal("Saved", ctrl.Payload["message"]);
+        Assert.Equal("Project", ctrl.Payload["title"]);
+        Assert.Equal("success", ctrl.Payload["variant"]);
+        Assert.Equal(0, ctrl.Payload["durationMs"]);
+    }
+
+    [Fact]
+    public async Task Ui_toast_called_twice_delivers_two_events_in_order()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var result = await session.EvaluateAsync("""ui.toast("a"); ui.toast("b")""");
+
+        Assert.True(result.Ok, result.Error);
+        var controls = await CollectControlEventsAsync(channel.Reader);
+        Assert.Equal(2, controls.Count);
+        Assert.Equal("a", controls[0].Payload["message"]);
+        Assert.Equal("b", controls[1].Payload["message"]);
+    }
+
     // pad global — resetSession / openText / setEditorText
 
     [Fact]
@@ -1663,5 +1704,6 @@ public sealed class DuetsPadSessionTests
         Assert.Contains("resetSession", allContent, StringComparison.Ordinal);
         Assert.Contains("openText", allContent, StringComparison.Ordinal);
         Assert.Contains("setEditorText", allContent, StringComparison.Ordinal);
+        Assert.Contains("toast(message", allContent, StringComparison.Ordinal);
     }
 }

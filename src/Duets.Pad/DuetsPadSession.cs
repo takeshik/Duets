@@ -82,7 +82,8 @@ internal sealed class DuetsPadSession
         ITimelineSurface,
         ISlotHost,
         IFieldHost,
-        IFilePickerHost
+        IFilePickerHost,
+        IToastHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -1657,6 +1658,20 @@ internal sealed class DuetsPadSession
             ControlEventTypes.SetEditorText,
             new Dictionary<string, object?> { ["text"] = text },
             replace: true
+        );
+    }
+
+    void IToastHost.ShowToast(string message, ToastOptions options)
+    {
+        this.EnqueueControl(
+            ControlEventTypes.Toast,
+            new Dictionary<string, object?>
+            {
+                ["message"] = message,
+                ["title"] = options.Title,
+                ["variant"] = options.Variant,
+                ["durationMs"] = options.DurationMilliseconds,
+            }
         );
     }
 

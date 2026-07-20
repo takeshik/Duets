@@ -19,6 +19,9 @@ internal static class ControlEventTypes
     /// <summary>Op name for <c>pad.setEditorText(text)</c>: replaces the editor content with the given text.</summary>
     public const string SetEditorText = "setEditorText";
 
+    /// <summary>Op name for <c>ui.toast(message, options)</c>: shows a transient notification.</summary>
+    public const string Toast = "toast";
+
     /// <summary>
     /// Returns the full SSE event-type string for <paramref name="op"/>, e.g.
     /// <c>Make("reset")</c> → <c>"control.reset"</c>.

@@ -398,6 +398,7 @@ public sealed class DuetsPadProtocolTests
     {
         Assert.Equal("control.reset", ControlEventTypes.Make("reset"));
         Assert.Equal("control.openText", ControlEventTypes.Make("openText"));
+        Assert.Equal("control.toast", ControlEventTypes.Make(ControlEventTypes.Toast));
     }
 
     [Fact]

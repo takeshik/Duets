@@ -58,8 +58,8 @@ The editor's final evaluation result is **not** automatically appended to the Ti
 
 ## Building UI with `ui.*`
 
-Beyond plain values, the pad exposes a `ui.*` builder surface for buttons, form inputs, layout, and
-a mutable `ui.slot` handle whose content can be reassigned in place:
+Beyond plain values, the pad exposes a `ui.*` surface for buttons, form inputs, layout, transient
+toast notifications, and a mutable `ui.slot` handle whose content can be reassigned in place:
 
 ```typescript
 const name = ui.textBox({ placeholder: "Your name" });
@@ -72,10 +72,15 @@ canvas.set(ui.stack([name, ui.button("Greet", () => {
 Click and other handlers run server-side, and an input's `.value` always reflects the
 server-canonical current value rather than a client-side echo.
 
+`ui.toast(message, options?)` shows a transient browser notification after the current evaluation
+or interaction handler completes. Options include `title`, `variant` (`info`, `success`, `warning`,
+or `danger`), and `durationMs` (default 5000, accepted range 0–600000; use 0 to keep the toast until
+dismissed). Toasts are ephemeral and are not replayed after an SSE reconnect.
+
 Available builders include text and layout primitives (`ui.text`, `ui.label`, `ui.stack`,
 `ui.row`/`ui.col`, `ui.card`, `ui.divider`), indicators (`ui.badge`, `ui.alert`, `ui.spinner`,
 `ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`), interactions
-(`ui.button`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
+(`ui.button`), notifications (`ui.toast`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
 `ui.dropDown`, `ui.slider`, `ui.radioGroup`, `ui.filePicker`), the in-place `ui.slot` handle, and raw escape
 hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
