@@ -39,6 +39,40 @@ public sealed class DefaultObjectRendererTests
     private static ITerminalRenderNode GetRowValue(Element row) =>
         Assert.Single(((Element)row.Children[1]).Children);
 
+    private static string AssertTypeHeaderControls(Element typeHeader)
+    {
+        var content = Assert.IsType<Element>(Assert.Single(typeHeader.Children));
+        Assert.Equal("div", content.Tag);
+        Assert.Equal("duetspad-typeheader-content", content.Attributes["class"]);
+        Assert.Equal(2, content.Children.Count);
+
+        var toggle = Assert.IsType<Element>(content.Children[0]);
+        Assert.Equal("button", toggle.Tag);
+        Assert.Equal("duetspad-typeheader-toggle", toggle.Attributes["class"]);
+        Assert.Null(toggle.Attributes["data-duetspad-dump-toggle"]);
+        Assert.Equal("button", toggle.Attributes["type"]);
+        Assert.Equal("true", toggle.Attributes["aria-expanded"]);
+        Assert.Equal("Collapse", toggle.Attributes["title"]);
+
+        var descendantsToggle = Assert.IsType<Element>(content.Children[1]);
+        Assert.Equal("button", descendantsToggle.Tag);
+        Assert.Equal("duetspad-descendants-toggle", descendantsToggle.Attributes["class"]);
+        Assert.Null(descendantsToggle.Attributes["data-duetspad-descendants-toggle"]);
+        Assert.Equal("collapse", descendantsToggle.Attributes["data-duetspad-descendants-action"]);
+        Assert.Equal("button", descendantsToggle.Attributes["type"]);
+        Assert.Equal(
+            "Collapse this table and all descendants",
+            descendantsToggle.Attributes["aria-label"]
+        );
+        Assert.Equal(
+            "Collapse this table and all descendants",
+            descendantsToggle.Attributes["title"]
+        );
+        Assert.Empty(descendantsToggle.Children);
+
+        return Assert.IsType<Text>(Assert.Single(toggle.Children)).Value;
+    }
+
     /// <summary>
     /// Asserts that <paramref name="result"/> is a Form A named-member object table
     /// (<c>&lt;table class="duetspad-object"&gt;</c>) and returns its <c>&lt;tbody&gt;</c> rows.
@@ -92,10 +126,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("th", th.Tag);
         Assert.Equal("duetspad-typeheader", th.Attributes["class"]);
         Assert.Equal("1", th.Attributes["colspan"]);
-        Assert.Contains(
-            expectedHeaderSubstring,
-            Assert.IsType<Text>(Assert.Single(th.Children)).Value
-        );
+        Assert.Contains(expectedHeaderSubstring, AssertTypeHeaderControls(th));
 
         var rows = tbody.Children.Select(Assert.IsType<Element>).ToList();
         return (table, rows, thead);
@@ -123,7 +154,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("th", th.Tag);
         Assert.Equal("duetspad-typeheader", th.Attributes["class"]);
         Assert.Equal("2", th.Attributes["colspan"]);
-        Assert.Equal(new Text(expectedTypeName), Assert.Single(th.Children));
+        Assert.Equal(expectedTypeName, AssertTypeHeaderControls(th));
     }
 
     [Fact]
@@ -233,10 +264,7 @@ public sealed class DefaultObjectRendererTests
         Assert.Equal("th", typeHeaderCell.Tag);
         Assert.Equal("duetspad-typeheader", typeHeaderCell.Attributes["class"]);
         Assert.Equal("2", typeHeaderCell.Attributes["colspan"]);
-        Assert.Equal(
-            new Text($"{dict.GetType().Name} (2 items)"),
-            Assert.Single(typeHeaderCell.Children)
-        );
+        Assert.Equal($"{dict.GetType().Name} (2 items)", AssertTypeHeaderControls(typeHeaderCell));
 
         // Key/Value column header row.
         var columnHeaderRow = Assert.IsType<Element>(thead.Children[1]);
@@ -435,7 +463,7 @@ public sealed class DefaultObjectRendererTests
         var typeHeaderRow = Assert.IsType<Element>(thead.Children[0]);
         var typeHeaderTh = Assert.IsType<Element>(Assert.Single(typeHeaderRow.Children));
         Assert.Equal("duetspad-typeheader", typeHeaderTh.Attributes["class"]);
-        Assert.Contains("2 items", Assert.IsType<Text>(typeHeaderTh.Children[0]).Value);
+        Assert.Contains("2 items", AssertTypeHeaderControls(typeHeaderTh));
 
         var columnHeaderRow = Assert.IsType<Element>(thead.Children[1]);
         Assert.Equal("tr", columnHeaderRow.Tag);
@@ -651,8 +679,8 @@ public sealed class DefaultObjectRendererTests
         // enumerable, dictionary-like value that does NOT implement non-generic IDictionary.
         // ADR-40 routes it through the named-member-object presentation (Form A) — the same
         // <table class="duetspad-object"> shape as an ordinary CLR object — rather than the
-        // Key/Value map grid (Form B), and OMITS the type header (the marshaled CLR type name
-        // like "ExpandoObject" would be noise to a script author).
+        // Key/Value map grid (Form B). Its conceptual header is "Object" rather than the
+        // marshaled CLR type name, which would be noise to a script author.
         dynamic expando = new System.Dynamic.ExpandoObject();
         expando.foo = "abc";
         expando.bar = 42;
@@ -660,7 +688,8 @@ public sealed class DefaultObjectRendererTests
         var result = this.pipeline.Render((object)expando);
 
         var (_, rows, thead) = AssertObjectTable(result);
-        Assert.Null(thead);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, "Object");
 
         var row0 = AssertMemberRow(rows[0], "foo");
         Assert.Equal(new Text("abc"), GetRowValue(row0));
@@ -680,7 +709,8 @@ public sealed class DefaultObjectRendererTests
         var result = this.pipeline.Render(expando);
 
         var (_, rows, thead) = AssertObjectTable(result);
-        Assert.Null(thead);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, "Object");
         Assert.Empty(rows);
     }
 
@@ -715,10 +745,32 @@ public sealed class DefaultObjectRendererTests
         var result = this.pipeline.Render(value!);
 
         var (_, rows, thead) = AssertObjectTable(result);
-        Assert.Null(thead);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, "Object");
 
         var row0 = AssertMemberRow(rows[0], "a");
         Assert.Equal(new Text("1"), GetRowValue(row0));
+    }
+
+    [Fact]
+    public void Render_nested_expando_objects_adds_collapsible_header_at_every_level()
+    {
+        dynamic inner = new System.Dynamic.ExpandoObject();
+        inner.value = 42;
+        dynamic outer = new System.Dynamic.ExpandoObject();
+        outer.inner = inner;
+
+        var result = this.pipeline.Render((object)outer);
+
+        var (_, outerRows, outerThead) = AssertObjectTable(result);
+        Assert.NotNull(outerThead);
+        AssertTypeHeader(outerThead!, "Object");
+
+        var innerRow = AssertMemberRow(Assert.Single(outerRows), "inner");
+        var (_, innerRows, innerThead) = AssertObjectTable(GetRowValue(innerRow));
+        Assert.NotNull(innerThead);
+        AssertTypeHeader(innerThead!, "Object");
+        AssertMemberRow(Assert.Single(innerRows), "value");
     }
 
     [Fact]
@@ -784,6 +836,28 @@ public sealed class DefaultObjectRendererTests
 
         var nestedRow0 = AssertMemberRow(nestedRows[0], "Name");
         Assert.Equal(new Text("Alice"), GetRowValue(nestedRow0));
+    }
+
+    [Fact]
+    public void Render_environment_cpu_usage_adds_recursive_toggle_to_every_table_header()
+    {
+        var result = this.pipeline.Render(Environment.CpuUsage);
+
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.NotNull(thead);
+        AssertTypeHeader(thead!, "ProcessCpuUsage");
+
+        foreach (var memberName in new[] { "UserTime", "PrivilegedTime", "TotalTime" })
+        {
+            var row = rows.Single(row =>
+                row.Children[0] is Element key
+                && key.Children[0] is Text { Value: var value }
+                && value == memberName
+            );
+            var (_, _, nestedThead) = AssertObjectTable(GetRowValue(row));
+            Assert.NotNull(nestedThead);
+            AssertTypeHeader(nestedThead!, nameof(TimeSpan));
+        }
     }
 
     // Part A: item cap and count display
@@ -864,7 +938,7 @@ public sealed class DefaultObjectRendererTests
         var typeHeaderTh = Assert.IsType<Element>(
             Assert.IsType<Element>(thead.Children[0]).Children[0]
         );
-        Assert.Contains("showing first 2", Assert.IsType<Text>(typeHeaderTh.Children[0]).Value);
+        Assert.Contains("showing first 2", AssertTypeHeaderControls(typeHeaderTh));
 
         var tbody = Assert.IsType<Element>(table.Children[1]);
         // 2 data rows + 1 truncation row = 3
@@ -895,7 +969,7 @@ public sealed class DefaultObjectRendererTests
         var typeHeaderTh = Assert.IsType<Element>(
             Assert.IsType<Element>(thead.Children[0]).Children[0]
         );
-        Assert.Contains("showing first 2", Assert.IsType<Text>(typeHeaderTh.Children[0]).Value);
+        Assert.Contains("showing first 2", AssertTypeHeaderControls(typeHeaderTh));
 
         var tbody = Assert.IsType<Element>(table.Children[1]);
         // 2 entries + 1 truncation row = 3
@@ -969,30 +1043,46 @@ public sealed class DefaultObjectRendererTests
     }
 
     [Fact]
-    public void Render_anonymous_type_has_no_summary_row()
+    public void Render_anonymous_type_has_object_header_without_summary_row()
     {
         // Anonymous types are [CompilerGenerated] — summary row must be suppressed.
         var obj = new { X = 1, Y = 2 };
 
         var result = this.pipeline.Render(obj);
 
-        // Anonymous types use showTypeHeader: false, so there is no thead at all.
         var (_, _, thead) = AssertObjectTable(result);
-        Assert.Null(thead);
+        Assert.NotNull(thead);
+        Assert.Single(thead!.Children);
+        AssertTypeHeader(thead, "Object");
     }
 
     [Fact]
-    public void Render_expando_object_has_no_summary_row()
+    public void Render_expando_object_has_object_header_without_summary_row()
     {
-        // ExpandoObject goes through the dynamic/JS-object path (showTypeHeader: false),
-        // so it must never show a summary row.
+        // ExpandoObject gets a conceptual Object header but must not leak a CLR summary row.
         dynamic expando = new System.Dynamic.ExpandoObject();
         expando.X = 1;
 
         var result = this.pipeline.Render((object)expando);
 
         var (_, _, thead) = AssertObjectTable(result);
-        Assert.Null(thead);
+        Assert.NotNull(thead);
+        Assert.Single(thead!.Children);
+        AssertTypeHeader(thead, "Object");
+    }
+
+    [Fact]
+    public void Render_dynamic_object_with_tostring_override_does_not_emit_clr_summary()
+    {
+        var result = this.pipeline.Render(new DynamicObjectWithToStringOverride());
+
+        var (_, rows, thead) = AssertObjectTable(result);
+        Assert.NotNull(thead);
+        Assert.Single(thead!.Children);
+        AssertTypeHeader(thead, "Object");
+
+        var row = AssertMemberRow(Assert.Single(rows), "Value");
+        Assert.Equal(new Text("42"), GetRowValue(row));
     }
 
     // Fix 1: map MaxItems bounded materialization
@@ -1015,7 +1105,7 @@ public sealed class DefaultObjectRendererTests
         var typeHeaderTh = Assert.IsType<Element>(
             Assert.IsType<Element>(thead.Children[0]).Children[0]
         );
-        Assert.Contains("showing first 2", Assert.IsType<Text>(typeHeaderTh.Children[0]).Value);
+        Assert.Contains("showing first 2", AssertTypeHeaderControls(typeHeaderTh));
 
         var tbody = Assert.IsType<Element>(table.Children[1]);
         Assert.Equal(3, tbody.Children.Count); // 2 data rows + 1 truncation row
@@ -1119,6 +1209,21 @@ public sealed class DefaultObjectRendererTests
         public int Value { get; } = x;
 
         public override string ToString() => $"ClassWithExplicitToString({this.Value})";
+    }
+
+    private sealed class DynamicObjectWithToStringOverride
+        : System.Dynamic.DynamicObject,
+            IEnumerable<KeyValuePair<string, object?>>
+    {
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+        {
+            yield return new KeyValuePair<string, object?>("Value", 42);
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+            this.GetEnumerator();
+
+        public override string ToString() => "CLR summary must not leak";
     }
 
     /// <summary>

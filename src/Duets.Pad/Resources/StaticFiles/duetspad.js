@@ -241,6 +241,101 @@
     return el;
   }
 
+  function dumpTableToggleFromTarget(target) {
+    const element = target instanceof Element ? target : target?.parentElement;
+    return element?.closest("[data-duetspad-dump-toggle]") ?? null;
+  }
+
+  function dumpTableToggle(table) {
+    return (
+      table.tHead?.rows[0]?.querySelector("[data-duetspad-dump-toggle]") ?? null
+    );
+  }
+
+  function dumpTableHierarchy(table) {
+    return [table, ...table.querySelectorAll("table")].filter((candidate) =>
+      dumpTableToggle(candidate),
+    );
+  }
+
+  function setDumpTableCollapsed(table, collapsed) {
+    const toggle = dumpTableToggle(table);
+    if (!toggle) return;
+
+    table.classList.toggle("duetspad-dump-collapsed", collapsed);
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.title = collapsed ? "Expand" : "Collapse";
+  }
+
+  function syncDumpDescendantsButton(button) {
+    const table = button.closest("table");
+    if (!table) return;
+
+    const action = table.classList.contains("duetspad-dump-collapsed")
+      ? "expand"
+      : "collapse";
+    const label = `${action === "collapse" ? "Collapse" : "Expand"} this table and all descendants`;
+    button.setAttribute("data-duetspad-descendants-action", action);
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  }
+
+  function syncDumpTableDescendantsButton(table) {
+    const button =
+      table.tHead?.rows[0]?.querySelector(
+        "[data-duetspad-descendants-toggle]",
+      ) ?? null;
+    if (button) syncDumpDescendantsButton(button);
+  }
+
+  function syncDumpDescendantsButtons(root) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    for (const button of root.querySelectorAll(
+      "[data-duetspad-descendants-toggle]",
+    )) {
+      syncDumpDescendantsButton(button);
+    }
+  }
+
+  function toggleDumpTable(toggle) {
+    const table = toggle.closest("table");
+    if (!table) return;
+
+    setDumpTableCollapsed(
+      table,
+      !table.classList.contains("duetspad-dump-collapsed"),
+    );
+    syncDumpTableDescendantsButton(table);
+  }
+
+  function toggleDumpTableDescendants(button) {
+    const table = button.closest("table");
+    if (!table) return;
+
+    const collapse = !table.classList.contains("duetspad-dump-collapsed");
+    for (const candidate of dumpTableHierarchy(table)) {
+      setDumpTableCollapsed(candidate, collapse);
+    }
+    syncDumpDescendantsButtons(table);
+  }
+
+  document.addEventListener("click", (event) => {
+    const element =
+      event.target instanceof Element
+        ? event.target
+        : event.target?.parentElement;
+    const descendantsToggle = element?.closest(
+      "[data-duetspad-descendants-toggle]",
+    );
+    if (descendantsToggle) {
+      toggleDumpTableDescendants(descendantsToggle);
+      return;
+    }
+
+    const toggle = dumpTableToggleFromTarget(event.target);
+    if (toggle) toggleDumpTable(toggle);
+  });
+
   function assertRenderNode(node, path = "node") {
     if (!node || typeof node !== "object") {
       throw new Error(`${path} must be an object`);
@@ -781,6 +876,7 @@
         bindFieldElement(el, signal);
       }
     }
+    syncDumpDescendantsButtons(root);
     queueMicrotask(reconcileAttachmentUploads);
     notifyAttachmentProjectionChanged();
   }

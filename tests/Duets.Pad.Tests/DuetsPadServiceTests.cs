@@ -1520,6 +1520,43 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
+    public async Task Dump_table_headers_support_self_and_descendant_toggles()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+                var css = await client.GetStringAsync(prefix + "duetspad.css");
+
+                Assert.Contains("function toggleDumpTable(toggle)", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "function toggleDumpTableDescendants(button)",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "for (const candidate of dumpTableHierarchy(table))",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "setDumpTableCollapsed(candidate, collapse)",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains("syncDumpDescendantsButtons(root)", js, StringComparison.Ordinal);
+                Assert.DoesNotContain(
+                    "syncDumpDescendantsButtons(document)",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(".duetspad-dump-collapsed > tbody", css, StringComparison.Ordinal);
+                Assert.Contains(".duetspad-descendants-toggle", css, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
     public async Task Static_duetspad_ui_js_returns_200()
     {
         await RunAsync(

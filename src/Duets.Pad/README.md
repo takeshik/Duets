@@ -49,6 +49,7 @@ The pad presents five surfaces:
 Output goes to the pad's structured surfaces, not back into the editor:
 
 - `dump(value)`, `console.*`, and rendering errors append to the **Timeline**.
+- Object dump headers can collapse their own table or their entire nested table subtree.
 - `canvas.add(...)`, `canvas.set(...)`, and `canvas.clear()` update the **Canvas**. `canvas` is the
   default canvas; `canvases.get(name)` returns a named canvas (created on first access) with the
   same surface, each shown as its own Canvas tab.

@@ -7,6 +7,23 @@ namespace Duets.Pad.Rendering;
 /// </summary>
 internal static class TableRenderBuilder
 {
+    private static readonly ElementAttributes TypeHeaderToggleAttributes = new(
+        new KeyValuePair<string, string?>("aria-expanded", "true"),
+        new KeyValuePair<string, string?>("class", "duetspad-typeheader-toggle"),
+        new KeyValuePair<string, string?>("data-duetspad-dump-toggle", null),
+        new KeyValuePair<string, string?>("title", "Collapse"),
+        new KeyValuePair<string, string?>("type", "button")
+    );
+
+    private static readonly ElementAttributes DescendantsToggleAttributes = new(
+        new KeyValuePair<string, string?>("aria-label", "Collapse this table and all descendants"),
+        new KeyValuePair<string, string?>("class", "duetspad-descendants-toggle"),
+        new KeyValuePair<string, string?>("data-duetspad-descendants-action", "collapse"),
+        new KeyValuePair<string, string?>("data-duetspad-descendants-toggle", null),
+        new KeyValuePair<string, string?>("title", "Collapse this table and all descendants"),
+        new KeyValuePair<string, string?>("type", "button")
+    );
+
     private static readonly ElementAttributes TableAttributes = new(
         new KeyValuePair<string, string?>("class", "duetspad-table")
     );
@@ -175,8 +192,7 @@ internal static class TableRenderBuilder
     }
 
     /// <summary>
-    /// Builds a typeheader row: a <c>&lt;tr&gt;&lt;th class="duetspad-typeheader"
-    /// colspan="{columnCount}"&gt;{headerText}&lt;/th&gt;&lt;/tr&gt;</c>.
+    /// Builds an accessible, collapsible type-header row for a dump table.
     /// Shared by the map, scalar-table, and tabular (BuildThead) rendering paths.
     /// </summary>
     internal static Element BuildTypeheaderRow(string headerText, int columnCount)
@@ -187,14 +203,36 @@ internal static class TableRenderBuilder
             new ElementChildren(
                 new Element(
                     "th",
-                    new ElementAttributes(
+                    new ElementAttributes([
                         new KeyValuePair<string, string?>("class", "duetspad-typeheader"),
                         new KeyValuePair<string, string?>(
                             "colspan",
                             columnCount.ToString(CultureInfo.InvariantCulture)
+                        ),
+                    ]),
+                    new ElementChildren(
+                        new Element(
+                            "div",
+                            new ElementAttributes(
+                                new KeyValuePair<string, string?>(
+                                    "class",
+                                    "duetspad-typeheader-content"
+                                )
+                            ),
+                            new ElementChildren(
+                                new Element(
+                                    "button",
+                                    TypeHeaderToggleAttributes,
+                                    new ElementChildren(new Text(headerText))
+                                ),
+                                new Element(
+                                    "button",
+                                    DescendantsToggleAttributes,
+                                    ElementChildren.Empty
+                                )
+                            )
                         )
-                    ),
-                    new ElementChildren(new Text(headerText))
+                    )
                 )
             )
         );

@@ -750,9 +750,63 @@ html[data-bs-theme="light"] .immediate-console {
     font-size: 10.5px;
     letter-spacing: 0.4px;
 }
-.duetspad-typeheader {
+th.duetspad-typeheader {
+    padding: 0;
     font-size: var(--common-data-size);
     letter-spacing: normal;
+}
+.duetspad-typeheader-content {
+    display: flex;
+    align-items: stretch;
+}
+.duetspad-typeheader-toggle,
+.duetspad-descendants-toggle {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+.duetspad-typeheader-toggle {
+    flex: 1 1 auto;
+    padding: 4px 11px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.duetspad-typeheader-toggle::before {
+    content: "▾";
+    display: inline-block;
+    width: 1em;
+    margin-right: 4px;
+}
+.duetspad-typeheader-toggle[aria-expanded="false"]::before {
+    content: "▸";
+}
+.duetspad-descendants-toggle {
+    flex: 0 0 30px;
+    border-left: 1px solid var(--common-border-soft);
+    cursor: pointer;
+}
+.duetspad-descendants-toggle::before {
+    content: "⇈";
+}
+.duetspad-descendants-toggle[data-duetspad-descendants-action="expand"]::before {
+    content: "⇊";
+}
+.duetspad-typeheader-toggle:hover,
+.duetspad-descendants-toggle:hover {
+    background: color-mix(in srgb, var(--common-accent) 8%, transparent);
+}
+.duetspad-typeheader-toggle:focus-visible,
+.duetspad-descendants-toggle:focus-visible {
+    outline: 2px solid var(--common-accent);
+    outline-offset: -2px;
+}
+.duetspad-dump-collapsed > thead > tr:not(:first-child),
+.duetspad-dump-collapsed > tbody {
+    display: none;
 }
 .duetspad-key {
     color: var(--common-accent-text);
