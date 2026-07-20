@@ -901,6 +901,27 @@ html[data-bs-theme="light"] .immediate-console {
     color: var(--common-accent-text);
 }
 
+#toast-container .duetspad-toast-info {
+    border-left: 3px solid var(--tblr-info, #4299e1);
+}
+
+#toast-container .duetspad-toast-success {
+    border-left: 3px solid var(--tblr-success, #2fb344);
+}
+
+#toast-container .duetspad-toast-warning {
+    border-left: 3px solid var(--tblr-warning, #f59f00);
+}
+
+#toast-container .duetspad-toast-danger {
+    border-left: 3px solid var(--tblr-danger, #d63939);
+}
+
+#toast-container .duetspad-toast-title {
+    display: block;
+    margin-bottom: 0.125rem;
+}
+
 /* Responsive — narrow viewports stack */
 @media (max-width: 720px) {
     .brand-tag {

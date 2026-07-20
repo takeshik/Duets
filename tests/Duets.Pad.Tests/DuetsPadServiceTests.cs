@@ -961,14 +961,39 @@ public sealed class DuetsPadServiceTests
             {
                 var js = await client.GetStringAsync(prefix + "duetspad.js");
 
-                Assert.Contains("toastEl.classList.add(\"show\")", js, StringComparison.Ordinal);
+                Assert.Contains("function showToast(", js, StringComparison.Ordinal);
                 Assert.Contains(
-                    "window.setTimeout(closeToast, 8000)",
+                    "action: { label: \"Open in new tab\", href }",
                     js,
                     StringComparison.Ordinal
                 );
                 Assert.DoesNotContain("bootstrap.Toast", js, StringComparison.Ordinal);
                 Assert.DoesNotContain("data-bs-dismiss", js, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_handles_ui_toast_without_rendering_message_as_html()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains("controlHandlers.set(\"toast\"", js, StringComparison.Ordinal);
+                Assert.Contains("messageEl.textContent = message", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "toastEl.setAttribute(\"role\", isUrgent ? \"alert\" : \"status\")",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains("window.clearTimeout(dismissTimer)", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "dismissTimer = window.setTimeout(closeToast, durationMs)",
+                    js,
+                    StringComparison.Ordinal
+                );
             }
         );
     }

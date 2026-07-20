@@ -2257,23 +2257,29 @@
     void swapSession();
   });
 
+  const TOAST_VARIANTS = new Set(["info", "success", "warning", "danger"]);
+
   /**
-   * Shows a non-blocking toast notification with an action link.
-   * The toast is appended to #toast-container and auto-dismisses after 8 s.
-   * This is intentionally implemented without Bootstrap JS; DuetsPad only
-   * serves Tabler/Bootstrap CSS.
+   * Shows a non-blocking toast notification. This is intentionally implemented
+   * without Bootstrap JS; DuetsPad only serves Tabler/Bootstrap CSS.
    * @param {string} message - Body text for the toast.
-   * @param {string} linkLabel - Label for the action link inside the toast.
-   * @param {string} href - URL the action link opens (in a new tab).
+   * @param {{title?: string|null, variant?: string, durationMs?: number,
+   *   action?: {label: string, href: string}|null}} [options]
    */
-  function showOpenTextToast(message, linkLabel, href) {
+  function showToast(
+    message,
+    { title = null, variant = "info", durationMs = 5000, action = null } = {},
+  ) {
     const container = document.getElementById("toast-container");
     if (!container) return;
 
+    const resolvedVariant = TOAST_VARIANTS.has(variant) ? variant : "info";
+    const isUrgent =
+      resolvedVariant === "danger" || resolvedVariant === "warning";
     const toastEl = document.createElement("div");
-    toastEl.className = "toast align-items-center";
-    toastEl.setAttribute("role", "alert");
-    toastEl.setAttribute("aria-live", "assertive");
+    toastEl.className = `toast align-items-center duetspad-toast duetspad-toast-${resolvedVariant}`;
+    toastEl.setAttribute("role", isUrgent ? "alert" : "status");
+    toastEl.setAttribute("aria-live", isUrgent ? "assertive" : "polite");
     toastEl.setAttribute("aria-atomic", "true");
 
     const body = document.createElement("div");
@@ -2281,16 +2287,28 @@
 
     const bodyInner = document.createElement("div");
     bodyInner.className = "toast-body";
-    bodyInner.textContent = `${message} `;
+    if (typeof title === "string" && title.length > 0) {
+      const titleEl = document.createElement("strong");
+      titleEl.className = "duetspad-toast-title";
+      titleEl.textContent = title;
+      bodyInner.appendChild(titleEl);
+    }
 
-    const link = document.createElement("a");
-    link.href = href;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    // textContent is safe — no user-supplied HTML
-    link.textContent = linkLabel;
+    const messageEl = document.createElement("span");
+    messageEl.textContent = message;
+    bodyInner.appendChild(messageEl);
 
-    bodyInner.appendChild(link);
+    if (action) {
+      bodyInner.appendChild(document.createTextNode(" "));
+      const link = document.createElement("a");
+      link.href = action.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      // textContent is safe — no user-supplied HTML
+      link.textContent = action.label;
+      bodyInner.appendChild(link);
+    }
+
     body.appendChild(bodyInner);
 
     const closeBtn = document.createElement("button");
@@ -2303,13 +2321,33 @@
     container.appendChild(toastEl);
     toastEl.classList.add("show");
 
+    let dismissTimer = null;
     const closeToast = () => {
+      if (dismissTimer !== null) {
+        window.clearTimeout(dismissTimer);
+        dismissTimer = null;
+      }
       toastEl.remove();
     };
 
     closeBtn.addEventListener("click", closeToast, { once: true });
-    window.setTimeout(closeToast, 8000);
+    if (durationMs > 0) {
+      dismissTimer = window.setTimeout(closeToast, durationMs);
+    }
   }
+
+  controlHandlers.set("toast", (msg) => {
+    if (typeof msg.message !== "string") return;
+
+    showToast(msg.message, {
+      title: typeof msg.title === "string" ? msg.title : null,
+      variant: typeof msg.variant === "string" ? msg.variant : "info",
+      durationMs:
+        typeof msg.durationMs === "number" && Number.isFinite(msg.durationMs)
+          ? msg.durationMs
+          : 5000,
+    });
+  });
 
   controlHandlers.set("openText", (msg) => {
     if (typeof msg.text !== "string") return;
@@ -2322,7 +2360,10 @@
 
     const newTab = window.open(href, "_blank");
     if (!newTab) {
-      showOpenTextToast("New script ready.", "Open in new tab", href);
+      showToast("New script ready.", {
+        durationMs: 8000,
+        action: { label: "Open in new tab", href },
+      });
     }
   });
 

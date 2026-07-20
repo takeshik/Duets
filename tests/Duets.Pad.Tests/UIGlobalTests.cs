@@ -5,7 +5,90 @@ namespace Duets.Pad.Tests;
 
 public sealed class UIGlobalTests
 {
-    private static UIGlobal CreateUIGlobal() => new(new DisplayRenderer([]), DumpOptions.Default);
+    private static UIGlobal CreateUIGlobal(IToastHost? toastHost = null) =>
+        new(new DisplayRenderer([]), DumpOptions.Default, toastHost: toastHost);
+
+    // Positive: Toast
+
+    [Fact]
+    public void Toast_queues_notification_with_defaults()
+    {
+        var host = new RecordingToastHost();
+        var ui = CreateUIGlobal(host);
+
+        ui.Toast("Saved");
+
+        Assert.Equal("Saved", host.Message);
+        Assert.Null(host.Options?.Title);
+        Assert.Equal("info", host.Options?.Variant);
+        Assert.Equal(5000, host.Options?.DurationMilliseconds);
+    }
+
+    [Fact]
+    public void Toast_coerces_supported_options()
+    {
+        var host = new RecordingToastHost();
+        var ui = CreateUIGlobal(host);
+
+        ui.Toast(
+            "Saved",
+            new Dictionary<string, object?>
+            {
+                ["title"] = "Project",
+                ["variant"] = "success",
+                ["durationMs"] = 0,
+            }
+        );
+
+        Assert.Equal("Project", host.Options?.Title);
+        Assert.Equal("success", host.Options?.Variant);
+        Assert.Equal(0, host.Options?.DurationMilliseconds);
+    }
+
+    [Fact]
+    public void Toast_without_host_throws()
+    {
+        var ui = CreateUIGlobal();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ui.Toast("Saved"));
+
+        Assert.Contains("no toast host", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("primary")]
+    [InlineData("")]
+    public void Toast_with_unsupported_variant_throws(string variant)
+    {
+        var ui = CreateUIGlobal(new RecordingToastHost());
+
+        Assert.Throws<ArgumentException>(() =>
+            ui.Toast("Saved", new Dictionary<string, object?> { ["variant"] = variant })
+        );
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(600001)]
+    public void Toast_with_out_of_range_duration_throws(int durationMs)
+    {
+        var ui = CreateUIGlobal(new RecordingToastHost());
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ui.Toast("Saved", new Dictionary<string, object?> { ["durationMs"] = durationMs })
+        );
+    }
+
+    [Fact]
+    public void Toast_accepts_maximum_duration()
+    {
+        var host = new RecordingToastHost();
+        var ui = CreateUIGlobal(host);
+
+        ui.Toast("Saved", new Dictionary<string, object?> { ["durationMs"] = 600_000 });
+
+        Assert.Equal(600_000, host.Options?.DurationMilliseconds);
+    }
 
     // Positive: RawHtml
 
@@ -1153,6 +1236,19 @@ public sealed class UIGlobalTests
     }
 
     // Helper types
+
+    private sealed class RecordingToastHost : IToastHost
+    {
+        public string? Message { get; private set; }
+
+        public ToastOptions? Options { get; private set; }
+
+        public void ShowToast(string message, ToastOptions options)
+        {
+            this.Message = message;
+            this.Options = options;
+        }
+    }
 
     private sealed record SimpleRow(string Name, int Age);
 }
