@@ -38,10 +38,10 @@ const summarizeAttachments = () => {
   );
 };
 
-const openProfileDialog = () => {
+const openProfileModal = () => {
   const alias = ui.textBox({ placeholder: "Display name", value: nameBox.value });
   const preview = ui.slot(ui.text("Edit the value, then update this preview."));
-  ui.dialog(
+  ui.modal(
     ui.stack([
       ui.label("Display name"),
       alias,
@@ -55,7 +55,7 @@ const openProfileDialog = () => {
         nameBox.value = alias.value;
         greet();
       } else {
-        ui.toast(`Dialog closed: ${result.actionId ?? result.reason}`);
+        ui.toast(`Modal closed: ${result.actionId ?? result.reason}`);
       }
     },
     {
@@ -76,7 +76,7 @@ canvas.set(
     [
       ui.row([ui.col([ui.label("Name"), nameBox]), ui.col([subscribe])]),
       ui.button("Greet", greet),
-      ui.button("Open profile dialog", openProfileDialog),
+      ui.button("Open profile modal", openProfileModal),
       greeting,
       ui.divider({ text: "Attachments" }),
       attachments,

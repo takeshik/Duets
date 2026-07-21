@@ -158,20 +158,20 @@ internal static class SessionBootstrap
                 clear(): void;
             }
 
-            /** Result delivered when a user completes a modal dialog. */
-            interface DuetsPadDialogResult {
+            /** Result delivered when a user completes a modal. */
+            interface DuetsPadModalResult {
                 readonly reason: "action" | "dismiss";
                 readonly actionId: string | null;
             }
 
-            /** Session-bound handle for a modal dialog. */
-            interface DuetsPadDialog {
+            /** Session-bound handle for a modal. */
+            interface DuetsPadModal {
                 readonly isOpen: boolean;
-                /** Closes the dialog without invoking its result callback. */
+                /** Closes the modal without invoking its result callback. */
                 close(): void;
             }
 
-            interface DuetsPadDialogButton {
+            interface DuetsPadModalButton {
                 id: string;
                 label: string;
                 variant?: "default" | "primary" | "danger";
@@ -235,19 +235,19 @@ internal static class SessionBootstrap
                 /** Shows a transient browser notification. durationMs defaults to 5000, accepts 0 through 600000, and 0 keeps it visible until dismissed. */
                 toast(message: string, options?: { title?: string; variant?: "info" | "success" | "warning" | "danger"; durationMs?: number }): void;
                 /** Opens a server-canonical modal and reports its result in a later interaction turn. A body render failure is recorded in the Timeline and returns a closed handle. */
-                dialog(
+                modal(
                     body: any,
-                    onResult: (result: DuetsPadDialogResult) => void,
+                    onResult: (result: DuetsPadModalResult) => void,
                     options?: {
                         title?: string;
-                        /** Footer actions. An empty list with dismissButtonId: null makes the dialog closeable only through its handle. */
-                        buttons?: (string | DuetsPadDialogButton)[];
+                        /** Footer actions. An empty list with dismissButtonId: null makes the modal closeable only through its handle. */
+                        buttons?: (string | DuetsPadModalButton)[];
                         defaultButtonId?: string;
                         /** Maps Escape, backdrop, and header close to an action id. Explicit null disables those gestures. */
                         dismissButtonId?: string | null;
                         size?: "sm" | "md" | "lg" | "xl";
                     }
-                ): DuetsPadDialog;
+                ): DuetsPadModal;
             };
 
             declare const pad: {

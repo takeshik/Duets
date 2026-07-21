@@ -33,7 +33,7 @@ The pad presents five surfaces:
   canvases, each shown as its own tab.
 - **Timeline** — append-only execution history: `dump` output, `console.*` output, evaluation
   results from the Immediate bar, and errors.
-- **Dialog** — server-canonical modal content for multi-step interactions, including form input and
+- **Modal** — server-canonical modal content for multi-step interactions, including form input and
   explicit footer actions.
 - **Immediate** — a single-line expression bar; results are recorded in the Timeline.
 
@@ -83,11 +83,11 @@ or interaction handler completes. Options include `title`, `variant` (`info`, `s
 or `danger`), and `durationMs` (default 5000, accepted range 0–600000; use 0 to keep the toast until
 dismissed). Toasts are ephemeral and are not replayed after an SSE reconnect.
 
-`ui.dialog(body, onResult, options?)` opens a modal whose body accepts the same `ui.*` content as
+`ui.modal(body, onResult, options?)` opens a modal whose body accepts the same `ui.*` content as
 Canvas, including inputs, slots, buttons, and file pickers. The opening evaluation does not block;
 `onResult` runs in the later interaction turn with `{ reason, actionId }`, after the latest field
-snapshot has been committed. Footer `buttons` close the dialog, while ordinary buttons in the body
-may update its content without closing it. Active dialogs are restored after an SSE reconnect.
+snapshot has been committed. Footer `buttons` close the modal, while ordinary buttons in the body
+may update its content without closing it. Active modals are restored after an SSE reconnect.
 If the body cannot be rendered, DuetsPad appends a `render-error` Timeline entry and returns a
 handle whose `isOpen` is already `false`.
 An empty `buttons` list combined with `dismissButtonId: null` intentionally creates a
@@ -95,7 +95,7 @@ programmatic-only waiting modal; retain the returned handle and call `.close()` 
 
 ```typescript
 const alias = ui.textBox({ placeholder: "Display name" });
-ui.dialog(
+ui.modal(
   ui.stack([ui.label("Display name"), alias]),
   result => {
     if (result.reason === "action" && result.actionId === "save") {
@@ -114,7 +114,7 @@ ui.dialog(
 Available builders include text and layout primitives (`ui.text`, `ui.label`, `ui.stack`,
 `ui.row`/`ui.col`, `ui.card`, `ui.divider`), indicators (`ui.badge`, `ui.alert`, `ui.spinner`,
 `ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`), interactions
-(`ui.button`), notifications and modal flow (`ui.toast`, `ui.dialog`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
+(`ui.button`), notifications and modal flow (`ui.toast`, `ui.modal`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
 `ui.dropDown`, `ui.slider`, `ui.radioGroup`, `ui.filePicker`), the in-place `ui.slot` handle, and raw escape
 hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
@@ -168,8 +168,8 @@ design. Decide your exposure deliberately (ADR-49):
 Resource ceilings apply regardless of authentication: `MaxSessions` (default 16) caps concurrent
 sessions, `MaxRequestBodyBytes` (default 1 MiB) caps control-message request bodies,
 `MaxAttachmentBytesPerFile` (default 16 MiB), `MaxAttachmentBytesPerSession` (default 64 MiB), and
-`MaxAttachmentsPerSession` (default 32) bound attachment storage, `MaxActiveDialogs` (default 8)
-caps retained modal dialogs, and `IdleTimeout` (default 30 minutes) reclaims abandoned sessions — a
+`MaxAttachmentsPerSession` (default 32) bound attachment storage, `MaxActiveModals` (default 8)
+caps retained modals, and `IdleTimeout` (default 30 minutes) reclaims abandoned sessions — a
 session with a live pad tab is never reclaimed.
 
 ## Configuration highlights
@@ -178,7 +178,7 @@ session with a live pad tab is never reclaimed.
 
 - `SessionFactory` — creates the `DuetsSession` behind each browser session.
 - `Authenticate` — optional request authentication handler; see [Security](#security).
-- `MaxSessions` / `MaxActiveDialogs` / `MaxRequestBodyBytes` — resource ceilings; see
+- `MaxSessions` / `MaxActiveModals` / `MaxRequestBodyBytes` — resource ceilings; see
   [Security](#security).
 - `MaxAttachmentBytesPerFile` / `MaxAttachmentBytesPerSession` / `MaxAttachmentsPerSession` —
   attachment ceilings; `AttachmentStorageFactory` replaces the per-session temporary-file store.

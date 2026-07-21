@@ -20,10 +20,10 @@ internal abstract class PadEventMessage
         public TimelineEventMessage Message { get; } = message;
     }
 
-    /// <summary>Wraps a <see cref="DialogEventMessage"/>.</summary>
-    internal sealed class Dialog(DialogEventMessage message) : PadEventMessage
+    /// <summary>Wraps a <see cref="ModalEventMessage"/>.</summary>
+    internal sealed class Modal(ModalEventMessage message) : PadEventMessage
     {
-        public DialogEventMessage Message { get; } = message;
+        public ModalEventMessage Message { get; } = message;
     }
 
     /// <summary>Wraps a <see cref="TypeDeclaration"/>.</summary>

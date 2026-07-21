@@ -4,7 +4,7 @@ namespace Duets.Pad.Interactions;
 
 /// <summary>
 /// Owns the interaction lifecycle within a single DuetsPad session: committing pending
-/// interactions, keyed storage by Timeline entry id, canvas, or dialog, and handler lookup/release.
+/// interactions, keyed storage by Timeline entry id, canvas, or modal, and handler lookup/release.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,8 +25,8 @@ internal sealed class InteractionStore
     private readonly Dictionary<string, IReadOnlyList<CommittedInteraction>> _canvasInteractions =
         new(StringComparer.Ordinal);
 
-    // Committed interactions keyed by dialog id.
-    private readonly Dictionary<Guid, IReadOnlyList<CommittedInteraction>> _dialogInteractions = [];
+    // Committed interactions keyed by modal id.
+    private readonly Dictionary<Guid, IReadOnlyList<CommittedInteraction>> _modalInteractions = [];
 
     /// <summary>
     /// Returns the committed interactions for the canvas with the given <paramref name="name"/>,
@@ -36,43 +36,43 @@ internal sealed class InteractionStore
         this._canvasInteractions.TryGetValue(name, out var interactions) ? interactions : [];
 
     /// <summary>
-    /// Returns the committed interactions for <paramref name="dialogId"/>.
+    /// Returns the committed interactions for <paramref name="modalId"/>.
     /// </summary>
-    public IReadOnlyList<CommittedInteraction> GetDialogInteractions(Guid dialogId) =>
-        this._dialogInteractions.TryGetValue(dialogId, out var interactions) ? interactions : [];
+    public IReadOnlyList<CommittedInteraction> GetModalInteractions(Guid modalId) =>
+        this._modalInteractions.TryGetValue(modalId, out var interactions) ? interactions : [];
 
     /// <summary>
-    /// Prepares a complete interaction set for a dialog without publishing its handlers.
+    /// Prepares a complete interaction set for a modal without publishing its handlers.
     /// </summary>
-    public DialogInteractionCommitPlan PrepareSetDialogInteractions(
-        Guid dialogId,
+    public ModalInteractionCommitPlan PrepareSetModalInteractions(
+        Guid modalId,
         PendingInteractions pending,
         int? childIndex = null
     )
     {
         var prepared = this.Prepare(pending, childIndex);
-        return new DialogInteractionCommitPlan(
-            dialogId,
+        return new ModalInteractionCommitPlan(
+            modalId,
             prepared.Interactions,
-            this.GetDialogInteractions(dialogId),
+            this.GetModalInteractions(modalId),
             prepared.Registrations
         );
     }
 
     /// <summary>
-    /// Prepares replacement of interactions nested below dialog slot markers.
+    /// Prepares replacement of interactions nested below modal slot markers.
     /// </summary>
-    public DialogInteractionCommitPlan PrepareReplaceDialogSlots(
-        Guid dialogId,
+    public ModalInteractionCommitPlan PrepareReplaceModalSlots(
+        Guid modalId,
         IReadOnlyList<SlotInteractionReplacement> replacements
     )
     {
         var (kept, replaced, committed, registrations) = this.PlanSlotReplacements(
-            this.GetDialogInteractions(dialogId),
+            this.GetModalInteractions(modalId),
             replacements
         );
-        return new DialogInteractionCommitPlan(
-            dialogId,
+        return new ModalInteractionCommitPlan(
+            modalId,
             [.. kept, .. committed],
             replaced,
             registrations
@@ -80,10 +80,10 @@ internal sealed class InteractionStore
     }
 
     /// <summary>
-    /// Publishes a prepared dialog interaction set and releases the replaced handlers.
+    /// Publishes a prepared modal interaction set and releases the replaced handlers.
     /// </summary>
-    public IReadOnlyList<CommittedInteraction> CommitDialogInteractions(
-        DialogInteractionCommitPlan plan
+    public IReadOnlyList<CommittedInteraction> CommitModalInteractions(
+        ModalInteractionCommitPlan plan
     )
     {
         if (plan is null)
@@ -98,11 +98,11 @@ internal sealed class InteractionStore
 
         if (plan.Interactions.Count > 0)
         {
-            this._dialogInteractions[plan.DialogId] = plan.Interactions;
+            this._modalInteractions[plan.ModalId] = plan.Interactions;
         }
         else
         {
-            this._dialogInteractions.Remove(plan.DialogId);
+            this._modalInteractions.Remove(plan.ModalId);
         }
 
         this.Release(plan.ReplacedInteractions);
@@ -110,11 +110,11 @@ internal sealed class InteractionStore
     }
 
     /// <summary>
-    /// Removes and unregisters every interaction owned by <paramref name="dialogId"/>.
+    /// Removes and unregisters every interaction owned by <paramref name="modalId"/>.
     /// </summary>
-    public void ClearDialogInteractions(Guid dialogId)
+    public void ClearModalInteractions(Guid modalId)
     {
-        if (this._dialogInteractions.Remove(dialogId, out var interactions))
+        if (this._modalInteractions.Remove(modalId, out var interactions))
         {
             this.Release(interactions);
         }
@@ -405,7 +405,7 @@ internal sealed class InteractionStore
         this._registry.Clear();
         this._canvasInteractions.Clear();
         this._timelineInteractions.Clear();
-        this._dialogInteractions.Clear();
+        this._modalInteractions.Clear();
     }
 
     private IReadOnlyList<CommittedInteraction> Commit(
@@ -522,8 +522,8 @@ internal sealed record CanvasInteractionCommitPlan
     public IReadOnlyList<PreparedInteractionRegistration> Registrations { get; }
 }
 
-internal sealed record DialogInteractionCommitPlan(
-    Guid DialogId,
+internal sealed record ModalInteractionCommitPlan(
+    Guid ModalId,
     IReadOnlyList<CommittedInteraction> Interactions,
     IReadOnlyList<CommittedInteraction> ReplacedInteractions,
     IReadOnlyList<PreparedInteractionRegistration> Registrations

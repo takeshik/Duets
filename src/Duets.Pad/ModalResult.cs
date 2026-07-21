@@ -1,11 +1,11 @@
 namespace Duets.Pad;
 
 /// <summary>
-/// Describes how a user completed a <c>ui.dialog</c> interaction.
+/// Describes how a user completed a <c>ui.modal</c> interaction.
 /// </summary>
-public sealed class DialogResult
+public sealed class ModalResult
 {
-    internal DialogResult(string reason, string? actionId)
+    internal ModalResult(string reason, string? actionId)
     {
         this.Reason = reason;
         this.ActionId = actionId;

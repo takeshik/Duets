@@ -4,7 +4,7 @@ namespace Duets.Pad.Rendering;
 /// Session-side callback surface for <see cref="DisplayInput"/>. Implemented by the owning
 /// <c>DuetsPadSession</c> so that reading or reassigning a field's value can consult and update the
 /// session's server-canonical field store (ADR-47) and re-project every placement of the field's
-/// marker in Canvas, Timeline, and Dialog output.
+/// marker in Canvas, Timeline, and Modal output.
 /// </summary>
 internal interface IFieldHost
 {
@@ -24,7 +24,7 @@ internal interface IFieldHost
 
     /// <summary>
     /// Stores <paramref name="value"/> for <paramref name="fieldId"/> and re-projects every
-    /// placement of the field's marker in Canvas, Timeline, and Dialog output. A no-op
+    /// placement of the field's marker in Canvas, Timeline, and Modal output. A no-op
     /// projection-wise when the field is not currently placed anywhere. Must never throw.
     /// </summary>
     public void SetFieldValue(Guid fieldId, FieldKind kind, string value);
