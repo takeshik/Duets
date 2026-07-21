@@ -9,7 +9,7 @@ using Jint;
 
 namespace Duets.Pad.Tests;
 
-public sealed class DuetsPadDialogTests
+public sealed class DuetsPadModalTests
 {
     private sealed class ThrowingRenderer(object sentinel) : IObjectRenderer
     {
@@ -18,31 +18,31 @@ public sealed class DuetsPadDialogTests
         public bool CanRender(object? value) => ReferenceEquals(value, this._sentinel);
 
         public DisplayContent Render(object value, RenderContext context) =>
-            throw new InvalidOperationException("deliberate dialog render failure");
+            throw new InvalidOperationException("deliberate modal render failure");
     }
 
     private static async Task<DuetsPadSession> CreatePadSessionAsync(int? maximum = 8)
     {
         var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
-        return new DuetsPadSession(Guid.NewGuid(), duetsSession, maxActiveDialogs: maximum);
+        return new DuetsPadSession(Guid.NewGuid(), duetsSession, maxActiveModals: maximum);
     }
 
-    private static async Task<DialogEventMessage> ReadDialogEventAsync(
+    private static async Task<ModalEventMessage> ReadModalEventAsync(
         ChannelReader<PadEventMessage?> reader
     )
     {
         while (true)
         {
             var message = await reader.ReadAsync(TestContext.Current.CancellationToken);
-            if (message is PadEventMessage.Dialog dialog)
+            if (message is PadEventMessage.Modal modal)
             {
-                return dialog.Message;
+                return modal.Message;
             }
         }
     }
 
     [Fact]
-    public async Task Dialog_action_observes_latest_input_and_closes_once()
+    public async Task Modal_action_observes_latest_input_and_closes_once()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -52,7 +52,7 @@ public sealed class DuetsPadDialogTests
         var evaluation = await session.EvaluateAsync(
             """
             var name = ui.textBox({ value: "initial" });
-            ui.dialog(
+            ui.modal(
               ui.stack([ui.label("Name"), name]),
               result => dump(`${result.reason}:${result.actionId}:${name.value}`),
               {
@@ -69,10 +69,10 @@ public sealed class DuetsPadDialogTests
         );
 
         Assert.True(evaluation.Ok, evaluation.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
-        Assert.Equal(DialogEventTypes.Open, open.Type);
+        Assert.Equal(ModalEventTypes.Open, open.Type);
         Assert.Equal("Enter name", open.Projection.Options.Title);
         Assert.Equal(3, open.Interactions.Count);
 
@@ -98,33 +98,33 @@ public sealed class DuetsPadDialogTests
 
         Assert.True(invoked.Ok, invoked.Error);
         Assert.Equal("action:save:Ada", Assert.IsType<Text>(session.Timeline.State[^1].Body).Value);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
 
         var duplicate = await session.InvokeInteractionAsync(save.HandlerId);
         Assert.True(duplicate.Stale);
     }
 
     [Fact]
-    public async Task Active_dialog_is_replayed_to_a_new_subscriber()
+    public async Task Active_modal_is_replayed_to_a_new_subscriber()
     {
         using var session = await CreatePadSessionAsync();
         var evaluation = await session.EvaluateAsync(
-            """ui.dialog("body", () => {}, { buttons: ["Close"] })"""
+            """ui.modal("body", () => {}, { buttons: ["Close"] })"""
         );
         Assert.True(evaluation.Ok, evaluation.Error);
 
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
-        var snapshot = Assert.IsType<DialogEventMessage.SnapshotMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var snapshot = Assert.IsType<ModalEventMessage.SnapshotMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
 
-        Assert.Single(snapshot.Dialogs);
-        Assert.Equal("Close", snapshot.Dialogs[0].Projection.Options.Buttons[0].Id);
+        Assert.Single(snapshot.Modals);
+        Assert.Equal("Close", snapshot.Modals[0].Projection.Options.Buttons[0].Id);
     }
 
     [Fact]
-    public async Task Dialog_slot_update_projects_a_new_revision()
+    public async Task Modal_slot_update_projects_a_new_revision()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -133,29 +133,29 @@ public sealed class DuetsPadDialogTests
 
         var opened = await session.EvaluateAsync(
             """
-            var dialogSlot = ui.slot("before");
-            ui.dialog(dialogSlot, () => {}, { buttons: ["Close"] });
+            var modalSlot = ui.slot("before");
+            ui.modal(modalSlot, () => {}, { buttons: ["Close"] });
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        _ = await ReadDialogEventAsync(channel.Reader);
+        _ = await ReadModalEventAsync(channel.Reader);
 
-        var updated = await session.EvaluateAsync("dialogSlot.content = 'after'");
+        var updated = await session.EvaluateAsync("modalSlot.content = 'after'");
         Assert.True(updated.Ok, updated.Error);
-        var message = await ReadDialogEventAsync(channel.Reader);
+        var message = await ReadModalEventAsync(channel.Reader);
 
         var revision = message switch
         {
-            DialogEventMessage.PatchMessage patch => patch.Revision,
-            DialogEventMessage.FullStateMessage replace
-                when replace.Type == DialogEventTypes.Replace => replace.Projection.Revision,
-            _ => throw new InvalidOperationException("Expected a dialog mutation event."),
+            ModalEventMessage.PatchMessage patch => patch.Revision,
+            ModalEventMessage.FullStateMessage replace
+                when replace.Type == ModalEventTypes.Replace => replace.Projection.Revision,
+            _ => throw new InvalidOperationException("Expected a modal mutation event."),
         };
         Assert.Equal(1, revision);
     }
 
     [Fact]
-    public async Task Dialog_body_interaction_updates_content_without_closing()
+    public async Task Modal_body_interaction_updates_content_without_closing()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -165,7 +165,7 @@ public sealed class DuetsPadDialogTests
         var opened = await session.EvaluateAsync(
             """
             var bodySlot = ui.slot("before");
-            var interactiveDialog = ui.dialog(
+            var interactiveModal = ui.modal(
               ui.stack([
                 bodySlot,
                 ui.button("Update", () => bodySlot.content = "after")
@@ -176,8 +176,8 @@ public sealed class DuetsPadDialogTests
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
         var update = open.Interactions.Single(interaction =>
             interaction.Target.Segments.SequenceEqual([0, 0, 0, 1])
@@ -186,19 +186,19 @@ public sealed class DuetsPadDialogTests
         var invoked = await session.InvokeInteractionAsync(update.HandlerId);
 
         Assert.True(invoked.Ok, invoked.Error);
-        var mutation = await ReadDialogEventAsync(channel.Reader);
+        var mutation = await ReadModalEventAsync(channel.Reader);
         Assert.True(
             mutation
-                is DialogEventMessage.PatchMessage
-                    or DialogEventMessage.FullStateMessage { Type: DialogEventTypes.Replace }
+                is ModalEventMessage.PatchMessage
+                    or ModalEventMessage.FullStateMessage { Type: ModalEventTypes.Replace }
         );
-        var isOpen = await session.EvaluateAsync("interactiveDialog.isOpen");
+        var isOpen = await session.EvaluateAsync("interactiveModal.isOpen");
         Assert.True(isOpen.Ok, isOpen.Error);
         Assert.Equal("true", isOpen.Result);
     }
 
     [Fact]
-    public async Task Dialog_dismiss_reports_the_mapped_action_id()
+    public async Task Modal_dismiss_reports_the_mapped_action_id()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -207,7 +207,7 @@ public sealed class DuetsPadDialogTests
 
         var opened = await session.EvaluateAsync(
             """
-            ui.dialog(
+            ui.modal(
               "body",
               result => dump(`${result.reason}:${result.actionId}`),
               { buttons: ["Cancel"], dismissButtonId: "Cancel" }
@@ -215,8 +215,8 @@ public sealed class DuetsPadDialogTests
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
         var dismiss = open.Interactions.Single(interaction =>
             interaction.Target.Segments.SequenceEqual([0, 2])
@@ -226,11 +226,11 @@ public sealed class DuetsPadDialogTests
 
         Assert.True(invoked.Ok, invoked.Error);
         Assert.Equal("dismiss:Cancel", Assert.IsType<Text>(session.Timeline.State[^1].Body).Value);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
     }
 
     [Fact]
-    public async Task Dialog_unmapped_dismiss_reports_null_action_id()
+    public async Task Modal_unmapped_dismiss_reports_null_action_id()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -239,7 +239,7 @@ public sealed class DuetsPadDialogTests
 
         var opened = await session.EvaluateAsync(
             """
-            ui.dialog(
+            ui.modal(
               "body",
               result => dump(`${result.reason}:${result.actionId === null}`),
               { buttons: ["Close"] }
@@ -247,8 +247,8 @@ public sealed class DuetsPadDialogTests
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
         var dismiss = open.Interactions.Single(interaction =>
             interaction.Target.Segments.SequenceEqual([0, 2])
@@ -258,20 +258,20 @@ public sealed class DuetsPadDialogTests
 
         Assert.True(invoked.Ok, invoked.Error);
         Assert.Equal("dismiss:true", Assert.IsType<Text>(session.Timeline.State[^1].Body).Value);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
     }
 
     [Fact]
-    public async Task Multiple_dialogs_are_replayed_in_open_order()
+    public async Task Multiple_modals_are_replayed_in_open_order()
     {
         using var session = await CreatePadSessionAsync();
         var opened = await session.EvaluateAsync(
             """
-            var firstDialog = ui.dialog("first", () => {}, {
+            var firstModal = ui.modal("first", () => {}, {
               title: "First",
               buttons: ["Close"]
             });
-            var secondDialog = ui.dialog("second", () => {}, {
+            var secondModal = ui.modal("second", () => {}, {
               title: "Second",
               buttons: ["Close"]
             });
@@ -281,32 +281,32 @@ public sealed class DuetsPadDialogTests
 
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
-        var snapshot = Assert.IsType<DialogEventMessage.SnapshotMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var snapshot = Assert.IsType<ModalEventMessage.SnapshotMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
 
         Assert.Equal(
             ["First", "Second"],
-            snapshot.Dialogs.Select(dialog => dialog.Projection.Options.Title)
+            snapshot.Modals.Select(modal => modal.Projection.Options.Title)
         );
 
-        var closed = await session.EvaluateAsync("firstDialog.close()");
+        var closed = await session.EvaluateAsync("firstModal.close()");
         Assert.True(closed.Ok, closed.Error);
-        var close = Assert.IsType<DialogEventMessage.CloseMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var close = Assert.IsType<ModalEventMessage.CloseMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
-        Assert.Equal(snapshot.Dialogs[0].Projection.Id, close.DialogId);
+        Assert.Equal(snapshot.Modals[0].Projection.Id, close.ModalId);
 
         var reconnect = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(reconnect.Writer, session.DuetsSession.Declarations);
-        var remaining = Assert.IsType<DialogEventMessage.SnapshotMessage>(
-            await ReadDialogEventAsync(reconnect.Reader)
+        var remaining = Assert.IsType<ModalEventMessage.SnapshotMessage>(
+            await ReadModalEventAsync(reconnect.Reader)
         );
-        Assert.Equal("Second", Assert.Single(remaining.Dialogs).Projection.Options.Title);
+        Assert.Equal("Second", Assert.Single(remaining.Modals).Projection.Options.Title);
     }
 
     [Fact]
-    public async Task Dialog_file_picker_is_live_projected_and_pruned_on_close()
+    public async Task Modal_file_picker_is_live_projected_and_pruned_on_close()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -315,15 +315,15 @@ public sealed class DuetsPadDialogTests
 
         var opened = await session.EvaluateAsync(
             """
-            var dialogPicker = ui.filePicker();
-            var pickerDialog = ui.dialog(dialogPicker, () => {}, {
+            var modalPicker = ui.filePicker();
+            var pickerModal = ui.modal(modalPicker, () => {}, {
               buttons: ["Close"]
             });
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
         var picker = Assert.IsType<Element>(
             open.Projection.State.Root.Children[0].AsElement().Children[0].AsElement().Children[0]
@@ -332,14 +332,14 @@ public sealed class DuetsPadDialogTests
 
         var begin = await session.BeginAttachmentSelectionAsync(
             pickerId,
-            [new AttachmentFileManifest("dialog.txt", "text/plain", 1)]
+            [new AttachmentFileManifest("modal.txt", "text/plain", 1)]
         );
 
         Assert.True(begin.Ok, begin.Error);
-        var mutation = await ReadDialogEventAsync(channel.Reader);
+        var mutation = await ReadModalEventAsync(channel.Reader);
         switch (mutation)
         {
-            case DialogEventMessage.PatchMessage patch:
+            case ModalEventMessage.PatchMessage patch:
                 Assert.Equal(1, patch.Revision);
                 Assert.Contains(
                     patch.Operations,
@@ -353,8 +353,8 @@ public sealed class DuetsPadDialogTests
                         && value == begin.Revision.ToString()
                 );
                 break;
-            case DialogEventMessage.FullStateMessage replace
-                when replace.Type == DialogEventTypes.Replace:
+            case ModalEventMessage.FullStateMessage replace
+                when replace.Type == ModalEventTypes.Replace:
                 Assert.Equal(1, replace.Projection.Revision);
                 var projectedPicker = Assert.IsType<Element>(
                     replace
@@ -370,12 +370,12 @@ public sealed class DuetsPadDialogTests
                 );
                 break;
             default:
-                throw new InvalidOperationException("Expected a dialog attachment projection.");
+                throw new InvalidOperationException("Expected a modal attachment projection.");
         }
 
-        var closed = await session.EvaluateAsync("pickerDialog.close()");
+        var closed = await session.EvaluateAsync("pickerModal.close()");
         Assert.True(closed.Ok, closed.Error);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
 
         var stale = await session.BeginAttachmentSelectionAsync(
             pickerId,
@@ -386,7 +386,7 @@ public sealed class DuetsPadDialogTests
     }
 
     [Fact]
-    public async Task Dialog_render_failure_returns_a_closed_handle_and_records_the_error()
+    public async Task Modal_render_failure_returns_a_closed_handle_and_records_the_error()
     {
         var sentinel = new object();
         var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
@@ -395,12 +395,12 @@ public sealed class DuetsPadDialogTests
             duetsSession,
             [new ThrowingRenderer(sentinel)]
         );
-        session.DuetsSession.SetValue("__dialogRenderFailure", sentinel);
+        session.DuetsSession.SetValue("__modalRenderFailure", sentinel);
 
         var result = await session.EvaluateAsync(
             """
-            var failedDialog = ui.dialog(__dialogRenderFailure, () => {});
-            failedDialog.isOpen;
+            var failedModal = ui.modal(__modalRenderFailure, () => {});
+            failedModal.isOpen;
             """
         );
 
@@ -421,7 +421,7 @@ public sealed class DuetsPadDialogTests
         var opened = await session.EvaluateAsync(
             """
             var callbackCount = 0;
-            var activeDialog = ui.dialog(
+            var activeModal = ui.modal(
               "body",
               () => callbackCount++,
               { buttons: ["Close"] }
@@ -429,13 +429,13 @@ public sealed class DuetsPadDialogTests
             """
         );
         Assert.True(opened.Ok, opened.Error);
-        _ = await ReadDialogEventAsync(channel.Reader);
+        _ = await ReadModalEventAsync(channel.Reader);
 
         var closed = await session.EvaluateAsync(
-            "activeDialog.close(); dump(`${activeDialog.isOpen}:${callbackCount}`)"
+            "activeModal.close(); dump(`${activeModal.isOpen}:${callbackCount}`)"
         );
         Assert.True(closed.Ok, closed.Error);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
         Assert.Equal("false:0", Assert.IsType<Text>(session.Timeline.State[^1].Body).Value);
     }
 
@@ -448,39 +448,39 @@ public sealed class DuetsPadDialogTests
         while (channel.Reader.TryRead(out _)) { }
 
         var opened = await session.EvaluateAsync(
-            """ui.dialog("body", () => { throw new Error("boom"); }, { buttons: ["Run"] })"""
+            """ui.modal("body", () => { throw new Error("boom"); }, { buttons: ["Run"] })"""
         );
         Assert.True(opened.Ok, opened.Error);
-        var open = Assert.IsType<DialogEventMessage.FullStateMessage>(
-            await ReadDialogEventAsync(channel.Reader)
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
         );
         var action = open.Interactions[0];
 
         var invoked = await session.InvokeInteractionAsync(action.HandlerId);
 
         Assert.False(invoked.Ok);
-        Assert.IsType<DialogEventMessage.CloseMessage>(await ReadDialogEventAsync(channel.Reader));
+        Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
         Assert.True((await session.InvokeInteractionAsync(action.HandlerId)).Stale);
     }
 
     [Fact]
-    public async Task Active_dialog_limit_rejects_an_additional_dialog()
+    public async Task Active_modal_limit_rejects_an_additional_modal()
     {
         using var session = await CreatePadSessionAsync(maximum: 1);
         var first = await session.EvaluateAsync(
-            """ui.dialog("one", () => {}, { buttons: ["Close"] })"""
+            """ui.modal("one", () => {}, { buttons: ["Close"] })"""
         );
         var second = await session.EvaluateAsync(
-            """ui.dialog("two", () => {}, { buttons: ["Close"] })"""
+            """ui.modal("two", () => {}, { buttons: ["Close"] })"""
         );
 
         Assert.True(first.Ok, first.Error);
         Assert.False(second.Ok);
-        Assert.Contains("more than 1 active dialogs", second.Error);
+        Assert.Contains("more than 1 active modals", second.Error);
     }
 
     [Fact]
-    public async Task Active_dialog_limit_is_checked_before_rendering_the_rejected_body()
+    public async Task Active_modal_limit_is_checked_before_rendering_the_rejected_body()
     {
         var sentinel = new object();
         var duetsSession = await JintTestRuntime.CreateSessionAsync(o => o.AllowClr());
@@ -488,25 +488,25 @@ public sealed class DuetsPadDialogTests
             Guid.NewGuid(),
             duetsSession,
             [new ThrowingRenderer(sentinel)],
-            maxActiveDialogs: 1
+            maxActiveModals: 1
         );
-        session.DuetsSession.SetValue("__rejectedDialogBody", sentinel);
+        session.DuetsSession.SetValue("__rejectedModalBody", sentinel);
         var first = await session.EvaluateAsync(
-            """ui.dialog("one", () => {}, { buttons: ["Close"] })"""
+            """ui.modal("one", () => {}, { buttons: ["Close"] })"""
         );
 
         var rejected = await session.EvaluateAsync(
-            """ui.dialog(__rejectedDialogBody, () => {}, { buttons: ["Close"] })"""
+            """ui.modal(__rejectedModalBody, () => {}, { buttons: ["Close"] })"""
         );
 
         Assert.True(first.Ok, first.Error);
         Assert.False(rejected.Ok);
-        Assert.Contains("more than 1 active dialogs", rejected.Error);
+        Assert.Contains("more than 1 active modals", rejected.Error);
         Assert.Empty(session.Timeline.State);
     }
 }
 
-internal static class DialogTestRenderNodeExtensions
+internal static class ModalTestRenderNodeExtensions
 {
     public static Element AsElement(this ITerminalRenderNode node) => Assert.IsType<Element>(node);
 }

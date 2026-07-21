@@ -8,7 +8,7 @@ namespace Duets.Pad;
 /// </summary>
 public sealed class DuetsPadServiceOptions
 {
-    internal const int DefaultMaxActiveDialogs = 8;
+    internal const int DefaultMaxActiveModals = 8;
     internal const long DefaultMaxAttachmentBytesPerFile = 16 * 1024 * 1024;
     internal const long DefaultMaxAttachmentBytesPerSession = 64 * 1024 * 1024;
     internal const int DefaultMaxAttachmentsPerSession = 32;
@@ -100,10 +100,10 @@ public sealed class DuetsPadServiceOptions
     public int? MaxSessions { get; set; } = 16;
 
     /// <summary>
-    /// Maximum number of active modal dialogs retained by one session. <see langword="null"/>
+    /// Maximum number of active modals retained by one session. <see langword="null"/>
     /// means unlimited. The default is 8.
     /// </summary>
-    public int? MaxActiveDialogs { get; set; } = DefaultMaxActiveDialogs;
+    public int? MaxActiveModals { get; set; } = DefaultMaxActiveModals;
 
     /// <summary>
     /// Maximum accepted request body size, in bytes, applied to control-message <c>POST</c>
@@ -239,11 +239,11 @@ public sealed class DuetsPadServiceOptions
             );
         }
 
-        if (this.MaxActiveDialogs is { } maxActiveDialogs && maxActiveDialogs <= 0)
+        if (this.MaxActiveModals is { } maxActiveModals && maxActiveModals <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(this.MaxActiveDialogs),
-                "Maximum active dialogs must be positive."
+                nameof(this.MaxActiveModals),
+                "Maximum active modals must be positive."
             );
         }
 

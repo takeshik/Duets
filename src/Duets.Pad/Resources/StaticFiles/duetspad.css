@@ -976,14 +976,14 @@ th.duetspad-typeheader {
     margin-bottom: 0.125rem;
 }
 
-#dialog-container {
+#modal-container {
     position: fixed;
     inset: 0;
     z-index: 1080;
     pointer-events: none;
 }
 
-.duetspad-dialog-layer {
+.duetspad-modal-layer {
     position: absolute;
     inset: 0;
     display: flex;
@@ -995,11 +995,11 @@ th.duetspad-typeheader {
     background: rgba(0, 0, 0, 0.55);
 }
 
-.duetspad-dialog-layer[hidden] {
+.duetspad-modal-layer[hidden] {
     display: none;
 }
 
-.duetspad-dialog {
+.duetspad-modal {
     width: min(100%, 32rem);
     max-height: calc(100vh - 2rem);
     overflow: auto;
@@ -1010,19 +1010,19 @@ th.duetspad-typeheader {
     box-shadow: var(--tblr-box-shadow-lg);
 }
 
-.duetspad-dialog-sm {
+.duetspad-modal-sm {
     width: min(100%, 24rem);
 }
 
-.duetspad-dialog-lg {
+.duetspad-modal-lg {
     width: min(100%, 48rem);
 }
 
-.duetspad-dialog-xl {
+.duetspad-modal-xl {
     width: min(100%, 64rem);
 }
 
-.duetspad-dialog-header {
+.duetspad-modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1031,17 +1031,17 @@ th.duetspad-typeheader {
     border-bottom: 1px solid var(--common-border);
 }
 
-.duetspad-dialog-title {
+.duetspad-modal-title {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
 }
 
-.duetspad-dialog .modal-body {
+.duetspad-modal .modal-body {
     padding: 1rem;
 }
 
-.duetspad-dialog .modal-footer {
+.duetspad-modal .modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;

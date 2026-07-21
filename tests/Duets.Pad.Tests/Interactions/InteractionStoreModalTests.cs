@@ -3,10 +3,10 @@ using Duets.Pad.Rendering;
 
 namespace Duets.Pad.Tests.Interactions;
 
-public sealed class InteractionStoreDialogTests
+public sealed class InteractionStoreModalTests
 {
     [Fact]
-    public void ClearDialogInteractions_unregisters_only_the_selected_dialog()
+    public void ClearModalInteractions_unregisters_only_the_selected_modal()
     {
         var store = new InteractionStore();
         var firstId = Guid.NewGuid();
@@ -14,17 +14,17 @@ public sealed class InteractionStoreDialogTests
         var pending = new PendingInteractions([
             new PendingInteraction(DisplayPath.Root, InteractionEvent.Click, () => { }),
         ]);
-        var first = store.CommitDialogInteractions(
-            store.PrepareSetDialogInteractions(firstId, pending)
+        var first = store.CommitModalInteractions(
+            store.PrepareSetModalInteractions(firstId, pending)
         );
-        var second = store.CommitDialogInteractions(
-            store.PrepareSetDialogInteractions(secondId, pending)
+        var second = store.CommitModalInteractions(
+            store.PrepareSetModalInteractions(secondId, pending)
         );
 
-        store.ClearDialogInteractions(firstId);
+        store.ClearModalInteractions(firstId);
 
-        Assert.Empty(store.GetDialogInteractions(firstId));
-        Assert.NotEmpty(store.GetDialogInteractions(secondId));
+        Assert.Empty(store.GetModalInteractions(firstId));
+        Assert.NotEmpty(store.GetModalInteractions(secondId));
         Assert.False(store.TryGetHandler(Assert.Single(first).HandlerId, out _));
         Assert.True(store.TryGetHandler(Assert.Single(second).HandlerId, out _));
     }

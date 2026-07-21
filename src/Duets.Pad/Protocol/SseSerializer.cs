@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json.Nodes;
-using Duets.Pad.Dialogs;
 using Duets.Pad.Interactions;
+using Duets.Pad.Modals;
 using Duets.Pad.Rendering;
 using Duets.Pad.State;
 using Duets.Pad.Timeline;
@@ -152,7 +152,7 @@ internal static class SseSerializer
         {
             PadEventMessage.Canvas c => Serialize(c.Message),
             PadEventMessage.Timeline t => Serialize(t.Message),
-            PadEventMessage.Dialog d => Serialize(d.Message),
+            PadEventMessage.Modal d => Serialize(d.Message),
             PadEventMessage.TypeDeclaration d => SerializeTypeDeclaration(d.Declaration),
             PadEventMessage.TaggedTemplateSnapshot s => SerializeTaggedTemplateSnapshot(s.Snapshot),
             PadEventMessage.Control ctrl => SerializeControl(ctrl.Op, ctrl.Payload),
@@ -161,7 +161,7 @@ internal static class SseSerializer
             ),
         };
 
-    internal static string Serialize(DialogEventMessage message)
+    internal static string Serialize(ModalEventMessage message)
     {
         if (message is null)
         {
@@ -170,52 +170,52 @@ internal static class SseSerializer
 
         var result = message switch
         {
-            DialogEventMessage.SnapshotMessage snapshot => SerializeDialogSnapshot(snapshot),
-            DialogEventMessage.FullStateMessage full => new JsonObject
+            ModalEventMessage.SnapshotMessage snapshot => SerializeModalSnapshot(snapshot),
+            ModalEventMessage.FullStateMessage full => new JsonObject
             {
                 ["type"] = full.Type,
-                ["dialog"] = SerializeDialogProjection(full.Projection, full.Interactions),
+                ["modal"] = SerializeModalProjection(full.Projection, full.Interactions),
             },
-            DialogEventMessage.PatchMessage patch => new JsonObject
+            ModalEventMessage.PatchMessage patch => new JsonObject
             {
-                ["type"] = DialogEventTypes.Patch,
-                ["dialogId"] = patch.DialogId.ToString("D"),
+                ["type"] = ModalEventTypes.Patch,
+                ["modalId"] = patch.ModalId.ToString("D"),
                 ["baseRevision"] = patch.BaseRevision,
                 ["revision"] = patch.Revision,
                 ["operations"] = SerializePatchOperations(patch.Operations),
                 ["interactions"] = SerializeInteractions(patch.Interactions),
             },
-            DialogEventMessage.CloseMessage close => new JsonObject
+            ModalEventMessage.CloseMessage close => new JsonObject
             {
-                ["type"] = DialogEventTypes.Close,
-                ["dialogId"] = close.DialogId.ToString("D"),
+                ["type"] = ModalEventTypes.Close,
+                ["modalId"] = close.ModalId.ToString("D"),
             },
             _ => throw new InvalidOperationException(
-                $"Unrecognised DialogEventMessage type '{message.GetType().Name}'."
+                $"Unrecognised ModalEventMessage type '{message.GetType().Name}'."
             ),
         };
 
         return result.ToJsonString();
     }
 
-    private static JsonObject SerializeDialogSnapshot(DialogEventMessage.SnapshotMessage snapshot)
+    private static JsonObject SerializeModalSnapshot(ModalEventMessage.SnapshotMessage snapshot)
     {
-        var dialogs = new JsonArray();
-        foreach (var item in snapshot.Dialogs)
+        var modals = new JsonArray();
+        foreach (var item in snapshot.Modals)
         {
-            dialogs.Add(SerializeDialogProjection(item.Projection, item.Interactions));
+            modals.Add(SerializeModalProjection(item.Projection, item.Interactions));
         }
 
-        return new JsonObject { ["type"] = DialogEventTypes.Snapshot, ["dialogs"] = dialogs };
+        return new JsonObject { ["type"] = ModalEventTypes.Snapshot, ["modals"] = modals };
     }
 
-    private static JsonObject SerializeDialogProjection(
-        DialogProjection projection,
+    private static JsonObject SerializeModalProjection(
+        ModalProjection projection,
         IReadOnlyList<CommittedInteraction> interactions
     ) =>
         new()
         {
-            ["dialogId"] = projection.Id.ToString("D"),
+            ["modalId"] = projection.Id.ToString("D"),
             ["revision"] = projection.Revision,
             ["title"] = projection.Options.Title,
             ["size"] = projection.Options.Size,

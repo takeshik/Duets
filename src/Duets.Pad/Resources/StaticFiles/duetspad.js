@@ -14,11 +14,11 @@
     timelineAppend: "timeline.append",
     timelineUpdate: "timeline.update",
     timelineTrim: "timeline.trim",
-    dialogSnapshot: "dialog.snapshot",
-    dialogOpen: "dialog.open",
-    dialogPatch: "dialog.patch",
-    dialogReplace: "dialog.replace",
-    dialogClose: "dialog.close",
+    modalSnapshot: "modal.snapshot",
+    modalOpen: "modal.open",
+    modalPatch: "modal.patch",
+    modalReplace: "modal.replace",
+    modalClose: "modal.close",
     typeDeclaration: "type.declaration",
     taggedTemplateSnapshot: "taggedTemplate.snapshot",
   };
@@ -905,7 +905,7 @@
     const roots = [
       ...canvasPanelMap.values(),
       ...timelineEntryMap.values(),
-      ...Array.from(dialogMap.values(), (entry) => entry.root),
+      ...Array.from(modalMap.values(), (entry) => entry.root),
     ];
     for (const root of roots) {
       for (const el of fieldElements(root)) {
@@ -2269,26 +2269,26 @@
     }
   }
 
-  // Dialog state
+  // Modal state
 
-  const dialogMap = new Map();
-  const dialogOrder = [];
-  const dialogSizes = new Set(["sm", "md", "lg", "xl"]);
-  let dialogRestoreFocus = null;
-  let dialogResyncScheduled = false;
+  const modalMap = new Map();
+  const modalOrder = [];
+  const modalSizes = new Set(["sm", "md", "lg", "xl"]);
+  let modalRestoreFocus = null;
+  let modalResyncScheduled = false;
 
-  function dialogActionButton(root, actionId) {
+  function modalActionButton(root, actionId) {
     for (const wrapper of root.querySelectorAll(
-      "[data-duetspad-dialog-action]",
+      "[data-duetspad-modal-action]",
     )) {
-      if (wrapper.getAttribute("data-duetspad-dialog-action") === actionId) {
+      if (wrapper.getAttribute("data-duetspad-modal-action") === actionId) {
         return wrapper.querySelector("button");
       }
     }
     return null;
   }
 
-  function setDialogPending(entry, pending) {
+  function setModalPending(entry, pending) {
     entry.pending = pending;
     entry.root.inert = pending;
     for (const button of entry.layer.querySelectorAll("button")) {
@@ -2296,19 +2296,19 @@
     }
   }
 
-  function bindDialogProjection(entry, interactions) {
+  function bindModalProjection(entry, interactions) {
     entry.controller?.abort();
     entry.controller = new AbortController();
     const signal = entry.controller.signal;
     applyInteractions(entry.root, interactions, signal, (pending, target) => {
-      const closesDialog =
-        target.matches?.("[data-duetspad-dialog-dismiss-handler]") ||
-        target.closest?.("[data-duetspad-dialog-action]");
-      if (!closesDialog) return;
-      setDialogPending(entry, true);
+      const closesModal =
+        target.matches?.("[data-duetspad-modal-dismiss-handler]") ||
+        target.closest?.("[data-duetspad-modal-action]");
+      if (!closesModal) return;
+      setModalPending(entry, true);
       void pending.then((ok) => {
-        if (!ok && dialogMap.get(entry.id) === entry) {
-          setDialogPending(entry, false);
+        if (!ok && modalMap.get(entry.id) === entry) {
+          setModalPending(entry, false);
           if (target.isConnected && typeof target.focus === "function") {
             target.focus();
           }
@@ -2320,36 +2320,36 @@
     entry.layer.addEventListener(
       "click",
       (event) => {
-        if (event.target === entry.layer) requestDialogDismiss(entry);
+        if (event.target === entry.layer) requestModalDismiss(entry);
       },
       { signal },
     );
     entry.closeButton?.addEventListener(
       "click",
-      () => requestDialogDismiss(entry),
+      () => requestModalDismiss(entry),
       { signal },
     );
     entry.layer.addEventListener(
       "keydown",
-      (event) => handleDialogKeydown(entry, event),
+      (event) => handleModalKeydown(entry, event),
       { signal },
     );
   }
 
-  function requestDialogDismiss(entry) {
-    if (!entry.canDismiss || entry.pending || dialogOrder[0] !== entry.id)
+  function requestModalDismiss(entry) {
+    if (!entry.canDismiss || entry.pending || modalOrder[0] !== entry.id)
       return;
     const dismiss = entry.root.querySelector(
-      "[data-duetspad-dialog-dismiss-handler]",
+      "[data-duetspad-modal-dismiss-handler]",
     );
     dismiss?.click();
   }
 
-  function handleDialogKeydown(entry, event) {
-    if (dialogOrder[0] !== entry.id) return;
+  function handleModalKeydown(entry, event) {
+    if (modalOrder[0] !== entry.id) return;
     if (event.key === "Escape" && entry.canDismiss) {
       event.preventDefault();
-      requestDialogDismiss(entry);
+      requestModalDismiss(entry);
       return;
     }
     if (
@@ -2362,7 +2362,7 @@
       !(event.target instanceof HTMLAnchorElement) &&
       !event.target.isContentEditable
     ) {
-      const button = dialogActionButton(entry.root, entry.defaultButtonId);
+      const button = modalActionButton(entry.root, entry.defaultButtonId);
       if (button && !button.disabled) {
         event.preventDefault();
         button.click();
@@ -2372,13 +2372,13 @@
     if (event.key !== "Tab") return;
 
     const focusable = Array.from(
-      entry.dialog.querySelectorAll(
+      entry.modal.querySelectorAll(
         'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
       ),
     ).filter((element) => !element.closest("[hidden]"));
     if (focusable.length === 0) {
       event.preventDefault();
-      entry.dialog.focus();
+      entry.modal.focus();
       return;
     }
     const first = focusable[0];
@@ -2392,18 +2392,18 @@
     }
   }
 
-  function createDialogEntry(projection) {
+  function createModalEntry(projection) {
     if (
-      typeof projection.dialogId !== "string" ||
+      typeof projection.modalId !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        projection.dialogId,
+        projection.modalId,
       )
     ) {
-      throw new Error("dialog projection id is invalid");
+      throw new Error("modal projection id is invalid");
     }
     if (
       (projection.title !== null && typeof projection.title !== "string") ||
-      !dialogSizes.has(projection.size) ||
+      !modalSizes.has(projection.size) ||
       (projection.defaultButtonId !== null &&
         typeof projection.defaultButtonId !== "string") ||
       typeof projection.canDismiss !== "boolean" ||
@@ -2411,52 +2411,52 @@
         typeof projection.dismissButtonId !== "string") ||
       typeof projection.claimed !== "boolean"
     ) {
-      throw new Error("dialog projection options are invalid");
+      throw new Error("modal projection options are invalid");
     }
     assertCanvasRootNode(projection.state);
     const root = projectNode(projection.state);
     assertInteractionSet(root, projection.interactions);
 
     const layer = document.createElement("div");
-    layer.className = "duetspad-dialog-layer";
+    layer.className = "duetspad-modal-layer";
 
-    const dialog = document.createElement("section");
-    dialog.className = `duetspad-dialog duetspad-dialog-${projection.size ?? "md"}`;
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    dialog.tabIndex = -1;
+    const modal = document.createElement("section");
+    modal.className = `duetspad-modal duetspad-modal-${projection.size ?? "md"}`;
+    modal.setAttribute("role", "modal");
+    modal.setAttribute("aria-modal", "true");
+    modal.tabIndex = -1;
 
     let closeButton = null;
     if (projection.title || projection.canDismiss) {
       const header = document.createElement("header");
-      header.className = "duetspad-dialog-header";
+      header.className = "duetspad-modal-header";
       const title = document.createElement("h2");
-      title.className = "duetspad-dialog-title";
-      title.textContent = projection.title ?? "Dialog";
-      const titleId = `duetspad-dialog-title-${projection.dialogId}`;
+      title.className = "duetspad-modal-title";
+      title.textContent = projection.title ?? "Modal";
+      const titleId = `duetspad-modal-title-${projection.modalId}`;
       title.id = titleId;
-      dialog.setAttribute("aria-labelledby", titleId);
+      modal.setAttribute("aria-labelledby", titleId);
       header.appendChild(title);
       if (projection.canDismiss) {
         closeButton = document.createElement("button");
         closeButton.type = "button";
         closeButton.className = "btn-close";
-        closeButton.setAttribute("aria-label", "Close dialog");
+        closeButton.setAttribute("aria-label", "Close modal");
         header.appendChild(closeButton);
       }
-      dialog.appendChild(header);
+      modal.appendChild(header);
     } else {
-      dialog.setAttribute("aria-label", "Dialog");
+      modal.setAttribute("aria-label", "Modal");
     }
 
-    dialog.appendChild(root);
-    layer.appendChild(dialog);
+    modal.appendChild(root);
+    layer.appendChild(modal);
     return {
-      id: projection.dialogId,
+      id: projection.modalId,
       revision: projection.revision,
       root,
       layer,
-      dialog,
+      modal,
       closeButton,
       canDismiss: projection.canDismiss === true,
       defaultButtonId: projection.defaultButtonId ?? null,
@@ -2465,7 +2465,7 @@
     };
   }
 
-  function captureDialogEdits(entry) {
+  function captureModalEdits(entry) {
     const occurrences = new Map();
     const edits = [];
     for (const field of fieldElements(entry.root)) {
@@ -2496,7 +2496,7 @@
     return edits;
   }
 
-  function restoreDialogEdits(entry, edits) {
+  function restoreModalEdits(entry, edits) {
     if (edits.length === 0) return;
     const candidates = new Map();
     for (const field of fieldElements(entry.root)) {
@@ -2541,136 +2541,136 @@
     }
   }
 
-  function addOrReplaceDialog(projection) {
-    if (!projection || typeof projection.dialogId !== "string") {
-      throw new Error("dialog projection id is invalid");
+  function addOrReplaceModal(projection) {
+    if (!projection || typeof projection.modalId !== "string") {
+      throw new Error("modal projection id is invalid");
     }
     if (!isRevision(projection.revision)) {
-      throw new Error("dialog projection revision is invalid");
+      throw new Error("modal projection revision is invalid");
     }
-    const existing = dialogMap.get(projection.dialogId);
+    const existing = modalMap.get(projection.modalId);
     if (existing && projection.revision <= existing.revision) return;
 
-    const edits = existing ? captureDialogEdits(existing) : [];
-    const entry = createDialogEntry(projection);
-    const container = document.getElementById("dialog-container");
+    const edits = existing ? captureModalEdits(existing) : [];
+    const entry = createModalEntry(projection);
+    const container = document.getElementById("modal-container");
     if (!container) return;
     if (existing) {
       existing.controller?.abort();
       entry.layer.hidden = existing.layer.hidden;
       existing.layer.replaceWith(entry.layer);
     } else {
-      dialogOrder.push(entry.id);
+      modalOrder.push(entry.id);
       container.appendChild(entry.layer);
     }
-    restoreDialogEdits(entry, edits);
-    dialogMap.set(entry.id, entry);
-    bindDialogProjection(entry, projection.interactions);
-    if (entry.pending) setDialogPending(entry, true);
-    updateDialogPresentation();
+    restoreModalEdits(entry, edits);
+    modalMap.set(entry.id, entry);
+    bindModalProjection(entry, projection.interactions);
+    if (entry.pending) setModalPending(entry, true);
+    updateModalPresentation();
   }
 
-  function removeDialog(dialogId) {
-    const entry = dialogMap.get(dialogId);
+  function removeModal(modalId) {
+    const entry = modalMap.get(modalId);
     if (!entry) return;
     entry.controller?.abort();
     entry.layer.remove();
-    dialogMap.delete(dialogId);
-    const index = dialogOrder.indexOf(dialogId);
-    if (index >= 0) dialogOrder.splice(index, 1);
-    updateDialogPresentation();
+    modalMap.delete(modalId);
+    const index = modalOrder.indexOf(modalId);
+    if (index >= 0) modalOrder.splice(index, 1);
+    updateModalPresentation();
     queueMicrotask(reconcileAttachmentUploads);
   }
 
-  function updateDialogPresentation() {
-    const activeId = dialogOrder[0];
+  function updateModalPresentation() {
+    const activeId = modalOrder[0];
     const app = document.getElementById("app");
     const toasts = document.getElementById("toast-container");
-    const hasDialog = activeId !== undefined;
-    if (hasDialog && !dialogRestoreFocus) {
-      dialogRestoreFocus = document.activeElement;
+    const hasModal = activeId !== undefined;
+    if (hasModal && !modalRestoreFocus) {
+      modalRestoreFocus = document.activeElement;
     }
-    if (app) app.inert = hasDialog;
-    if (toasts) toasts.inert = hasDialog;
+    if (app) app.inert = hasModal;
+    if (toasts) toasts.inert = hasModal;
 
-    for (const [id, entry] of dialogMap) {
+    for (const [id, entry] of modalMap) {
       entry.layer.hidden = id !== activeId;
     }
 
-    if (hasDialog) {
-      const entry = dialogMap.get(activeId);
+    if (hasModal) {
+      const entry = modalMap.get(activeId);
       queueMicrotask(() => {
-        if (dialogOrder[0] !== activeId) return;
-        if (entry.dialog.contains(document.activeElement)) return;
+        if (modalOrder[0] !== activeId) return;
+        if (entry.modal.contains(document.activeElement)) return;
         const preferred =
           !entry.pending && entry.defaultButtonId
-            ? dialogActionButton(entry.root, entry.defaultButtonId)
+            ? modalActionButton(entry.root, entry.defaultButtonId)
             : null;
         const first = entry.pending
           ? null
-          : entry.dialog.querySelector(
+          : entry.modal.querySelector(
               'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]):not([tabindex="-1"]), a[href]',
             );
-        (preferred ?? first ?? entry.dialog).focus();
+        (preferred ?? first ?? entry.modal).focus();
       });
-    } else if (dialogRestoreFocus) {
-      const restore = dialogRestoreFocus;
-      dialogRestoreFocus = null;
+    } else if (modalRestoreFocus) {
+      const restore = modalRestoreFocus;
+      modalRestoreFocus = null;
       if (restore.isConnected && typeof restore.focus === "function")
         restore.focus();
     }
   }
 
-  function resetDialogs() {
-    for (const entry of dialogMap.values()) entry.controller?.abort();
-    dialogMap.clear();
-    dialogOrder.length = 0;
-    const container = document.getElementById("dialog-container");
+  function resetModals() {
+    for (const entry of modalMap.values()) entry.controller?.abort();
+    modalMap.clear();
+    modalOrder.length = 0;
+    const container = document.getElementById("modal-container");
     if (container) container.textContent = "";
-    updateDialogPresentation();
+    updateModalPresentation();
     queueMicrotask(reconcileAttachmentUploads);
   }
 
-  function requestDialogResync() {
-    if (dialogResyncScheduled) return;
-    dialogResyncScheduled = true;
+  function requestModalResync() {
+    if (modalResyncScheduled) return;
+    modalResyncScheduled = true;
     queueMicrotask(() => {
-      dialogResyncScheduled = false;
+      modalResyncScheduled = false;
       activeEventStream?.close();
       activeEventStream = null;
       subscribeSession?.(sessionId);
     });
   }
 
-  function handleDialogEvent(msg) {
+  function handleModalEvent(msg) {
     try {
-      if (msg.type === PAD_EVENTS.dialogSnapshot) {
-        if (!Array.isArray(msg.dialogs)) {
-          throw new Error("dialog snapshot must contain an array");
+      if (msg.type === PAD_EVENTS.modalSnapshot) {
+        if (!Array.isArray(msg.modals)) {
+          throw new Error("modal snapshot must contain an array");
         }
         const retainedIds = new Set();
-        for (const projection of msg.dialogs) {
-          if (!projection || typeof projection.dialogId !== "string") {
-            throw new Error("dialog snapshot projection id is invalid");
+        for (const projection of msg.modals) {
+          if (!projection || typeof projection.modalId !== "string") {
+            throw new Error("modal snapshot projection id is invalid");
           }
-          if (retainedIds.has(projection.dialogId)) {
-            throw new Error("dialog snapshot contains a duplicate id");
+          if (retainedIds.has(projection.modalId)) {
+            throw new Error("modal snapshot contains a duplicate id");
           }
-          retainedIds.add(projection.dialogId);
+          retainedIds.add(projection.modalId);
         }
-        for (const dialogId of [...dialogOrder]) {
-          if (!retainedIds.has(dialogId)) removeDialog(dialogId);
+        for (const modalId of [...modalOrder]) {
+          if (!retainedIds.has(modalId)) removeModal(modalId);
         }
-        for (const projection of msg.dialogs) addOrReplaceDialog(projection);
-        dialogOrder.splice(0, dialogOrder.length, ...retainedIds);
-        updateDialogPresentation();
+        for (const projection of msg.modals) addOrReplaceModal(projection);
+        modalOrder.splice(0, modalOrder.length, ...retainedIds);
+        updateModalPresentation();
       } else if (
-        msg.type === PAD_EVENTS.dialogOpen ||
-        msg.type === PAD_EVENTS.dialogReplace
+        msg.type === PAD_EVENTS.modalOpen ||
+        msg.type === PAD_EVENTS.modalReplace
       ) {
-        addOrReplaceDialog(msg.dialog);
-      } else if (msg.type === PAD_EVENTS.dialogPatch) {
-        const entry = dialogMap.get(msg.dialogId);
+        addOrReplaceModal(msg.modal);
+      } else if (msg.type === PAD_EVENTS.modalPatch) {
+        const entry = modalMap.get(msg.modalId);
         if (
           !entry ||
           !isRevision(msg.baseRevision) ||
@@ -2678,19 +2678,19 @@
           msg.revision !== msg.baseRevision + 1 ||
           entry.revision !== msg.baseRevision
         ) {
-          requestDialogResync();
+          requestModalResync();
           return;
         }
         preflightCanvasPatch(entry.root, msg.operations, msg.interactions);
         applyCanvasPatch(entry.root, msg.operations);
         entry.revision = msg.revision;
-        bindDialogProjection(entry, msg.interactions);
-      } else if (msg.type === PAD_EVENTS.dialogClose) {
-        removeDialog(msg.dialogId);
+        bindModalProjection(entry, msg.interactions);
+      } else if (msg.type === PAD_EVENTS.modalClose) {
+        removeModal(msg.modalId);
       }
     } catch (err) {
-      console.error("[DuetsPad] dialog projection rejected", err);
-      requestDialogResync();
+      console.error("[DuetsPad] modal projection rejected", err);
+      requestModalResync();
     }
   }
 
@@ -2702,7 +2702,7 @@
    * 2. Deletes the old session on the server (best-effort).
    * 3. Creates a new session via POST /sessions.
    * 4. Updates sessionStorage and the module-level sessionId.
-   * 5. Clears Canvas, Timeline, and Dialog state (the initial SSE burst will re-populate them).
+   * 5. Clears Canvas, Timeline, and Modal state (the initial SSE burst will re-populate them).
    * 6. Opens a new event stream on the new session.
    * The editor content is intentionally left untouched.
    */
@@ -2758,7 +2758,7 @@
     // so the old content does not persist during the brief gap.
     resetCanvases();
     resetTimeline();
-    resetDialogs();
+    resetModals();
 
     // Step 6: open the new event stream.
     sessionSwapInProgress = false;
@@ -3223,8 +3223,8 @@
               handleCanvasEvent(msg);
             } else if (msg.type.startsWith("timeline.")) {
               handleTimelineEvent(msg);
-            } else if (msg.type.startsWith("dialog.")) {
-              handleDialogEvent(msg);
+            } else if (msg.type.startsWith("modal.")) {
+              handleModalEvent(msg);
             } else if (msg.type === PAD_EVENTS.typeDeclaration) {
               addExtraLib(msg);
             } else if (msg.type === PAD_EVENTS.taggedTemplateSnapshot) {

@@ -1,5 +1,5 @@
 using Duets.Pad;
-using Duets.Pad.Dialogs;
+using Duets.Pad.Modals;
 using Duets.Pad.Rendering;
 
 namespace Duets.Pad.Tests;
@@ -8,13 +8,13 @@ public sealed class UIGlobalTests
 {
     private static UIGlobal CreateUIGlobal(
         IToastHost? toastHost = null,
-        IDialogHost? dialogHost = null
+        IModalHost? modalHost = null
     ) =>
         new(
             new DisplayRenderer([]),
             DumpOptions.Default,
             toastHost: toastHost,
-            dialogHost: dialogHost
+            modalHost: modalHost
         );
 
     // Positive: Toast
@@ -99,15 +99,15 @@ public sealed class UIGlobalTests
         Assert.Equal(600_000, host.Options?.DurationMilliseconds);
     }
 
-    // Positive: Dialog
+    // Positive: Modal
 
     [Fact]
-    public void Dialog_coerces_and_trims_supported_options()
+    public void Modal_coerces_and_trims_supported_options()
     {
-        var host = new RecordingDialogHost();
-        var ui = CreateUIGlobal(dialogHost: host);
+        var host = new RecordingModalHost();
+        var ui = CreateUIGlobal(modalHost: host);
 
-        var handle = ui.Dialog(
+        var handle = ui.Modal(
             "body",
             _ => { },
             new Dictionary<string, object?>
@@ -139,24 +139,24 @@ public sealed class UIGlobalTests
     }
 
     [Fact]
-    public void Dialog_with_explicit_null_dismiss_button_disables_dismissal()
+    public void Modal_with_explicit_null_dismiss_button_disables_dismissal()
     {
-        var host = new RecordingDialogHost();
-        var ui = CreateUIGlobal(dialogHost: host);
+        var host = new RecordingModalHost();
+        var ui = CreateUIGlobal(modalHost: host);
 
-        ui.Dialog("body", _ => { }, new Dictionary<string, object?> { ["dismissButtonId"] = null });
+        ui.Modal("body", _ => { }, new Dictionary<string, object?> { ["dismissButtonId"] = null });
 
         Assert.False(host.Options!.CanDismiss);
         Assert.Null(host.Options.DismissButtonId);
     }
 
     [Fact]
-    public void Dialog_with_duplicate_button_ids_throws()
+    public void Modal_with_duplicate_button_ids_throws()
     {
-        var ui = CreateUIGlobal(dialogHost: new RecordingDialogHost());
+        var ui = CreateUIGlobal(modalHost: new RecordingModalHost());
 
         Assert.Throws<ArgumentException>(() =>
-            ui.Dialog(
+            ui.Modal(
                 "body",
                 _ => { },
                 new Dictionary<string, object?> { ["buttons"] = new object?[] { "Same", " Same " } }
@@ -165,13 +165,13 @@ public sealed class UIGlobalTests
     }
 
     [Fact]
-    public void Dialog_without_host_throws()
+    public void Modal_without_host_throws()
     {
         var ui = CreateUIGlobal();
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ui.Dialog("body", _ => { }));
+        var ex = Assert.Throws<InvalidOperationException>(() => ui.Modal("body", _ => { }));
 
-        Assert.Contains("no dialog host", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("no modal host", ex.Message, StringComparison.Ordinal);
     }
 
     // Positive: RawHtml
@@ -1334,28 +1334,28 @@ public sealed class UIGlobalTests
         }
     }
 
-    private sealed class RecordingDialogHost : IDialogHost
+    private sealed class RecordingModalHost : IModalHost
     {
         private readonly Guid _id = Guid.NewGuid();
         private bool _isOpen = true;
 
-        public DialogOptions? Options { get; private set; }
+        public ModalOptions? Options { get; private set; }
 
-        public DisplayDialog ShowDialog(
+        public DisplayModal ShowModal(
             object? body,
-            Action<DialogResult> onResult,
-            DialogOptions options
+            Action<ModalResult> onResult,
+            ModalOptions options
         )
         {
             this.Options = options;
-            return new DisplayDialog(this, this._id);
+            return new DisplayModal(this, this._id);
         }
 
-        public bool IsDialogOpen(Guid dialogId) => this._isOpen && dialogId == this._id;
+        public bool IsModalOpen(Guid modalId) => this._isOpen && modalId == this._id;
 
-        public void CloseDialog(Guid dialogId)
+        public void CloseModal(Guid modalId)
         {
-            if (dialogId == this._id)
+            if (modalId == this._id)
             {
                 this._isOpen = false;
             }

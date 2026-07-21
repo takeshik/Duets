@@ -212,7 +212,7 @@ internal sealed class SessionRegistry : IDisposable
                 this._options.MaxAttachmentBytesPerSession,
                 this._options.MaxAttachmentsPerSession,
                 this._options.AttachmentStorageDrainTimeout,
-                this._options.MaxActiveDialogs
+                this._options.MaxActiveModals
             );
 
             // DuetsPadSession now owns and disposes both resources. Clearing the local ownership

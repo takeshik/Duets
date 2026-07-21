@@ -3,8 +3,8 @@ using System.Text;
 using System.Threading.Channels;
 using Duets.Completions;
 using Duets.Pad.Attachments;
-using Duets.Pad.Dialogs;
 using Duets.Pad.Interactions;
+using Duets.Pad.Modals;
 using Duets.Pad.Protocol;
 using Duets.Pad.Rendering;
 using Duets.Pad.State;
@@ -18,7 +18,7 @@ namespace Duets.Pad;
 /// <remarks>
 /// <para>
 /// A DuetsPad session owns one DuetsSession and keeps the associated Canvas,
-/// Timeline, Dialog, and object-renderer state together. The service layer is
+/// Timeline, Modal, and object-renderer state together. The service layer is
 /// responsible for creating session identifiers, routing HTTP/SSE requests to
 /// the matching session, and disposing idle or explicitly reset sessions.
 /// </para>
@@ -56,7 +56,7 @@ namespace Duets.Pad;
 /// as new as any update the subscriber could subsequently receive. To guarantee this without a
 /// TOCTOU gap, <see cref="SubscribeEvents"/> acquires <c>_stateLock</c> and, <em>while still
 /// holding it</em>, both registers the writer and immediately enqueues the current-state initial
-/// events (<c>canvas.snapshot</c>, <c>timeline.reset</c>, <c>dialog.snapshot</c>, and any existing
+/// events (<c>canvas.snapshot</c>, <c>timeline.reset</c>, <c>modal.snapshot</c>, and any existing
 /// type declarations)
 /// to that writer. Subsequent mutations enqueue to all registered writers under the same lock.
 /// As a result a subscriber either (a) registers before a mutation and therefore sees the
@@ -86,7 +86,7 @@ internal sealed class DuetsPadSession
         IFieldHost,
         IFilePickerHost,
         IToastHost,
-        IDialogHost
+        IModalHost
 {
     private sealed record CanvasProjection(CanvasState State, long Revision)
     {
@@ -129,7 +129,7 @@ internal sealed class DuetsPadSession
     private long _directAttachmentSequence;
 
     private readonly int? _timelineEntryLimit;
-    private readonly int? _maxActiveDialogs;
+    private readonly int? _maxActiveModals;
     private readonly bool _taggedTemplateSnapshotsEnabled;
     private readonly int _taggedTemplateCompletionRateLimitPerSecond;
     private readonly TimeSpan _taggedTemplateCompletionTimeout;
@@ -153,7 +153,7 @@ internal sealed class DuetsPadSession
             DuetsPadServiceOptions.DefaultMaxAttachmentBytesPerSession,
         int maxAttachmentsPerSession = DuetsPadServiceOptions.DefaultMaxAttachmentsPerSession,
         TimeSpan? attachmentStorageDrainTimeout = null,
-        int? maxActiveDialogs = DuetsPadServiceOptions.DefaultMaxActiveDialogs
+        int? maxActiveModals = DuetsPadServiceOptions.DefaultMaxActiveModals
     )
     {
         this.Id =
@@ -168,11 +168,11 @@ internal sealed class DuetsPadSession
                 nameof(timelineEntryLimit),
                 "Timeline entry limit must be positive."
             );
-        this._maxActiveDialogs = maxActiveDialogs is null or > 0
-            ? maxActiveDialogs
+        this._maxActiveModals = maxActiveModals is null or > 0
+            ? maxActiveModals
             : throw new ArgumentOutOfRangeException(
-                nameof(maxActiveDialogs),
-                "Maximum active dialogs must be positive."
+                nameof(maxActiveModals),
+                "Maximum active modals must be positive."
             );
         this._taggedTemplateSnapshotsEnabled = taggedTemplateSnapshotsEnabled;
         this._taggedTemplateCompletionRateLimitPerSecond =
@@ -237,8 +237,8 @@ internal sealed class DuetsPadSession
         ["default"] = new(CanvasState.Empty, Revision: 0),
     };
     private TimelineState _timelineState = TimelineState.Empty;
-    private readonly Dictionary<Guid, DialogProjection> _dialogProjections = [];
-    private readonly List<Guid> _dialogOrder = [];
+    private readonly Dictionary<Guid, ModalProjection> _modalProjections = [];
+    private readonly List<Guid> _modalOrder = [];
 
     public IReadOnlyList<IObjectRenderer> ObjectRenderers { get; }
 
@@ -478,7 +478,7 @@ internal sealed class DuetsPadSession
 
     /// <summary>
     /// Re-renders <paramref name="slot"/>'s current content and updates every Canvas, Timeline, and
-    /// Dialog location where the slot is currently placed. Called synchronously from the eval call
+    /// Modal location where the slot is currently placed. Called synchronously from the eval call
     /// stack when script assigns <c>slot.content</c>; must not acquire <c>_evalSemaphore</c>. Never
     /// throws.
     /// </summary>
@@ -513,7 +513,7 @@ internal sealed class DuetsPadSession
             {
                 this.UpdateSlotInCanvases(slot.Id, content);
                 this.UpdateSlotInTimeline(slot.Id, content);
-                this.UpdateSlotInDialogs(slot.Id, content);
+                this.UpdateSlotInModals(slot.Id, content);
                 this.PruneFieldBackedState();
             }
         }
@@ -610,11 +610,11 @@ internal sealed class DuetsPadSession
         }
     }
 
-    private void UpdateSlotInDialogs(Guid slotId, DisplayContent content)
+    private void UpdateSlotInModals(Guid slotId, DisplayContent content)
     {
-        foreach (var dialogId in this._dialogOrder.ToList())
+        foreach (var modalId in this._modalOrder.ToList())
         {
-            var projection = this._dialogProjections[dialogId];
+            var projection = this._modalProjections[modalId];
             if (projection.Claimed)
             {
                 continue;
@@ -638,11 +638,11 @@ internal sealed class DuetsPadSession
                 continue;
             }
 
-            var plan = this._interactionStore.PrepareReplaceDialogSlots(
-                dialogId,
+            var plan = this._interactionStore.PrepareReplaceModalSlots(
+                modalId,
                 [.. markers.Select(m => new SlotInteractionReplacement(m, content.Interactions))]
             );
-            this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+            this.CommitModalMutation(projection, newState, projection.Revision + 1, plan);
         }
     }
 
@@ -669,7 +669,7 @@ internal sealed class DuetsPadSession
             }
         }
 
-        foreach (var projection in this._dialogProjections.Values)
+        foreach (var projection in this._modalProjections.Values)
         {
             if (SlotMarker.Find(projection.State.Root, slotId).Count > 0)
             {
@@ -708,7 +708,7 @@ internal sealed class DuetsPadSession
 
     /// <summary>
     /// Stores <paramref name="value"/> for <paramref name="fieldId"/> and re-projects every
-    /// placement of the field's marker in Canvas, Timeline, and Dialog output. Called synchronously
+    /// placement of the field's marker in Canvas, Timeline, and Modal output. Called synchronously
     /// from the eval call stack when script assigns <c>input.value</c>; must not acquire
     /// <c>_evalSemaphore</c>. Never throws.
     /// </summary>
@@ -722,7 +722,7 @@ internal sealed class DuetsPadSession
                 this._fieldStore.SetValue(fieldId, normalized);
                 this.UpdateFieldInCanvases(fieldId, kind, normalized);
                 this.UpdateFieldInTimeline(fieldId, kind, normalized);
-                this.UpdateFieldInDialogs(fieldId, kind, normalized);
+                this.UpdateFieldInModals(fieldId, kind, normalized);
 
                 // No explicit prune here: a value update only touches markers that are already
                 // placed (UpdateFieldInCanvases already prunes via CommitCanvasMutation when it
@@ -960,7 +960,7 @@ internal sealed class DuetsPadSession
                 }
             }
 
-            foreach (var projection in this._dialogProjections.Values)
+            foreach (var projection in this._modalProjections.Values)
             {
                 var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, pickerId);
                 if (markers.Count > 0 && kind == FieldKind.File)
@@ -1047,9 +1047,9 @@ internal sealed class DuetsPadSession
                 this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
             }
 
-            foreach (var dialogId in this._dialogOrder.ToList())
+            foreach (var modalId in this._modalOrder.ToList())
             {
-                var projection = this._dialogProjections[dialogId];
+                var projection = this._modalProjections[modalId];
                 if (projection.Claimed)
                 {
                     continue;
@@ -1069,13 +1069,13 @@ internal sealed class DuetsPadSession
                     continue;
                 }
 
-                var plan = new DialogInteractionCommitPlan(
-                    dialogId,
-                    this._interactionStore.GetDialogInteractions(dialogId),
+                var plan = new ModalInteractionCommitPlan(
+                    modalId,
+                    this._interactionStore.GetModalInteractions(modalId),
                     [],
                     []
                 );
-                this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+                this.CommitModalMutation(projection, newState, projection.Revision + 1, plan);
             }
         }
     }
@@ -1152,7 +1152,7 @@ internal sealed class DuetsPadSession
         this._fieldStore.SetValue(fieldId, value);
         this.CommitFieldValueInCanvases(fieldId, value);
         this.CommitFieldValueInTimeline(fieldId, value);
-        this.CommitFieldValueInDialogs(fieldId, value);
+        this.CommitFieldValueInModals(fieldId, value);
     }
 
     /// <summary>
@@ -1182,7 +1182,7 @@ internal sealed class DuetsPadSession
             }
         }
 
-        foreach (var projection in this._dialogProjections.Values)
+        foreach (var projection in this._modalProjections.Values)
         {
             var (markers, candidate) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
             if (markers.Count > 0 && candidate is { } resolved)
@@ -1276,11 +1276,11 @@ internal sealed class DuetsPadSession
         }
     }
 
-    private void UpdateFieldInDialogs(Guid fieldId, FieldKind kind, string value)
+    private void UpdateFieldInModals(Guid fieldId, FieldKind kind, string value)
     {
-        foreach (var dialogId in this._dialogOrder.ToList())
+        foreach (var modalId in this._modalOrder.ToList())
         {
-            var projection = this._dialogProjections[dialogId];
+            var projection = this._modalProjections[modalId];
             if (projection.Claimed)
             {
                 continue;
@@ -1300,13 +1300,13 @@ internal sealed class DuetsPadSession
                 continue;
             }
 
-            var plan = new DialogInteractionCommitPlan(
-                dialogId,
-                this._interactionStore.GetDialogInteractions(dialogId),
+            var plan = new ModalInteractionCommitPlan(
+                modalId,
+                this._interactionStore.GetModalInteractions(modalId),
                 [],
                 []
             );
-            this.CommitDialogMutation(projection, newState, projection.Revision + 1, plan);
+            this.CommitModalMutation(projection, newState, projection.Revision + 1, plan);
         }
     }
 
@@ -1374,14 +1374,14 @@ internal sealed class DuetsPadSession
         }
     }
 
-    private void CommitFieldValueInDialogs(Guid fieldId, string value)
+    private void CommitFieldValueInModals(Guid fieldId, string value)
     {
-        // This path cannot interleave with a claimed dialog: invoke snapshots are applied before
+        // This path cannot interleave with a claimed modal: invoke snapshots are applied before
         // the handler claims it, while standalone HTTP commits wait for the same eval semaphore and
-        // therefore run only after the claiming callback has closed the dialog.
-        foreach (var dialogId in this._dialogOrder.ToList())
+        // therefore run only after the claiming callback has closed the modal.
+        foreach (var modalId in this._modalOrder.ToList())
         {
-            var projection = this._dialogProjections[dialogId];
+            var projection = this._modalProjections[modalId];
             var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
             if (markers.Count == 0 || kind is null)
             {
@@ -1393,7 +1393,7 @@ internal sealed class DuetsPadSession
             var newState = new CanvasState(newRoot);
             if (!newState.Equals(projection.State))
             {
-                this._dialogProjections[dialogId] = projection with { State = newState };
+                this._modalProjections[modalId] = projection with { State = newState };
             }
         }
     }
@@ -1424,7 +1424,7 @@ internal sealed class DuetsPadSession
             FieldMarker.CollectIds(entry.Body, retained);
         }
 
-        foreach (var projection in this._dialogProjections.Values)
+        foreach (var projection in this._modalProjections.Values)
         {
             FieldMarker.CollectIds(projection.State.Root, retained);
         }
@@ -1849,19 +1849,19 @@ internal sealed class DuetsPadSession
         );
     }
 
-    DisplayDialog IDialogHost.ShowDialog(
+    DisplayModal IModalHost.ShowModal(
         object? body,
-        Action<DialogResult> onResult,
-        DialogOptions options
+        Action<ModalResult> onResult,
+        ModalOptions options
     )
     {
         lock (this._stateLock)
         {
-            this.ThrowIfDialogLimitReached();
+            this.ThrowIfModalLimitReached();
         }
 
-        var dialogId = Guid.NewGuid();
-        var handle = new DisplayDialog(this, dialogId);
+        var modalId = Guid.NewGuid();
+        var handle = new DisplayModal(this, modalId);
         var (renderedBody, isError) = this.TryRenderContent(body, this.DumpOptions);
         if (isError)
         {
@@ -1869,24 +1869,24 @@ internal sealed class DuetsPadSession
             return handle;
         }
 
-        var content = this.BuildDialogContent(dialogId, renderedBody, onResult, options);
+        var content = this.BuildModalContent(modalId, renderedBody, onResult, options);
         var state = CanvasState.Empty.Set(new ElementChildren(content.Body));
 
         lock (this._stateLock)
         {
-            this.ThrowIfDialogLimitReached();
+            this.ThrowIfModalLimitReached();
 
             ValidateCanvasInteractions(state, [], content.Interactions, childIndex: 0);
-            var plan = this._interactionStore.PrepareSetDialogInteractions(
-                dialogId,
+            var plan = this._interactionStore.PrepareSetModalInteractions(
+                modalId,
                 content.Interactions,
                 childIndex: 0
             );
-            var projection = new DialogProjection(dialogId, state, 0, options);
-            var interactions = this._interactionStore.CommitDialogInteractions(plan);
-            this._dialogProjections.Add(dialogId, projection);
-            this._dialogOrder.Add(dialogId);
-            this.BroadcastDialog(DialogEventMessage.Open(projection, interactions));
+            var projection = new ModalProjection(modalId, state, 0, options);
+            var interactions = this._interactionStore.CommitModalInteractions(plan);
+            this._modalProjections.Add(modalId, projection);
+            this._modalOrder.Add(modalId);
+            this.BroadcastModal(ModalEventMessage.Open(projection, interactions));
             this.PruneFieldBackedState();
         }
 
@@ -1894,37 +1894,37 @@ internal sealed class DuetsPadSession
     }
 
     // Must be called while _stateLock is held so the final commit check remains authoritative.
-    private void ThrowIfDialogLimitReached()
+    private void ThrowIfModalLimitReached()
     {
-        if (this._maxActiveDialogs is int maximum && this._dialogProjections.Count >= maximum)
+        if (this._maxActiveModals is int maximum && this._modalProjections.Count >= maximum)
         {
             throw new InvalidOperationException(
-                $"The session cannot retain more than {maximum} active dialogs."
+                $"The session cannot retain more than {maximum} active modals."
             );
         }
     }
 
-    bool IDialogHost.IsDialogOpen(Guid dialogId)
+    bool IModalHost.IsModalOpen(Guid modalId)
     {
         lock (this._stateLock)
         {
-            return this._dialogProjections.ContainsKey(dialogId);
+            return this._modalProjections.ContainsKey(modalId);
         }
     }
 
-    void IDialogHost.CloseDialog(Guid dialogId)
+    void IModalHost.CloseModal(Guid modalId)
     {
         lock (this._stateLock)
         {
-            this.CloseDialog(dialogId, allowClaimed: false);
+            this.CloseModal(modalId, allowClaimed: false);
         }
     }
 
-    private DisplayContent BuildDialogContent(
-        Guid dialogId,
+    private DisplayContent BuildModalContent(
+        Guid modalId,
         DisplayContent body,
-        Action<DialogResult> onResult,
-        DialogOptions options
+        Action<ModalResult> onResult,
+        ModalOptions options
     )
     {
         var bodyContainer = DisplayContent.Element(
@@ -1936,18 +1936,18 @@ internal sealed class DuetsPadSession
             DisplayContent.Element(
                 "span",
                 new ElementAttributes(
-                    new KeyValuePair<string, string?>("data-duetspad-dialog-action", button.Id)
+                    new KeyValuePair<string, string?>("data-duetspad-modal-action", button.Id)
                 ),
                 [
                     DisplayContent.Button(
                         button.Label,
                         () =>
-                            this.ResolveDialog(
-                                dialogId,
+                            this.ResolveModal(
+                                modalId,
                                 onResult,
-                                new DialogResult("action", button.Id)
+                                new ModalResult("action", button.Id)
                             ),
-                        new ButtonOptions { ClassName = ResolveDialogButtonClass(button.Variant) }
+                        new ButtonOptions { ClassName = ResolveModalButtonClass(button.Variant) }
                     ),
                 ]
             )
@@ -1973,7 +1973,7 @@ internal sealed class DuetsPadSession
                     "button",
                     new ElementAttributes(
                         new KeyValuePair<string, string?>(
-                            "data-duetspad-dialog-dismiss-handler",
+                            "data-duetspad-modal-dismiss-handler",
                             null
                         ),
                         new KeyValuePair<string, string?>("class", "d-none"),
@@ -1986,10 +1986,10 @@ internal sealed class DuetsPadSession
                         DisplayPath.Root,
                         InteractionEvent.Click,
                         () =>
-                            this.ResolveDialog(
-                                dialogId,
+                            this.ResolveModal(
+                                modalId,
                                 onResult,
-                                new DialogResult("dismiss", options.DismissButtonId)
+                                new ModalResult("dismiss", options.DismissButtonId)
                             )
                     ),
                 ])
@@ -2000,13 +2000,13 @@ internal sealed class DuetsPadSession
         return DisplayContent.Element(
             "div",
             new ElementAttributes(
-                new KeyValuePair<string, string?>("data-duetspad-dialog-content", null)
+                new KeyValuePair<string, string?>("data-duetspad-modal-content", null)
             ),
             children
         );
     }
 
-    private static string ResolveDialogButtonClass(string variant) =>
+    private static string ResolveModalButtonClass(string variant) =>
         variant switch
         {
             "primary" => "btn btn-primary",
@@ -2014,20 +2014,20 @@ internal sealed class DuetsPadSession
             _ => "btn btn-outline-secondary",
         };
 
-    private void ResolveDialog(Guid dialogId, Action<DialogResult> onResult, DialogResult result)
+    private void ResolveModal(Guid modalId, Action<ModalResult> onResult, ModalResult result)
     {
         lock (this._stateLock)
         {
             if (
-                !this._dialogProjections.TryGetValue(dialogId, out var projection)
+                !this._modalProjections.TryGetValue(modalId, out var projection)
                 || projection.Claimed
             )
             {
                 return;
             }
 
-            this._dialogProjections[dialogId] = projection with { Claimed = true };
-            this._interactionStore.ClearDialogInteractions(dialogId);
+            this._modalProjections[modalId] = projection with { Claimed = true };
+            this._interactionStore.ClearModalInteractions(modalId);
         }
 
         try
@@ -2038,25 +2038,25 @@ internal sealed class DuetsPadSession
         {
             lock (this._stateLock)
             {
-                this.CloseDialog(dialogId, allowClaimed: true);
+                this.CloseModal(modalId, allowClaimed: true);
             }
         }
     }
 
-    private void CloseDialog(Guid dialogId, bool allowClaimed)
+    private void CloseModal(Guid modalId, bool allowClaimed)
     {
         if (
-            !this._dialogProjections.TryGetValue(dialogId, out var projection)
+            !this._modalProjections.TryGetValue(modalId, out var projection)
             || (projection.Claimed && !allowClaimed)
         )
         {
             return;
         }
 
-        this._dialogProjections.Remove(dialogId);
-        this._dialogOrder.Remove(dialogId);
-        this._interactionStore.ClearDialogInteractions(dialogId);
-        this.BroadcastDialog(DialogEventMessage.Close(dialogId));
+        this._modalProjections.Remove(modalId);
+        this._modalOrder.Remove(modalId);
+        this._interactionStore.ClearModalInteractions(modalId);
+        this.BroadcastModal(ModalEventMessage.Close(modalId));
         this.PruneFieldBackedState();
     }
 
@@ -2156,8 +2156,8 @@ internal sealed class DuetsPadSession
                 this._eventSubscribers.Clear();
 
                 this._canvasProjections.Clear();
-                this._dialogProjections.Clear();
-                this._dialogOrder.Clear();
+                this._modalProjections.Clear();
+                this._modalOrder.Clear();
                 this._interactionStore.Clear();
                 this._fieldStore.Clear();
             }
@@ -2403,18 +2403,18 @@ internal sealed class DuetsPadSession
         return SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
     }
 
-    private void CommitDialogMutation(
-        DialogProjection oldProjection,
+    private void CommitModalMutation(
+        ModalProjection oldProjection,
         CanvasState newState,
         long revision,
-        DialogInteractionCommitPlan interactions
+        ModalInteractionCommitPlan interactions
     )
     {
         ValidateCanvasInteractions(newState, interactions.Interactions);
         var projection = oldProjection with { State = newState, Revision = revision };
-        var replace = DialogEventMessage.Replace(projection, interactions.Interactions);
+        var replace = ModalEventMessage.Replace(projection, interactions.Interactions);
         var operations = this._canvasDiffer.Diff(oldProjection.State, newState);
-        var patch = DialogEventMessage.Patch(
+        var patch = ModalEventMessage.Patch(
             oldProjection.Id,
             oldProjection.Revision,
             revision,
@@ -2423,9 +2423,9 @@ internal sealed class DuetsPadSession
         );
         var message = SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
 
-        this._interactionStore.CommitDialogInteractions(interactions);
-        this._dialogProjections[oldProjection.Id] = projection;
-        this.BroadcastDialog(message);
+        this._interactionStore.CommitModalInteractions(interactions);
+        this._modalProjections[oldProjection.Id] = projection;
+        this.BroadcastModal(message);
         this.PruneFieldBackedState();
     }
 
@@ -2442,9 +2442,9 @@ internal sealed class DuetsPadSession
         }
     }
 
-    private void BroadcastDialog(DialogEventMessage message)
+    private void BroadcastModal(ModalEventMessage message)
     {
-        var padMessage = new PadEventMessage.Dialog(message);
+        var padMessage = new PadEventMessage.Modal(message);
         foreach (var (_, writer) in this._eventSubscribers)
         {
             writer.TryWrite(padMessage);
@@ -2454,7 +2454,7 @@ internal sealed class DuetsPadSession
     private static int SerializedByteLength(CanvasEventMessage message) =>
         Encoding.UTF8.GetByteCount(SseSerializer.Serialize(message));
 
-    private static int SerializedByteLength(DialogEventMessage message) =>
+    private static int SerializedByteLength(ModalEventMessage message) =>
         Encoding.UTF8.GetByteCount(SseSerializer.Serialize(message));
 
     private static bool CanvasInteractionsEqual(
@@ -2691,7 +2691,7 @@ internal sealed class DuetsPadSession
     /// Registers a unified SSE subscriber that receives projected-surface, type-declaration, and
     /// control events on a single channel. The initial snapshot is enqueued under
     /// <c>_stateLock</c> in the order: <c>canvas.snapshot</c> → <c>timeline.reset</c> →
-    /// <c>dialog.snapshot</c> → <c>type.declaration</c> (one per registered declaration).
+    /// <c>modal.snapshot</c> → <c>type.declaration</c> (one per registered declaration).
     /// </summary>
     /// <param name="writer">The channel writer to receive <see cref="PadEventMessage"/> items.</param>
     /// <param name="declarations">
@@ -2731,7 +2731,7 @@ internal sealed class DuetsPadSession
             this._eventSubscribers[key] = writer;
 
             // Initial snapshot order: canvas.snapshot (one per canvas) → timeline.reset →
-            // dialog.snapshot → type.declaration(s).
+            // modal.snapshot → type.declaration(s).
             foreach (var (canvasName, projection) in this._canvasProjections)
             {
                 writer.TryWrite(
@@ -2757,11 +2757,11 @@ internal sealed class DuetsPadSession
             );
 
             writer.TryWrite(
-                new PadEventMessage.Dialog(
-                    DialogEventMessage.Snapshot([
-                        .. this._dialogOrder.Select(dialogId => new DialogSnapshotItem(
-                            this._dialogProjections[dialogId],
-                            this._interactionStore.GetDialogInteractions(dialogId)
+                new PadEventMessage.Modal(
+                    ModalEventMessage.Snapshot([
+                        .. this._modalOrder.Select(modalId => new ModalSnapshotItem(
+                            this._modalProjections[modalId],
+                            this._interactionStore.GetModalInteractions(modalId)
                         )),
                     ])
                 )

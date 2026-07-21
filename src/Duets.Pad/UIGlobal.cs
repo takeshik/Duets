@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Globalization;
-using Duets.Pad.Dialogs;
+using Duets.Pad.Modals;
 using Duets.Pad.Rendering;
 
 namespace Duets.Pad;
@@ -13,7 +13,7 @@ namespace Duets.Pad;
 /// <see cref="Table"/>, and the form-input factories (<see cref="TextBox"/>, <see cref="TextArea"/>,
 /// <see cref="NumberBox"/>, <see cref="CheckBox"/>, <see cref="DropDown"/>, <see cref="Slider"/>,
 /// <see cref="RadioGroup"/>) that return a <see cref="DisplayInput"/> (ADR-47), plus the
-/// imperative <see cref="Toast"/> notification command and <see cref="Dialog"/> modal surface.
+/// imperative <see cref="Toast"/> notification command and <see cref="Modal"/> modal surface.
 /// </summary>
 internal sealed class UIGlobal(
     DisplayRenderer renderer,
@@ -21,7 +21,7 @@ internal sealed class UIGlobal(
     ISlotHost? slotHost = null,
     IFieldHost? fieldHost = null,
     IToastHost? toastHost = null,
-    IDialogHost? dialogHost = null
+    IModalHost? modalHost = null
 )
 {
     private readonly DisplayRenderer _renderer =
@@ -39,8 +39,8 @@ internal sealed class UIGlobal(
     // Null only in rendering-focused unit tests that never call Toast; production always supplies it.
     private readonly IToastHost? _toastHost = toastHost;
 
-    // Null only in rendering-focused unit tests that never call Dialog; production always supplies it.
-    private readonly IDialogHost? _dialogHost = dialogHost;
+    // Null only in rendering-focused unit tests that never call Modal; production always supplies it.
+    private readonly IModalHost? _modalHost = modalHost;
 
     /// <summary>
     /// Returns a mutable <see cref="DisplaySlot"/> whose <c>content</c> can be reassigned to update
@@ -227,17 +227,17 @@ internal sealed class UIGlobal(
 
     /// <summary>
     /// Opens a server-canonical modal containing arbitrary rendered content and invokes
-    /// <paramref name="onResult"/> in a later interaction turn. (JS: <c>ui.dialog</c>)
+    /// <paramref name="onResult"/> in a later interaction turn. (JS: <c>ui.modal</c>)
     /// </summary>
     /// <returns>
-    /// A session-bound dialog handle. If <paramref name="body"/> cannot be rendered, the failure is
+    /// A session-bound modal handle. If <paramref name="body"/> cannot be rendered, the failure is
     /// appended to the Timeline and the returned handle is already closed.
     /// </returns>
     /// <remarks>
     /// An empty button list combined with an explicit <c>dismissButtonId: null</c> creates a
-    /// programmatic-only dialog that can be closed only through the returned handle.
+    /// programmatic-only modal that can be closed only through the returned handle.
     /// </remarks>
-    public DisplayDialog Dialog(object? body, Action<DialogResult> onResult, object? options = null)
+    public DisplayModal Modal(object? body, Action<ModalResult> onResult, object? options = null)
     {
         if (onResult is null)
         {
@@ -245,11 +245,11 @@ internal sealed class UIGlobal(
         }
 
         var host =
-            this._dialogHost
+            this._modalHost
             ?? throw new InvalidOperationException(
-                "ui.dialog is not available because no dialog host was provided."
+                "ui.modal is not available because no modal host was provided."
             );
-        return host.ShowDialog(body, onResult, BuildDialogOptions(options));
+        return host.ShowModal(body, onResult, BuildModalOptions(options));
     }
 
     /// <summary>
@@ -712,7 +712,7 @@ internal sealed class UIGlobal(
         return new ToastOptions(title, variant, durationMilliseconds);
     }
 
-    private static DialogOptions BuildDialogOptions(object? options)
+    private static ModalOptions BuildModalOptions(object? options)
     {
         var dict = CoerceOptionsDictionary(options);
         var title = ExtractOptionalStringOption(dict, "title")?.Trim();
@@ -721,7 +721,7 @@ internal sealed class UIGlobal(
             title = null;
         }
 
-        var buttons = BuildDialogButtons(dict);
+        var buttons = BuildModalButtons(dict);
         var defaultButtonId = ExtractOptionalStringOption(dict, "defaultButtonId")?.Trim();
         if (defaultButtonId?.Length == 0)
         {
@@ -744,7 +744,7 @@ internal sealed class UIGlobal(
         if (defaultButtonId is not null && !buttonIds.Contains(defaultButtonId))
         {
             throw new ArgumentException(
-                "defaultButtonId must reference a dialog button.",
+                "defaultButtonId must reference a modal button.",
                 nameof(options)
             );
         }
@@ -752,7 +752,7 @@ internal sealed class UIGlobal(
         if (dismissButtonId is not null && !buttonIds.Contains(dismissButtonId))
         {
             throw new ArgumentException(
-                "dismissButtonId must reference a dialog button.",
+                "dismissButtonId must reference a modal button.",
                 nameof(options)
             );
         }
@@ -766,17 +766,10 @@ internal sealed class UIGlobal(
             );
         }
 
-        return new DialogOptions(
-            title,
-            buttons,
-            defaultButtonId,
-            canDismiss,
-            dismissButtonId,
-            size
-        );
+        return new ModalOptions(title, buttons, defaultButtonId, canDismiss, dismissButtonId, size);
     }
 
-    private static IReadOnlyList<DialogButtonDefinition> BuildDialogButtons(
+    private static IReadOnlyList<ModalButtonDefinition> BuildModalButtons(
         IDictionary<string, object?>? options
     )
     {
@@ -790,7 +783,7 @@ internal sealed class UIGlobal(
             throw new ArgumentException("buttons must be an array.", nameof(options));
         }
 
-        var result = new List<DialogButtonDefinition>();
+        var result = new List<ModalButtonDefinition>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in values)
         {
@@ -811,15 +804,15 @@ internal sealed class UIGlobal(
                         "Each button must be a string or an object.",
                         nameof(options)
                     );
-                id = ExtractRequiredDialogButtonString(dict, "id", options);
-                label = ExtractRequiredDialogButtonString(dict, "label", options);
+                id = ExtractRequiredModalButtonString(dict, "id", options);
+                label = ExtractRequiredModalButtonString(dict, "label", options);
                 variant = ExtractOptionalStringOption(dict, "variant")?.Trim() ?? "default";
             }
 
             if (id.Length == 0 || label.Length == 0)
             {
                 throw new ArgumentException(
-                    "Dialog button ids and labels cannot be empty.",
+                    "Modal button ids and labels cannot be empty.",
                     nameof(options)
                 );
             }
@@ -827,7 +820,7 @@ internal sealed class UIGlobal(
             if (!ids.Add(id))
             {
                 throw new ArgumentException(
-                    $"Dialog button id '{id}' is duplicated.",
+                    $"Modal button id '{id}' is duplicated.",
                     nameof(options)
                 );
             }
@@ -835,25 +828,25 @@ internal sealed class UIGlobal(
             if (variant is not ("default" or "primary" or "danger"))
             {
                 throw new ArgumentException(
-                    "Dialog button variant must be \"default\", \"primary\", or \"danger\".",
+                    "Modal button variant must be \"default\", \"primary\", or \"danger\".",
                     nameof(options)
                 );
             }
 
-            result.Add(new DialogButtonDefinition(id, label, variant));
+            result.Add(new ModalButtonDefinition(id, label, variant));
         }
 
         return result;
     }
 
-    private static string ExtractRequiredDialogButtonString(
+    private static string ExtractRequiredModalButtonString(
         IDictionary<string, object?> button,
         string name,
         object? options
     ) =>
         button.TryGetValue(name, out var value) && value is not null
             ? Convert.ToString(value, CultureInfo.InvariantCulture)?.Trim() ?? ""
-            : throw new ArgumentException($"Dialog button {name} is required.", nameof(options));
+            : throw new ArgumentException($"Modal button {name} is required.", nameof(options));
 
     private static string? ExtractOptionalStringOption(
         IDictionary<string, object?>? options,
