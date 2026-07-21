@@ -3077,6 +3077,14 @@
         );
       }
 
+      const dumpCompletion = window.DuetsPadDumpCompletion;
+      if (dumpCompletion) {
+        monaco.languages.registerCompletionItemProvider(
+          "typescript",
+          dumpCompletion.createCompletionItemProvider({ monaco }),
+        );
+      }
+
       function monacoThemeFromUi() {
         return document.documentElement.getAttribute("data-bs-theme") === "dark"
           ? "vs-dark"

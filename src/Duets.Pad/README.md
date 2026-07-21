@@ -48,7 +48,7 @@ The pad presents five surfaces:
 
 Output goes to the pad's structured surfaces, not back into the editor:
 
-- `dump(value)`, `console.*`, and rendering errors append to the **Timeline**.
+- `value.dump()`, `console.*`, and rendering errors append to the **Timeline**.
 - Object dump headers can collapse their own table or their entire nested table subtree.
 - `canvas.add(...)`, `canvas.set(...)`, and `canvas.clear()` update the **Canvas**. `canvas` is the
   default canvas; `canvases.get(name)` returns a named canvas (created on first access) with the
@@ -57,7 +57,10 @@ Output goes to the pad's structured surfaces, not back into the editor:
   Timeline; it keeps no result of its own.
 
 The editor's final evaluation result is **not** automatically appended to the Timeline — use
-`dump(value)` to record a value there.
+`value.dump()` to record a value there. The fluent method returns the original value with its
+concrete type, so chains such as `query.where(...).dump().select(...)` retain completions. The
+equivalent global `dump(value)` remains available for `null`, `undefined`, null-prototype objects,
+and values whose own `dump` member shadows DuetsPad's method.
 
 ## Building UI with `ui.*`
 
@@ -96,7 +99,7 @@ ui.dialog(
   ui.stack([ui.label("Display name"), alias]),
   result => {
     if (result.reason === "action" && result.actionId === "save") {
-      dump({ alias: alias.value });
+      ({ alias: alias.value }).dump();
     }
   },
   {

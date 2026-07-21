@@ -8,7 +8,7 @@
 //
 // Open http://127.0.0.1:17376/ after startup, paste the script into the
 // Editor, and evaluate it. Reminders on the pad's output surfaces:
-// - `dump(value)` appends a rendered value to the Timeline.
+// - `value.dump()` appends a rendered value to the Timeline and returns that value.
 // - Object dump headers can collapse one table or its entire nested subtree.
 // - `canvas` is the default Canvas surface (`canvas.add`/`canvas.set`/
 //   `canvas.clear`); `canvases.get(name)` returns a named Canvas tab with the
@@ -87,7 +87,7 @@ canvas.set(
   )
 );
 
-dump({
+({
   profile: {
     name: nameBox.value,
     subscribed: subscribe.value,
@@ -95,7 +95,7 @@ dump({
   attachments: {
     count: attachments.files.length,
   },
-});
+}).dump();
 */
 #:project ../../src/Duets.Jint/Duets.Jint.csproj
 #:project ../../src/Duets.Pad/Duets.Pad.csproj

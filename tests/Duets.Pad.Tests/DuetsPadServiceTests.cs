@@ -1520,6 +1520,54 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
+    public async Task Static_dump_completion_js_returns_200()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                using var response = await client.GetAsync(prefix + "dump-completion.js");
+                Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+                var body = await response.Content.ReadAsStringAsync();
+                Assert.Contains("DuetsPadDumpCompletion", body, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Index_loads_dump_completion_before_duetspad_script()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var html = await client.GetStringAsync(prefix);
+                var completionIndex = html.IndexOf("dump-completion.js", StringComparison.Ordinal);
+                var appIndex = html.IndexOf("duetspad.js", StringComparison.Ordinal);
+
+                Assert.True(completionIndex >= 0);
+                Assert.True(appIndex > completionIndex);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_registers_dump_completion_provider()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains("window.DuetsPadDumpCompletion", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "dumpCompletion.createCompletionItemProvider({ monaco })",
+                    js,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
+    [Fact]
     public async Task Dump_table_headers_support_self_and_descendant_toggles()
     {
         await RunAsync(

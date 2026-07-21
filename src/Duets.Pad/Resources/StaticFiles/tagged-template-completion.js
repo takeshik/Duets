@@ -131,7 +131,12 @@
   }) {
     return {
       triggerCharacters: ["/", ".", "-", "_"],
-      async provideCompletionItems(model, position, cancellationToken) {
+      async provideCompletionItems(
+        model,
+        position,
+        _context,
+        cancellationToken,
+      ) {
         const context = findContext(monaco, model, position, getTags());
         if (!context || cancellationToken.isCancellationRequested) {
           return { suggestions: [] };
