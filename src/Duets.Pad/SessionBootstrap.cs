@@ -33,7 +33,7 @@ internal static class SessionBootstrap
         // Subscribe to console output — runs synchronously on the eval thread.
         duetsSession.ConsoleLogged += padSession.OnConsoleLogged;
 
-        // Bind __padDump__ and define the dump global in JS.
+        // Bind __padDump__ and define the dump global and fluent alias in JS.
         // Core (ScriptEngineInit.js) does not define dump; DuetsPad owns it.
         // The second argument is a JS options object; DumpOptionsResolver.Merge reads maxDepth/maxItems from it.
         duetsSession.SetValue(
@@ -43,7 +43,21 @@ internal static class SessionBootstrap
                     padSession.Dump(v, DumpOptionsResolver.Merge(padSession.DumpOptions, opts))
             )
         );
-        duetsSession.Execute("var dump = function (v, opts) { __padDump__(v, opts); return v; };");
+        duetsSession.Execute(
+            """
+            var dump = function (v, opts) { __padDump__(v, opts); return v; };
+            Object.defineProperty(Object.prototype, "dump", {
+                configurable: true,
+                enumerable: false,
+                writable: true,
+                value: function (opts) {
+                    "use strict";
+                    dump(this, opts);
+                    return this;
+                },
+            });
+            """
+        );
 
         // Bind canvases, canvas, ui, and pad globals.
         var canvasesGlobal = new CanvasesGlobal(padSession);
@@ -68,6 +82,14 @@ internal static class SessionBootstrap
         duetsSession.Declarations.RegisterDeclaration(
             """
             // DuetsPad per-session globals
+
+            interface Object {
+                /**
+                 * Renders this value to the DuetsPad Timeline and returns it unchanged,
+                 * preserving its concrete type for subsequent member access.
+                 */
+                dump<T>(this: T, opts?: { maxDepth?: number; maxItems?: number }): T;
+            }
 
             interface DuetsPadCanvas {
                 /** Renders value and appends it as a new child of the canvas root. */
@@ -244,6 +266,7 @@ internal static class SessionBootstrap
              * ```ts
              * dump(someArray)          // renders the array, returns it
              * dump(obj).someProperty   // renders obj, then accesses .someProperty — type is preserved
+             * obj.dump().someProperty  // fluent equivalent with the same preserved type
              * ```
              */
             declare function dump<T>(value: T, opts?: { maxDepth?: number; maxItems?: number }): T;

@@ -299,6 +299,84 @@ public sealed class DuetsPadSessionTests
     }
 
     [Fact]
+    public async Task Fluent_dump_renders_and_preserves_js_identity()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync("({ a: 5 }).dump().a");
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("5", result.Result);
+        Assert.Equal("dump", Assert.Single(session.Timeline.State).Reason);
+    }
+
+    [Fact]
+    public async Task Fluent_dump_supports_primitive_values()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync(
+            "[(3).dump() + 4, 'x'.dump() + 'y', true.dump() === true].join(':')"
+        );
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("7:xy:true", result.Result);
+        Assert.Equal(3, session.Timeline.State.Count);
+        Assert.Equal(new Text("3"), session.Timeline.State[0].Body);
+        Assert.Equal(new Text("x"), session.Timeline.State[1].Body);
+        Assert.Equal(new Text("true"), session.Timeline.State[2].Body);
+    }
+
+    [Fact]
+    public async Task Fluent_dump_supports_clr_values()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync(
+            "const value = System.DateTime.Now; value.dump() === value"
+        );
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("true", result.Result);
+        Assert.Equal("dump", Assert.Single(session.Timeline.State).Reason);
+    }
+
+    [Fact]
+    public async Task Fluent_dump_supports_clr_reference_collections()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync(
+            "const value = new System.Collections.ArrayList(); value.Add(1); value.dump() === value"
+        );
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("true", result.Result);
+        Assert.Equal("dump", Assert.Single(session.Timeline.State).Reason);
+    }
+
+    [Fact]
+    public async Task Fluent_dump_is_non_enumerable_and_accepts_per_call_options()
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync(
+            """
+            const value = [[1, 2]];
+            const inheritedKeys = [];
+            for (const key in value) inheritedKeys.push(key);
+            value.dump({ maxDepth: 1 });
+            inheritedKeys.includes("dump")
+            """
+        );
+
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal("false", result.Result);
+        var row = Assert.Single(AssertScalarTableRows(Assert.Single(session.Timeline.State).Body));
+        Assert.Equal(new Text("[…]"), GetScalarCellValue(row));
+    }
+
+    [Fact]
     public async Task Dump_appends_exactly_once_per_call()
     {
         using var session = await CreatePadSessionAsync();
@@ -631,6 +709,8 @@ public sealed class DuetsPadSessionTests
             );
         Assert.NotNull(perSessionDecl);
         Assert.Contains("declare function dump", perSessionDecl!.Content, StringComparison.Ordinal);
+        Assert.Contains("interface Object", perSessionDecl.Content, StringComparison.Ordinal);
+        Assert.Contains("dump<T>(this: T, opts?", perSessionDecl.Content, StringComparison.Ordinal);
         Assert.Contains("maxDepth", perSessionDecl.Content, StringComparison.Ordinal);
         Assert.Contains("maxItems", perSessionDecl.Content, StringComparison.Ordinal);
 
