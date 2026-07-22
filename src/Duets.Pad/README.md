@@ -111,13 +111,21 @@ ui.modal(
 );
 ```
 
-Available builders include text and layout primitives (`ui.text`, `ui.label`, `ui.stack`,
-`ui.row`/`ui.col`, `ui.card`, `ui.divider`), indicators (`ui.badge`, `ui.alert`, `ui.spinner`,
-`ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`), interactions
-(`ui.button`), notifications and modal flow (`ui.toast`, `ui.modal`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
+Available builders include text and layout primitives (`ui.text`, `ui.label`, `ui.code`,
+`ui.preformatted`, `ui.disclosure`, `ui.stack`, `ui.row`/`ui.col`, `ui.card`, `ui.divider`),
+compact diagnostics (`ui.dataGrid`, `ui.emptySpace`), indicators (`ui.badge`, `ui.alert`,
+`ui.spinner`, `ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`),
+interactions (`ui.button`), notifications and modal flow (`ui.toast`, `ui.modal`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
 `ui.dropDown`, `ui.slider`, `ui.radioGroup`, `ui.filePicker`), the in-place `ui.slot` handle, and raw escape
 hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
+
+`ui.dataGrid([{ label, content }])` accepts any renderable value as item content, including
+interactive controls. `ui.emptySpace(title, { message, icon, action })` provides a compact no-data
+state without introducing page-level dashboard concepts. `ui.code` renders semantic `<pre><code>`
+while `ui.preformatted` renders `<pre>`; both preserve input as text and accept `{ wrap: true }` for
+long lines. `ui.disclosure(summary, content, { open })` uses native `<details>` browser-local view
+state, so its current open state resets when the enclosing output is fully replaced.
 
 `ui.filePicker({ multiple: true })` uploads each browser selection as one atomic transaction. A
 server-side button waits for all current uploads before its handler runs, and the handler sees only

@@ -78,6 +78,22 @@ canvas.set(
       ui.button("Greet", greet),
       ui.button("Open profile modal", openProfileModal),
       greeting,
+      ui.divider({ text: "Diagnostics" }),
+      ui.dataGrid([
+        { label: "Runtime", content: ui.badge("Jint", { color: "blue" }) },
+        { label: "State", content: ui.status("Ready", { color: "green" }) },
+      ]),
+      ui.emptySpace("No warnings", {
+        message: "The latest check completed without warnings.",
+        icon: "circle-check",
+      }),
+      ui.disclosure(
+        "Diagnostic details",
+        ui.stack([
+          ui.code("const state = inspect(runtime);", { wrap: true }),
+          ui.preformatted("worker-1: ready\nworker-2: idle"),
+        ])
+      ),
       ui.divider({ text: "Attachments" }),
       attachments,
       ui.button("Summarize attachments", summarizeAttachments),

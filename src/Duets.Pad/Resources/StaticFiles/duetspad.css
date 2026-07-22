@@ -843,6 +843,67 @@ th.duetspad-typeheader {
     font-weight: 600;
 }
 
+.duetspad-preformatted {
+    max-width: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    overflow: auto;
+    color: var(--common-text);
+    background: var(--common-surface-2);
+    border: 1px solid var(--common-border);
+    border-radius: var(--common-radius-sm);
+    font-family: var(--common-font-mono);
+    font-size: var(--common-data-size);
+    line-height: 1.45;
+    tab-size: 4;
+    white-space: pre;
+}
+
+.duetspad-preformatted-wrap {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.duetspad-code > code {
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+}
+
+.duetspad-disclosure {
+    max-width: 100%;
+    background: var(--common-surface);
+    border: 1px solid var(--common-border);
+    border-radius: var(--common-radius-sm);
+}
+
+.duetspad-disclosure-summary {
+    padding: 6px 9px;
+    color: var(--common-accent-text);
+    font-size: var(--common-data-size);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.duetspad-disclosure-summary::marker {
+    color: var(--common-text-muted);
+}
+
+.duetspad-disclosure-summary:focus-visible {
+    outline: 2px solid var(--common-accent);
+    outline-offset: -2px;
+}
+
+.duetspad-disclosure[open] > .duetspad-disclosure-summary {
+    border-bottom: 1px solid var(--common-border-soft);
+}
+
+.duetspad-disclosure-content {
+    padding: 9px;
+}
+
 .duetspad-stack {
     display: flex;
     flex-direction: column;
