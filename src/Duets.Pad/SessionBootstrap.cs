@@ -188,6 +188,10 @@ internal static class SessionBootstrap
                 text(value: string): any;
                 /** Returns a <span class="duetspad-label"> wrapping value. */
                 label(value: string): any;
+                /** Returns a semantic code block that preserves whitespace and renders content as text. */
+                code(value: string, options?: { wrap?: boolean }): any;
+                /** Returns a preformatted text block that preserves whitespace and renders content as text. */
+                preformatted(value: string, options?: { wrap?: boolean }): any;
                 /** Returns a Tabler <span class="badge"> wrapping text. */
                 badge(text: string, options?: { color?: string; pill?: boolean; outline?: boolean }): any;
                 /** Returns a Tabler alert with an optional title. */
@@ -200,6 +204,12 @@ internal static class SessionBootstrap
                 icon(name: string, options?: { size?: number; color?: string }): any;
                 /** Returns a Tabler progress bar for a value between 0 and 100. */
                 progress(value: number, options?: { color?: string; label?: string }): any;
+                /** Returns a Tabler data grid of labeled rendered content. */
+                dataGrid(items: { label: string; content: any }[]): any;
+                /** Returns a Tabler empty-space component with optional guidance and action content. */
+                emptySpace(title: string, options?: { message?: string; icon?: string; action?: any }): any;
+                /** Returns a native disclosure. Its open state is browser-local and resets on full replacement. */
+                disclosure(summary: string, content: any, options?: { open?: boolean }): any;
                 /** Returns a stack container. Direction defaults to "vertical". */
                 stack(children?: any[], options?: { direction?: "vertical" | "horizontal" }): any;
                 /** Returns a Tabler card with an optional title header and footer. */

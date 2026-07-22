@@ -37,6 +37,42 @@ public sealed record DisplayContent
     public static DisplayContent Label(string value) =>
         new(new Element("span", LabelAttributes, new ElementChildren(new Text(value))));
 
+    /// <summary>
+    /// Builds a preformatted text block that preserves whitespace without interpreting markup.
+    /// </summary>
+    public static DisplayContent Preformatted(string value, PreformattedOptions? options = null)
+    {
+        options ??= new PreformattedOptions();
+        return new DisplayContent(
+            new Element(
+                "pre",
+                BuildPreformattedAttributes("duetspad-preformatted", options),
+                new ElementChildren(new Text(value))
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds a semantic code block that preserves whitespace without interpreting markup.
+    /// </summary>
+    public static DisplayContent Code(string value, PreformattedOptions? options = null)
+    {
+        options ??= new PreformattedOptions();
+        return new DisplayContent(
+            new Element(
+                "pre",
+                BuildPreformattedAttributes("duetspad-preformatted duetspad-code", options),
+                new ElementChildren(
+                    new Element(
+                        "code",
+                        ElementAttributes.Empty,
+                        new ElementChildren(new Text(value))
+                    )
+                )
+            )
+        );
+    }
+
     public static DisplayContent RawHtml(string content) => new(new RawHtml(content));
 
     /// <summary>
@@ -158,6 +194,193 @@ public sealed record DisplayContent
                 new ElementAttributes(new KeyValuePair<string, string?>("class", "progress")),
                 new ElementChildren(bar)
             )
+        );
+    }
+
+    /// <summary>
+    /// Builds a Tabler data grid from labeled rendered values.
+    /// </summary>
+    public static DisplayContent DataGrid(IEnumerable<DataGridItem> items)
+    {
+        if (items is null)
+        {
+            throw new ArgumentNullException(nameof(items));
+        }
+
+        var renderedItems = new List<DisplayContent>();
+        foreach (var item in items)
+        {
+            if (item is null)
+            {
+                throw new ArgumentException("Data grid items cannot contain null.", nameof(items));
+            }
+
+            if (string.IsNullOrWhiteSpace(item.Label))
+            {
+                throw new ArgumentException(
+                    "Data grid item labels cannot be empty.",
+                    nameof(items)
+                );
+            }
+
+            var title = new DisplayContent(
+                new Element(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "datagrid-title")
+                    ),
+                    new ElementChildren(new Text(item.Label))
+                )
+            );
+            var content = FromElement(
+                "div",
+                new ElementAttributes(
+                    new KeyValuePair<string, string?>("class", "datagrid-content")
+                ),
+                [item.Content]
+            );
+            renderedItems.Add(
+                FromElement(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "datagrid-item")
+                    ),
+                    [title, content]
+                )
+            );
+        }
+
+        return FromElement(
+            "div",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "datagrid")),
+            renderedItems
+        );
+    }
+
+    /// <summary>
+    /// Builds a Tabler empty-space component with optional icon, message, and action content.
+    /// </summary>
+    public static DisplayContent EmptySpace(string title, EmptySpaceOptions? options = null)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ArgumentException("Empty-space title cannot be empty.", nameof(title));
+        }
+
+        options ??= new EmptySpaceOptions();
+        var children = new List<DisplayContent>();
+
+        if (options.Icon is not null)
+        {
+            children.Add(
+                FromElement(
+                    "div",
+                    new ElementAttributes(new KeyValuePair<string, string?>("class", "empty-icon")),
+                    [Icon(options.Icon)]
+                )
+            );
+        }
+
+        children.Add(
+            new DisplayContent(
+                new Element(
+                    "p",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "empty-title")
+                    ),
+                    new ElementChildren(new Text(title))
+                )
+            )
+        );
+
+        if (!string.IsNullOrWhiteSpace(options.Message))
+        {
+            children.Add(
+                new DisplayContent(
+                    new Element(
+                        "p",
+                        new ElementAttributes(
+                            new KeyValuePair<string, string?>(
+                                "class",
+                                "empty-subtitle text-secondary"
+                            )
+                        ),
+                        new ElementChildren(new Text(options.Message))
+                    )
+                )
+            );
+        }
+
+        if (options.Action is not null)
+        {
+            children.Add(
+                FromElement(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "empty-action")
+                    ),
+                    [options.Action]
+                )
+            );
+        }
+
+        return FromElement(
+            "div",
+            new ElementAttributes(new KeyValuePair<string, string?>("class", "empty")),
+            children
+        );
+    }
+
+    /// <summary>
+    /// Builds a native disclosure whose open state is browser-local view state.
+    /// </summary>
+    public static DisplayContent Disclosure(
+        string summary,
+        DisplayContent content,
+        DisclosureOptions? options = null
+    )
+    {
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            throw new ArgumentException("Disclosure summary cannot be empty.", nameof(summary));
+        }
+
+        if (content is null)
+        {
+            throw new ArgumentNullException(nameof(content));
+        }
+
+        options ??= new DisclosureOptions();
+        var attributes = new List<KeyValuePair<string, string?>>
+        {
+            new("class", "duetspad-disclosure"),
+        };
+        if (options.Open)
+        {
+            attributes.Add(new KeyValuePair<string, string?>("open", null));
+        }
+
+        var summaryContent = new DisplayContent(
+            new Element(
+                "summary",
+                new ElementAttributes(
+                    new KeyValuePair<string, string?>("class", "duetspad-disclosure-summary")
+                ),
+                new ElementChildren(new Text(summary))
+            )
+        );
+        var bodyContent = FromElement(
+            "div",
+            new ElementAttributes(
+                new KeyValuePair<string, string?>("class", "duetspad-disclosure-content")
+            ),
+            [content]
+        );
+
+        return FromElement(
+            "details",
+            new ElementAttributes(attributes),
+            [summaryContent, bodyContent]
         );
     }
 
@@ -925,6 +1148,15 @@ public sealed record DisplayContent
         }
 
         return new ElementAttributes(attributes);
+    }
+
+    private static ElementAttributes BuildPreformattedAttributes(
+        string baseClass,
+        PreformattedOptions options
+    )
+    {
+        var className = options.Wrap ? $"{baseClass} duetspad-preformatted-wrap" : baseClass;
+        return new ElementAttributes(new KeyValuePair<string, string?>("class", className));
     }
 
     private static ElementAttributes BuildActionLinkAttributes(LinkOptions options)

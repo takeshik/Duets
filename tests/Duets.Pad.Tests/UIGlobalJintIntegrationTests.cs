@@ -122,6 +122,37 @@ public sealed class UIGlobalJintIntegrationTests
     }
 
     [Fact]
+    public async Task Diagnostic_content_components_from_js_serialize_correctly()
+    {
+        using var session = await CreateSessionAsync();
+        var ui = new UIGlobal(new DisplayRenderer([]), DumpOptions.Default);
+        session.SetValue("ui", ui);
+
+        var content = EvaluateDisplayContent(
+            session,
+            """
+            ui.stack([
+              ui.dataGrid([{ label: 'State', content: ui.status('Ready') }]),
+              ui.emptySpace('No warnings', { message: 'All clear', icon: 'circle-check' }),
+              ui.code('<unsafe>', { wrap: true }),
+              ui.preformatted('line 1\n  line 2'),
+              ui.disclosure('Details', ui.text('body'), { open: true })
+            ])
+            """
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(content.Body);
+        var children = json["children"]!.AsArray();
+        Assert.Equal(5, children.Count);
+        Assert.Equal("datagrid", (string?)children[0]!["attributes"]!["class"]);
+        Assert.Equal("empty", (string?)children[1]!["attributes"]!["class"]);
+        Assert.Equal("code", (string?)children[2]!["children"]![0]!["tag"]);
+        Assert.Equal("text", (string?)children[3]!["children"]![0]!["kind"]);
+        Assert.Equal("details", (string?)children[4]!["tag"]);
+        Assert.True(children[4]!["attributes"]!.AsObject().ContainsKey("open"));
+    }
+
+    [Fact]
     public async Task Table_from_js_serializes_correctly()
     {
         using var session = await CreateSessionAsync();

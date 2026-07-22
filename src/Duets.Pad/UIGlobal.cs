@@ -8,7 +8,9 @@ namespace Duets.Pad;
 /// <summary>
 /// Host object bound to the <c>ui</c> global in script. Provides the structured display surface:
 /// <see cref="RawHtml"/>, <see cref="Element"/>, <see cref="Text"/>, <see cref="Label"/>,
-/// <see cref="Stack"/>, <see cref="Row"/>, <see cref="Col"/>, <see cref="Card"/>,
+/// <see cref="Code"/>, <see cref="Preformatted"/>, <see cref="DataGrid"/>,
+/// <see cref="EmptySpace"/>, <see cref="Disclosure"/>, <see cref="Stack"/>, <see cref="Row"/>,
+/// <see cref="Col"/>, <see cref="Card"/>,
 /// <see cref="Link"/>, <see cref="Button"/>, <see cref="Divider"/>, Tabler components,
 /// <see cref="Table"/>, and the form-input factories (<see cref="TextBox"/>, <see cref="TextArea"/>,
 /// <see cref="NumberBox"/>, <see cref="CheckBox"/>, <see cref="DropDown"/>, <see cref="Slider"/>,
@@ -282,6 +284,20 @@ internal sealed class UIGlobal(
     public DisplayContent Label(string value) => DisplayContent.Label(value);
 
     /// <summary>
+    /// Returns a semantic code block that preserves whitespace without interpreting markup.
+    /// (JS: <c>ui.code</c>)
+    /// </summary>
+    public DisplayContent Code(string value, object? options = null) =>
+        DisplayContent.Code(value, BuildPreformattedOptions(options));
+
+    /// <summary>
+    /// Returns a preformatted text block that preserves whitespace without interpreting markup.
+    /// (JS: <c>ui.preformatted</c>)
+    /// </summary>
+    public DisplayContent Preformatted(string value, object? options = null) =>
+        DisplayContent.Preformatted(value, BuildPreformattedOptions(options));
+
+    /// <summary>
     /// Returns a Tabler badge element wrapping <paramref name="text"/>.
     /// (JS: <c>ui.badge</c>)
     /// </summary>
@@ -322,6 +338,52 @@ internal sealed class UIGlobal(
     /// </summary>
     public DisplayContent Progress(object? value, object? options = null) =>
         DisplayContent.Progress(CoerceProgressValue(value), BuildProgressOptions(options));
+
+    /// <summary>
+    /// Builds a Tabler data grid from <c>{ label, content }</c> items.
+    /// (JS: <c>ui.dataGrid</c>)
+    /// </summary>
+    public DisplayContent DataGrid(object? items) =>
+        DisplayContent.DataGrid(this.BuildDataGridItems(items));
+
+    /// <summary>
+    /// Builds a Tabler empty-space component with optional message, icon, and action content.
+    /// (JS: <c>ui.emptySpace</c>)
+    /// </summary>
+    public DisplayContent EmptySpace(string title, object? options = null)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        DisplayContent? action = null;
+        if (
+            dict is not null
+            && dict.TryGetValue("action", out var rawAction)
+            && rawAction is not null
+        )
+        {
+            action = this._renderer.Render(rawAction, this._dumpOptions);
+        }
+
+        return DisplayContent.EmptySpace(
+            title,
+            new EmptySpaceOptions
+            {
+                Message = ExtractOptionalStringOption(dict, "message"),
+                Icon = ExtractOptionalStringOption(dict, "icon"),
+                Action = action,
+            }
+        );
+    }
+
+    /// <summary>
+    /// Builds a native disclosure whose open state is browser-local view state.
+    /// (JS: <c>ui.disclosure</c>)
+    /// </summary>
+    public DisplayContent Disclosure(string summary, object? content, object? options = null) =>
+        DisplayContent.Disclosure(
+            summary,
+            this._renderer.Render(content, this._dumpOptions),
+            BuildDisclosureOptions(options)
+        );
 
     /// <summary>
     /// Returns a <c>div.duetspad-stack</c> element containing the rendered <paramref name="children"/>.
@@ -468,6 +530,64 @@ internal sealed class UIGlobal(
         );
     }
 
+    private IReadOnlyList<DataGridItem> BuildDataGridItems(object? items)
+    {
+        if (items is null or string || items is not IEnumerable itemsEnumerable)
+        {
+            throw new ArgumentException("items must be an array.", nameof(items));
+        }
+
+        var result = new List<DataGridItem>();
+        foreach (var item in itemsEnumerable)
+        {
+            var dict = CoerceDataGridItem(item);
+            if (!dict.TryGetValue("label", out var rawLabel) || rawLabel is not string label)
+            {
+                throw new ArgumentException(
+                    "each data grid item must have a string label.",
+                    nameof(items)
+                );
+            }
+
+            if (!dict.TryGetValue("content", out var content))
+            {
+                throw new ArgumentException(
+                    "each data grid item must have content.",
+                    nameof(items)
+                );
+            }
+
+            result.Add(new DataGridItem(label, this._renderer.Render(content, this._dumpOptions)));
+        }
+
+        return result;
+    }
+
+    private static IDictionary<string, object?> CoerceDataGridItem(object? item)
+    {
+        if (item is IDictionary<string, object?> genericDict)
+        {
+            return genericDict;
+        }
+
+        if (item is IDictionary nonGenericDict)
+        {
+            return ConvertNonGenericDictionary(nonGenericDict);
+        }
+
+        if (RecordProjector.IsRecordLike(item))
+        {
+            return RecordProjector
+                .Project(item!)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        }
+
+        throw new ArgumentException(
+            "each data grid item must be a { label, content } object.",
+            "items"
+        );
+    }
+
     private static IDictionary<string, object?> ConvertNonGenericDictionary(IDictionary dict)
     {
         var result = new Dictionary<string, object?>();
@@ -545,6 +665,40 @@ internal sealed class UIGlobal(
             {
                 Direction = Convert.ToString(direction, CultureInfo.InvariantCulture),
             };
+        }
+
+        return result;
+    }
+
+    private static PreformattedOptions? BuildPreformattedOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new PreformattedOptions();
+        if (dict.TryGetValue("wrap", out var wrap) && wrap is not null)
+        {
+            result = result with { Wrap = Convert.ToBoolean(wrap, CultureInfo.InvariantCulture) };
+        }
+
+        return result;
+    }
+
+    private static DisclosureOptions? BuildDisclosureOptions(object? options)
+    {
+        var dict = CoerceOptionsDictionary(options);
+        if (dict is null)
+        {
+            return null;
+        }
+
+        var result = new DisclosureOptions();
+        if (dict.TryGetValue("open", out var open) && open is not null)
+        {
+            result = result with { Open = Convert.ToBoolean(open, CultureInfo.InvariantCulture) };
         }
 
         return result;
