@@ -713,6 +713,11 @@ public sealed class DuetsPadSessionTests
         Assert.Contains("dump<T>(this: T, opts?", perSessionDecl.Content, StringComparison.Ordinal);
         Assert.Contains("maxDepth", perSessionDecl.Content, StringComparison.Ordinal);
         Assert.Contains("maxItems", perSessionDecl.Content, StringComparison.Ordinal);
+        Assert.Contains(
+            $"type DuetsPadButtonVariant = {ButtonVariantCatalog.TypeScriptUnion};",
+            perSessionDecl.Content,
+            StringComparison.Ordinal
+        );
 
         // No declaration file other than the per-session one must declare dump.
         // (Core ScriptEngineInit.d.ts no longer defines dump — DuetsPad owns it.)

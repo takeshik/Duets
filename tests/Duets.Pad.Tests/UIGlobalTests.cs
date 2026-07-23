@@ -532,6 +532,30 @@ public sealed class UIGlobalTests
         Assert.Equal([1, 0], interaction.Target.Segments);
     }
 
+    [Fact]
+    public void Card_with_rendered_footer_rebases_footer_interaction_path()
+    {
+        var ui = CreateUIGlobal();
+        var clicked = false;
+        var button = ui.Button("Refresh", () => clicked = true);
+
+        var result = ui.Card(
+            new object?[] { "content" },
+            new Dictionary<string, object?> { ["footer"] = button }
+        );
+
+        var json = RenderNodeJsonSerializer.Serialize(result.Body);
+        var children = json["children"]!.AsArray();
+        Assert.Equal(2, children.Count);
+        Assert.Equal("card-footer", (string?)children[1]!["attributes"]!["class"]);
+        Assert.Equal("button", (string?)children[1]!["children"]![0]!["tag"]);
+
+        var interaction = Assert.Single(result.Interactions);
+        Assert.Equal([1, 0], interaction.Target.Segments);
+        interaction.Handler();
+        Assert.True(clicked);
+    }
+
     // Positive: Row
 
     [Fact]
@@ -794,6 +818,7 @@ public sealed class UIGlobalTests
         var json = RenderNodeJsonSerializer.Serialize(result.Body);
         Assert.Equal("button", (string?)json["tag"]);
         Assert.Equal("button", (string?)json["attributes"]!["type"]);
+        Assert.Equal("btn btn-primary", (string?)json["attributes"]!["class"]);
         Assert.Equal("Run", (string?)json["children"]![0]!["value"]);
 
         var interaction = Assert.Single(result.Interactions);
@@ -801,6 +826,70 @@ public sealed class UIGlobalTests
 
         interaction.Handler();
         Assert.True(clicked);
+    }
+
+    [Fact]
+    public void Button_supports_every_tabler_color_variant()
+    {
+        var ui = CreateUIGlobal();
+
+        foreach (var variant in ButtonVariantCatalog.SupportedVariants)
+        {
+            var result = ui.Button(
+                "Run",
+                () => { },
+                new Dictionary<string, object?> { ["variant"] = variant }
+            );
+
+            var json = RenderNodeJsonSerializer.Serialize(result.Body);
+            Assert.Equal($"btn btn-{variant}", (string?)json["attributes"]!["class"]);
+        }
+    }
+
+    [Fact]
+    public void Button_supports_outline_and_every_tabler_size()
+    {
+        var ui = CreateUIGlobal();
+
+        foreach (var size in new[] { "sm", "lg", "xl" })
+        {
+            var result = ui.Button(
+                "Run",
+                () => { },
+                new Dictionary<string, object?>
+                {
+                    ["variant"] = "azure",
+                    ["outline"] = true,
+                    ["size"] = size,
+                }
+            );
+
+            var json = RenderNodeJsonSerializer.Serialize(result.Body);
+            Assert.Equal(
+                $"btn btn-outline-azure btn-{size}",
+                (string?)json["attributes"]!["class"]
+            );
+        }
+    }
+
+    [Fact]
+    public void Button_rejects_unknown_variant_size_and_removed_class_name()
+    {
+        var ui = CreateUIGlobal();
+
+        Assert.Throws<ArgumentException>(() =>
+            ui.Button("Run", () => { }, new Dictionary<string, object?> { ["variant"] = "unknown" })
+        );
+        Assert.Throws<ArgumentException>(() =>
+            ui.Button("Run", () => { }, new Dictionary<string, object?> { ["size"] = "md" })
+        );
+        Assert.Throws<ArgumentException>(() =>
+            ui.Button(
+                "Run",
+                () => { },
+                new Dictionary<string, object?> { ["className"] = "btn btn-primary" }
+            )
+        );
     }
 
     [Fact]

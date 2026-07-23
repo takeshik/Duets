@@ -1947,7 +1947,7 @@ internal sealed class DuetsPadSession
                                 onResult,
                                 new ModalResult("action", button.Id)
                             ),
-                        new ButtonOptions { ClassName = ResolveModalButtonClass(button.Variant) }
+                        ResolveModalButtonOptions(button.Variant)
                     ),
                 ]
             )
@@ -2006,12 +2006,12 @@ internal sealed class DuetsPadSession
         );
     }
 
-    private static string ResolveModalButtonClass(string variant) =>
+    private static ButtonOptions ResolveModalButtonOptions(string variant) =>
         variant switch
         {
-            "primary" => "btn btn-primary",
-            "danger" => "btn btn-danger",
-            _ => "btn btn-outline-secondary",
+            "primary" => new ButtonOptions { Variant = "primary" },
+            "danger" => new ButtonOptions { Variant = "danger" },
+            _ => new ButtonOptions { Variant = "secondary", Outline = true },
         };
 
     private void ResolveModal(Guid modalId, Action<ModalResult> onResult, ModalResult result)

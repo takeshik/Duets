@@ -396,7 +396,7 @@ internal sealed class UIGlobal(
     /// Builds a Tabler card element. (JS: <c>ui.card</c>)
     /// </summary>
     public DisplayContent Card(object? children = null, object? options = null) =>
-        DisplayContent.Card(this.BuildChildren(children), BuildCardOptions(options));
+        DisplayContent.Card(this.BuildChildren(children), this.BuildCardOptions(options));
 
     /// <summary>
     /// Builds a Bootstrap/Tabler grid row container. (JS: <c>ui.row</c>)
@@ -704,7 +704,7 @@ internal sealed class UIGlobal(
         return result;
     }
 
-    private static CardOptions? BuildCardOptions(object? options)
+    private CardOptions? BuildCardOptions(object? options)
     {
         var dict = CoerceOptionsDictionary(options);
         if (dict is null)
@@ -720,10 +720,10 @@ internal sealed class UIGlobal(
 
         if (dict.TryGetValue("footer", out var footer) && footer is not null)
         {
-            result = result with
+            if (footer is not string text || !string.IsNullOrWhiteSpace(text))
             {
-                Footer = Convert.ToString(footer, CultureInfo.InvariantCulture),
-            };
+                result = result with { Footer = this._renderer.Render(footer, this._dumpOptions) };
+            }
         }
 
         if (dict.TryGetValue("color", out var color) && color is not null)
@@ -815,12 +815,33 @@ internal sealed class UIGlobal(
             result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
         }
 
-        if (dict.TryGetValue("className", out var className) && className is not null)
+        if (dict.ContainsKey("className"))
+        {
+            throw new ArgumentException(
+                "button className is not supported; use variant, outline, and size.",
+                nameof(options)
+            );
+        }
+
+        if (dict.TryGetValue("variant", out var variant) && variant is not null)
         {
             result = result with
             {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
+                Variant = Convert.ToString(variant, CultureInfo.InvariantCulture) ?? "primary",
             };
+        }
+
+        if (dict.TryGetValue("outline", out var outline) && outline is not null)
+        {
+            result = result with
+            {
+                Outline = Convert.ToBoolean(outline, CultureInfo.InvariantCulture),
+            };
+        }
+
+        if (dict.TryGetValue("size", out var size) && size is not null)
+        {
+            result = result with { Size = Convert.ToString(size, CultureInfo.InvariantCulture) };
         }
 
         return result;

@@ -80,7 +80,7 @@ internal static class SessionBootstrap
         // canvases, canvas, ui, dump, and pad.
         duetsSession.Declarations.RegisterType(typeof(Stream));
         duetsSession.Declarations.RegisterDeclaration(
-            """
+            $$"""
             // DuetsPad per-session globals
 
             interface Object {
@@ -177,6 +177,8 @@ internal static class SessionBootstrap
                 variant?: "default" | "primary" | "danger";
             }
 
+            type DuetsPadButtonVariant = {{ButtonVariantCatalog.TypeScriptUnion}};
+
             declare const ui: {
                 /** Returns a raw-HTML escape-hatch node (use sparingly). */
                 rawHtml(content: string): any;
@@ -212,8 +214,8 @@ internal static class SessionBootstrap
                 disclosure(summary: string, content: any, options?: { open?: boolean }): any;
                 /** Returns a stack container. Direction defaults to "vertical". */
                 stack(children?: any[], options?: { direction?: "vertical" | "horizontal" }): any;
-                /** Returns a Tabler card with an optional title header and footer. */
-                card(children?: any[], options?: { title?: string; footer?: string; color?: string }): any;
+                /** Returns a Tabler card with an optional title header and rendered footer. */
+                card(children?: any[], options?: { title?: string; footer?: any; color?: string }): any;
                 /** Returns a Bootstrap/Tabler grid row container. */
                 row(children?: any[], options?: { gutter?: "sm" | "md" | "lg" | number }): any;
                 /** Returns a Bootstrap/Tabler grid column. Omit all spans for auto equal-width. */
@@ -223,7 +225,7 @@ internal static class SessionBootstrap
                 /** Returns a link. Pass a URL string to navigate, or a handler function for an action link. */
                 link(text: string, urlOrHandler: string | (() => void), options?: { title?: string }): any;
                 /** Returns a button with a click handler. */
-                button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; className?: string }): any;
+                button(label: string, handler: () => void, options?: { disabled?: boolean; title?: string; variant?: DuetsPadButtonVariant; outline?: boolean; size?: "sm" | "lg" | "xl" }): any;
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
                 /** Returns a single-line text input field. */

@@ -11,9 +11,9 @@ public sealed record CardOptions
     public string? Title { get; init; }
 
     /// <summary>
-    /// Gets the optional card footer content (rendered as text).
+    /// Gets the optional rendered card footer content.
     /// </summary>
-    public string? Footer { get; init; }
+    public DisplayContent? Footer { get; init; }
 
     /// <summary>
     /// Gets the optional Tabler color token. Applied as <c>card-{color}</c> on the card border.
