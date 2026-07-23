@@ -24,10 +24,9 @@ public sealed class DisplayFilePicker
     public Guid Id { get; }
 
     /// <summary>
-    /// The currently committed files. Each access returns an independent snapshot; modifying the
-    /// returned array cannot mutate picker state.
+    /// The currently committed files. Each access returns an independent read-only snapshot.
     /// </summary>
-    public DuetsPadFile[] Files => [.. this.Host.GetFiles(this.Id)];
+    public IReadOnlyList<DuetsPadFile> Files => [.. this.Host.GetFiles(this.Id)];
 
     /// <summary>Removes a committed file by its opaque <see cref="DuetsPadFile.Id"/>.</summary>
     public void Remove(string fileId)
