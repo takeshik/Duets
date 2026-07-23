@@ -4,9 +4,9 @@
     ".NETStandard,Version=v2.1": {
       "Jint": {
         "type": "Direct",
-        "requested": "[4.10.0, )",
-        "resolved": "4.10.0",
-        "contentHash": "0quB/4E0FpYmKTTYMGriYOcb0LT6xmKtaZG6SFAbnypJzPJ17G6QLIFWmD4MdjLCtdh+h77GZDaC7i7v+cQaeA==",
+        "requested": "[4.14.0, )",
+        "resolved": "4.14.0",
+        "contentHash": "stG038w8SDWhv3/dQRfB6cdQPWhhrfgBtpGCNXu0q2oWDDcKaTL2tXF7MVtapc2rcxyRxCtAOenaLCXiU1J1+Q==",
         "dependencies": {
           "Acornima": "1.6.2"
         }
@@ -43,9 +43,9 @@
     "net8.0": {
       "Jint": {
         "type": "Direct",
-        "requested": "[4.10.0, )",
-        "resolved": "4.10.0",
-        "contentHash": "0quB/4E0FpYmKTTYMGriYOcb0LT6xmKtaZG6SFAbnypJzPJ17G6QLIFWmD4MdjLCtdh+h77GZDaC7i7v+cQaeA==",
+        "requested": "[4.14.0, )",
+        "resolved": "4.14.0",
+        "contentHash": "stG038w8SDWhv3/dQRfB6cdQPWhhrfgBtpGCNXu0q2oWDDcKaTL2tXF7MVtapc2rcxyRxCtAOenaLCXiU1J1+Q==",
         "dependencies": {
           "Acornima": "1.6.2"
         }
