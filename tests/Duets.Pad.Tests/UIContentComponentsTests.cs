@@ -115,6 +115,19 @@ public sealed class UIContentComponentsTests
     }
 
     [Fact]
+    public void EmptySpace_with_blank_icon_reports_options_parameter()
+    {
+        var ui = CreateUIGlobal();
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            ui.EmptySpace("Nothing selected", new Dictionary<string, object?> { ["icon"] = " " })
+        );
+
+        Assert.Equal("options", exception.ParamName);
+        Assert.Contains("icon", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Code_renders_untrusted_input_as_text_inside_semantic_code_block()
     {
         var ui = CreateUIGlobal();

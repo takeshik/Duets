@@ -75,7 +75,6 @@ canvas.set(
   ui.card(
     [
       ui.row([ui.col([ui.label("Name"), nameBox]), ui.col([subscribe])]),
-      ui.button("Greet", greet),
       ui.button("Open profile modal", openProfileModal),
       greeting,
       ui.divider({ text: "Diagnostics" }),
@@ -99,7 +98,14 @@ canvas.set(
       ui.button("Summarize attachments", summarizeAttachments),
       attachmentSummary,
     ],
-    { title: "ui.* demo" }
+    {
+      title: "ui.* demo",
+      footer: ui.button("Greet", greet, {
+        variant: "green",
+        outline: true,
+        size: "sm",
+      }),
+    }
   )
 );
 

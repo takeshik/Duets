@@ -270,13 +270,18 @@ public sealed record DisplayContent
         options ??= new EmptySpaceOptions();
         var children = new List<DisplayContent>();
 
-        if (options.Icon is not null)
+        if (options.Icon is { } icon)
         {
+            if (string.IsNullOrWhiteSpace(icon))
+            {
+                throw new ArgumentException("Empty-space icon cannot be empty.", nameof(options));
+            }
+
             children.Add(
                 FromElement(
                     "div",
                     new ElementAttributes(new KeyValuePair<string, string?>("class", "empty-icon")),
-                    [Icon(options.Icon)]
+                    [Icon(icon)]
                 )
             );
         }
@@ -505,17 +510,15 @@ public sealed record DisplayContent
             )
         );
 
-        if (!string.IsNullOrWhiteSpace(options.Footer))
+        if (options.Footer is not null)
         {
             parts.Add(
-                new DisplayContent(
-                    new Element(
-                        "div",
-                        new ElementAttributes(
-                            new KeyValuePair<string, string?>("class", "card-footer")
-                        ),
-                        new ElementChildren(new Text(options.Footer))
-                    )
+                FromElement(
+                    "div",
+                    new ElementAttributes(
+                        new KeyValuePair<string, string?>("class", "card-footer")
+                    ),
+                    [options.Footer]
                 )
             );
         }
@@ -1172,13 +1175,34 @@ public sealed record DisplayContent
 
     private static ElementAttributes BuildButtonAttributes(ButtonOptions options)
     {
-        var className = string.IsNullOrWhiteSpace(options.ClassName)
-            ? "btn btn-primary"
-            : options.ClassName!;
+        var variant = string.IsNullOrWhiteSpace(options.Variant)
+            ? "primary"
+            : options.Variant.Trim();
+        if (!ButtonVariantCatalog.IsSupported(variant))
+        {
+            throw new ArgumentException(ButtonVariantCatalog.ValidationMessage, nameof(options));
+        }
+
+        var classes = new List<string>
+        {
+            "btn",
+            options.Outline ? $"btn-outline-{variant}" : $"btn-{variant}",
+        };
+        if (!string.IsNullOrWhiteSpace(options.Size))
+        {
+            var size = options.Size.Trim();
+            if (size is not ("sm" or "lg" or "xl"))
+            {
+                throw new ArgumentException("Button size must be sm, lg, or xl.", nameof(options));
+            }
+
+            classes.Add($"btn-{size}");
+        }
+
         var attributes = new List<KeyValuePair<string, string?>>
         {
             new("type", "button"),
-            new("class", className),
+            new("class", string.Join(" ", classes)),
         };
 
         if (!string.IsNullOrWhiteSpace(options.Title))

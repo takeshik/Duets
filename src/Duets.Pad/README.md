@@ -127,6 +127,10 @@ while `ui.preformatted` renders `<pre>`; both preserve input as text and accept 
 long lines. `ui.disclosure(summary, content, { open })` uses native `<details>` browser-local view
 state, so its current open state resets when the enclosing output is fully replaced.
 
+`ui.button` accepts Tabler color `variant`, `outline`, and `size` (`sm`, `lg`, or `xl`) options.
+`ui.card` accepts any renderable value as its `footer`, including an interactive button; interactions
+in the footer have the same server-side lifecycle as interactions in the card body.
+
 `ui.filePicker({ multiple: true })` uploads each browser selection as one atomic transaction. A
 server-side button waits for all current uploads before its handler runs, and the handler sees only
 the fully committed selection through `picker.files`. Each file exposes sanitized `name`, untrusted
