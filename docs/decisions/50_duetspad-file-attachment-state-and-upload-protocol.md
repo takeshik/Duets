@@ -132,11 +132,13 @@ interface DuetsPadFilePicker {
 }
 ```
 
-The initial options include `accept`, `multiple`, `disabled`, `title`, and `className`. `accept` is
-only a browser selection hint; it is not server-side validation. `files` is read-only because a
-script cannot synthesize the browser-originated body represented by an attachment. `remove` and
-`clear` are server-side mutations: they invalidate any pending selection, advance the picker
-revision, release the removed blobs, and project the new list.
+The initial options include `accept`, `multiple`, `disabled`, and `title`. Presentation classes are
+encapsulated by the first-class `ui.filePicker` primitive as required by
+[ADR-33](33_tabler-css-framework-for-duetspad.md). `accept` is only a browser selection hint; it is
+not server-side validation. `files` is read-only because a script cannot synthesize the
+browser-originated body represented by an attachment. `remove` and `clear` are server-side
+mutations: they invalidate any pending selection, advance the picker revision, release the removed
+blobs, and project the new list.
 
 Each `DuetsPadFile` is immutable metadata plus an opaque reference to a stored blob. The client-
 supplied name and content type are untrusted display metadata. DuetsPad strips directory components

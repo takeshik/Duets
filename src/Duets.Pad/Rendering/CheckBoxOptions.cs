@@ -7,6 +7,4 @@ public sealed record CheckBoxOptions
     public bool Disabled { get; init; }
 
     public string? Title { get; init; }
-
-    public string? ClassName { get; init; }
 }

@@ -815,13 +815,7 @@ internal sealed class UIGlobal(
             result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
         }
 
-        if (dict.ContainsKey("className"))
-        {
-            throw new ArgumentException(
-                "button className is not supported; use variant, outline, and size.",
-                nameof(options)
-            );
-        }
+        RejectClassName(dict, "button", "use variant, outline, and size");
 
         if (dict.TryGetValue("variant", out var variant) && variant is not null)
         {
@@ -845,6 +839,21 @@ internal sealed class UIGlobal(
         }
 
         return result;
+    }
+
+    private static void RejectClassName(
+        IDictionary<string, object?> options,
+        string component,
+        string guidance = "use structured options or compose it with ui.element"
+    )
+    {
+        if (options.ContainsKey("className"))
+        {
+            throw new ArgumentException(
+                $"{component} className is not supported; {guidance}.",
+                nameof(options)
+            );
+        }
     }
 
     private static ToastOptions BuildToastOptions(object? options)
@@ -1323,6 +1332,8 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "textBox");
+
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
             result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
@@ -1333,14 +1344,6 @@ internal sealed class UIGlobal(
             result = result with
             {
                 Placeholder = Convert.ToString(placeholder, CultureInfo.InvariantCulture),
-            };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
             };
         }
 
@@ -1367,6 +1370,8 @@ internal sealed class UIGlobal(
         {
             return result;
         }
+
+        RejectClassName(dict, "filePicker");
 
         if (dict.TryGetValue("accept", out var accept) && accept is not null)
         {
@@ -1397,14 +1402,6 @@ internal sealed class UIGlobal(
             result = result with { Title = Convert.ToString(title, CultureInfo.InvariantCulture) };
         }
 
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
-        }
-
         return result;
     }
 
@@ -1415,6 +1412,8 @@ internal sealed class UIGlobal(
         {
             return result;
         }
+
+        RejectClassName(dict, "textArea");
 
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
@@ -1432,14 +1431,6 @@ internal sealed class UIGlobal(
         if (dict.TryGetValue("rows", out var rows) && rows is not null)
         {
             result = result with { Rows = CoerceInteger(rows, "rows") };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
@@ -1466,6 +1457,8 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "numberBox");
+
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
             result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
@@ -1484,14 +1477,6 @@ internal sealed class UIGlobal(
         if (dict.TryGetValue("step", out var step) && step is not null)
         {
             result = result with { Step = Convert.ToDouble(step, CultureInfo.InvariantCulture) };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
@@ -1518,17 +1503,11 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "checkBox");
+
         if (dict.TryGetValue("label", out var label) && label is not null)
         {
             result = result with { Label = Convert.ToString(label, CultureInfo.InvariantCulture) };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
@@ -1558,17 +1537,11 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "dropDown");
+
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
             result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
@@ -1595,6 +1568,8 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "slider");
+
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
             result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
@@ -1613,14 +1588,6 @@ internal sealed class UIGlobal(
         if (dict.TryGetValue("step", out var step) && step is not null)
         {
             result = result with { Step = Convert.ToDouble(step, CultureInfo.InvariantCulture) };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)
@@ -1650,17 +1617,11 @@ internal sealed class UIGlobal(
             return result;
         }
 
+        RejectClassName(dict, "radioGroup");
+
         if (dict.TryGetValue("name", out var name) && name is not null)
         {
             result = result with { Name = Convert.ToString(name, CultureInfo.InvariantCulture) };
-        }
-
-        if (dict.TryGetValue("className", out var className) && className is not null)
-        {
-            result = result with
-            {
-                ClassName = Convert.ToString(className, CultureInfo.InvariantCulture),
-            };
         }
 
         if (dict.TryGetValue("disabled", out var disabled) && disabled is not null)

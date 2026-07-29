@@ -229,21 +229,21 @@ internal static class SessionBootstrap
                 /** Builds a <table class="duetspad-table"> from rows. */
                 table(rows: any[], options?: { columns?: string[] }): any;
                 /** Returns a single-line text input field. */
-                textBox(options?: { name?: string; placeholder?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                textBox(options?: { name?: string; placeholder?: string; value?: string; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a multi-line text input field. */
-                textArea(options?: { name?: string; placeholder?: string; value?: string; rows?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                textArea(options?: { name?: string; placeholder?: string; value?: string; rows?: number; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a numeric text input field. The value is still a plain string: no coercion or validation is performed. */
-                numberBox(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                numberBox(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a checkbox field. The value is the string "True" or "False". */
-                checkBox(options?: { label?: string; checked?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                checkBox(options?: { label?: string; checked?: boolean; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a single-select dropdown field. A value absent from items is retained but cannot be displayed as selected. */
-                dropDown(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                dropDown(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a range-slider field. The value is still a plain string: no coercion or validation is performed. */
-                slider(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                slider(options?: { name?: string; value?: string; min?: number; max?: number; step?: number; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a radio-button group field. A value absent from items is retained but leaves every option unchecked. */
-                radioGroup(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string; className?: string }): DuetsPadInput;
+                radioGroup(items: (string | { value: string; label: string })[], options?: { name?: string; value?: string; disabled?: boolean; title?: string }): DuetsPadInput;
                 /** Returns a transactional file picker. Interaction handlers run only after all current uploads commit. */
-                filePicker(options?: { accept?: string; multiple?: boolean; disabled?: boolean; title?: string; className?: string }): DuetsPadFilePicker;
+                filePicker(options?: { accept?: string; multiple?: boolean; disabled?: boolean; title?: string }): DuetsPadFilePicker;
                 /** Shows a transient browser notification. durationMs defaults to 5000, accepts 0 through 600000, and 0 keeps it visible until dismissed. */
                 toast(message: string, options?: { title?: string; variant?: "info" | "success" | "warning" | "danger"; durationMs?: number }): void;
                 /** Opens a server-canonical modal and reports its result in a later interaction turn. A body render failure is recorded in the Timeline and returns a closed handle. */

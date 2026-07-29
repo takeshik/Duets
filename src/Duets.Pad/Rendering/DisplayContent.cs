@@ -629,7 +629,7 @@ public sealed record DisplayContent
                 snapshot.Revision.ToString(CultureInfo.InvariantCulture)
             ),
             new("data-duetspad-attachment-status", snapshot.Status.ToString().ToLowerInvariant()),
-            new("class", ResolveClassName(options.ClassName, "duetspad-file-picker")),
+            new("class", "duetspad-file-picker"),
         };
         if (!string.IsNullOrWhiteSpace(snapshot.Error))
         {
@@ -782,7 +782,7 @@ public sealed record DisplayContent
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.Text.ToAttributeValue()),
             new("type", "text"),
-            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new("class", "form-control"),
             new(FieldMarker.ValueAttributeName, value),
         };
         AddCommonFieldAttributes(
@@ -807,7 +807,7 @@ public sealed record DisplayContent
         {
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.TextArea.ToAttributeValue()),
-            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new("class", "form-control"),
             new(FieldMarker.ValueAttributeName, value),
         };
         if (options.Rows is { } rows)
@@ -844,7 +844,7 @@ public sealed record DisplayContent
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.Number.ToAttributeValue()),
             new("type", "number"),
-            new("class", ResolveClassName(options.ClassName, "form-control")),
+            new("class", "form-control"),
             new(FieldMarker.ValueAttributeName, value),
         };
         if (options.Min is { } min)
@@ -886,7 +886,7 @@ public sealed record DisplayContent
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.CheckBox.ToAttributeValue()),
             new("type", "checkbox"),
-            new("class", ResolveClassName(options.ClassName, "form-check-input")),
+            new("class", "form-check-input"),
         };
         if (string.Equals(value, "True", StringComparison.Ordinal))
         {
@@ -947,7 +947,7 @@ public sealed record DisplayContent
         {
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.DropDown.ToAttributeValue()),
-            new("class", ResolveClassName(options.ClassName, "form-select")),
+            new("class", "form-select"),
             new(FieldMarker.ValueAttributeName, value),
         };
         AddCommonFieldAttributes(
@@ -987,7 +987,7 @@ public sealed record DisplayContent
             new(FieldMarker.AttributeName, id.ToString("D")),
             new(FieldMarker.KindAttributeName, FieldKind.Slider.ToAttributeValue()),
             new("type", "range"),
-            new("class", ResolveClassName(options.ClassName, "form-range")),
+            new("class", "form-range"),
             new("min", FormatNumber(options.Min)),
             new("max", FormatNumber(options.Max)),
             new(FieldMarker.ValueAttributeName, value),
@@ -1074,11 +1074,6 @@ public sealed record DisplayContent
             .ToList();
 
         var wrapperAttributes = new List<KeyValuePair<string, string?>>();
-        if (!string.IsNullOrWhiteSpace(options.ClassName))
-        {
-            wrapperAttributes.Add(new KeyValuePair<string, string?>("class", options.ClassName));
-        }
-
         if (!string.IsNullOrWhiteSpace(options.Title))
         {
             wrapperAttributes.Add(new KeyValuePair<string, string?>("title", options.Title));
@@ -1088,9 +1083,6 @@ public sealed record DisplayContent
             new Element("div", new ElementAttributes(wrapperAttributes), [.. children])
         );
     }
-
-    private static string ResolveClassName(string? className, string fallback) =>
-        string.IsNullOrWhiteSpace(className) ? fallback : className!;
 
     private static void AddCommonFieldAttributes(
         List<KeyValuePair<string, string?>> attributes,

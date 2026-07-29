@@ -54,6 +54,29 @@ public sealed class DuetsPadFieldTests
     private static Element SingleChild(DuetsPadSession session) =>
         Assert.IsType<Element>(session.Canvas.State.Root.Children.Single());
 
+    [Theory]
+    [InlineData("textBox", "ui.textBox({ className: 'custom' })")]
+    [InlineData("textArea", "ui.textArea({ className: 'custom' })")]
+    [InlineData("numberBox", "ui.numberBox({ className: 'custom' })")]
+    [InlineData("checkBox", "ui.checkBox({ className: 'custom' })")]
+    [InlineData("dropDown", "ui.dropDown([], { className: 'custom' })")]
+    [InlineData("slider", "ui.slider({ className: 'custom' })")]
+    [InlineData("radioGroup", "ui.radioGroup([], { className: 'custom' })")]
+    [InlineData("filePicker", "ui.filePicker({ className: 'custom' })")]
+    public async Task Input_factories_reject_removed_class_name(string component, string code)
+    {
+        using var session = await CreatePadSessionAsync();
+
+        var result = await session.EvaluateAsync(code);
+
+        Assert.False(result.Ok);
+        Assert.Contains(
+            $"{component} className is not supported",
+            result.Error,
+            StringComparison.Ordinal
+        );
+    }
+
     [Fact]
     public async Task TextBox_renders_marked_input_with_current_value()
     {
@@ -68,6 +91,7 @@ public sealed class DuetsPadFieldTests
         Assert.Equal("text", input.Attributes["data-duetspad-field-kind"]);
         Assert.Equal("hi", input.Attributes["value"]);
         Assert.Equal("n", input.Attributes["name"]);
+        Assert.Equal("form-control", input.Attributes["class"]);
         Assert.True(input.Attributes.ContainsKey("data-duetspad-field"));
     }
 
@@ -81,6 +105,7 @@ public sealed class DuetsPadFieldTests
         var wrapper = SingleChild(session);
         var input = Assert.IsType<Element>(wrapper.Children.Single());
         Assert.Equal("checkbox", input.Attributes["data-duetspad-field-kind"]);
+        Assert.Equal("form-check-input", input.Attributes["class"]);
         Assert.True(input.Attributes.ContainsKey("checked"));
 
         var value = await session.EvaluateAsync("c.value");
@@ -102,6 +127,7 @@ public sealed class DuetsPadFieldTests
         var select = SingleChild(session);
         Assert.Equal("select", select.Tag);
         Assert.Equal("not-an-option", select.Attributes["value"]);
+        Assert.Equal("form-select", select.Attributes["class"]);
         Assert.Equal(2, select.Children.Count);
 
         var value = await session.EvaluateAsync("d.value");
