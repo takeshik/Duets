@@ -14,7 +14,4 @@ public sealed record FilePickerOptions
 
     /// <summary>Optional hover text.</summary>
     public string? Title { get; init; }
-
-    /// <summary>Optional additional CSS class applied to the picker wrapper.</summary>
-    public string? ClassName { get; init; }
 }

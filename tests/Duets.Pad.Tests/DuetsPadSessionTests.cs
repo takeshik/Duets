@@ -718,6 +718,7 @@ public sealed class DuetsPadSessionTests
             perSessionDecl.Content,
             StringComparison.Ordinal
         );
+        Assert.DoesNotContain("className", perSessionDecl.Content, StringComparison.Ordinal);
 
         // No declaration file other than the per-session one must declare dump.
         // (Core ScriptEngineInit.d.ts no longer defines dump — DuetsPad owns it.)

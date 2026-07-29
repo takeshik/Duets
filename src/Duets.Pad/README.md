@@ -120,6 +120,10 @@ interactions (`ui.button`), notifications and modal flow (`ui.toast`, `ui.modal`
 hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
 
+First-class builders encapsulate their framework classes and do not accept `className`. Use their
+structured options for supported presentation changes; use `ui.element` or `ui.rawHtml` only when
+the caller deliberately owns the element and class shape.
+
 `ui.dataGrid([{ label, content }])` accepts any renderable value as item content, including
 interactive controls. `ui.emptySpace(title, { message, icon, action })` provides a compact no-data
 state without introducing page-level dashboard concepts. `ui.code` renders semantic `<pre><code>`

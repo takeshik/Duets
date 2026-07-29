@@ -207,8 +207,7 @@ public sealed class DuetsPadAttachmentTests
               accept: ".txt,text/plain",
               multiple: true,
               disabled: true,
-              title: "Attach input",
-              className: "custom-picker"
+              title: "Attach input"
             });
             canvas.add(picker);
             """
@@ -218,7 +217,7 @@ public sealed class DuetsPadAttachmentTests
         var wrapper = Assert.IsType<Element>(session.Canvas.State.Root.Children.Single());
         Assert.Equal("file", wrapper.Attributes["data-duetspad-field-kind"]);
         Assert.Equal("0", wrapper.Attributes["data-duetspad-attachment-revision"]);
-        Assert.Contains("custom-picker", wrapper.Attributes["class"]);
+        Assert.Equal("duetspad-file-picker", wrapper.Attributes["class"]);
         var input = Assert.IsType<Element>(wrapper.Children[0]);
         Assert.Equal("file", input.Attributes["type"]);
         Assert.Equal(".txt,text/plain", input.Attributes["accept"]);
