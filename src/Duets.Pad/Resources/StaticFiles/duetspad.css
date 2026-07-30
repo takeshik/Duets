@@ -969,6 +969,9 @@ th.duetspad-typeheader {
 .app[data-view="tabs"] .workspace-tabbar {
     display: flex;
 }
+.app[data-maximized-pane] .workspace-tabbar {
+    display: none;
+}
 .workspace-tabbar .nav-link {
     font-size: 12.5px;
     font-weight: 600;
