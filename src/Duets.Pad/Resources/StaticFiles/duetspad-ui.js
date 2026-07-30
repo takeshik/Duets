@@ -16,11 +16,13 @@
     // In tabs view, activeTab may be "canvas:default", "canvas:myName", etc.
     activeTab: "editor",
     visible: { editor: true, canvas: true, timeline: true },
+    maximizedPane: null,
   };
 
   let app;
   let workspace;
   let tabbar;
+  let maximizedLayout = null;
   const panes = {};
 
   function query(selector, root = document) {
@@ -432,10 +434,10 @@
   }
 
   function syncToolbar() {
-    // Hide the pane-visibility toggle group in tabs view (all panes are always shown).
+    // Visibility toggles are not applicable in tabs or maximized view.
     const segPanes = query("#seg-panes");
     if (segPanes) {
-      segPanes.hidden = state.view === "tabs";
+      segPanes.hidden = state.view === "tabs" || state.maximizedPane !== null;
     }
 
     for (const button of queryAll("#seg-panes button")) {
@@ -470,6 +472,8 @@
   }
 
   function setArrange(mode) {
+    setMaximizedPane(null);
+
     if (mode === "tabs") {
       state.view = "tabs";
     } else {
@@ -479,11 +483,73 @@
     render();
   }
 
+  function setMaximizedPane(name) {
+    if (state.maximizedPane !== null) {
+      for (const item of maximizedLayout) {
+        item.element.style.display = item.display;
+        item.element.style.flex = item.flex;
+      }
+
+      state.maximizedPane = null;
+      maximizedLayout = null;
+      delete app.dataset.maximizedPane;
+      syncToolbar();
+    }
+
+    if (name === null) {
+      return;
+    }
+
+    const pane = panes[name];
+    maximizedLayout = queryAll(
+      ".pane, .splitter, .workspace-col, .workspace-row",
+      workspace,
+    ).map((element) => {
+      const item = {
+        element,
+        display: element.style.display,
+        flex: element.style.flex,
+      };
+
+      if (element.contains(pane)) {
+        setGrow(element, true);
+      } else {
+        element.style.display = "none";
+      }
+
+      return item;
+    });
+
+    state.maximizedPane = name;
+    app.dataset.maximizedPane = name;
+    syncToolbar();
+  }
+
+  function toggleMaximizedPane(name) {
+    setMaximizedPane(state.maximizedPane === name ? null : name);
+  }
+
+  function wirePaneHeaders() {
+    for (const name of PANE_NAMES) {
+      queryRequired(".pane-head", panes[name]).addEventListener(
+        "dblclick",
+        (event) => {
+          if (event.target.closest("a, button")) {
+            return;
+          }
+
+          toggleMaximizedPane(name);
+        },
+      );
+    }
+  }
+
   function setVisible(name, visible) {
     if (!Object.hasOwn(state.visible, name)) {
       return;
     }
 
+    setMaximizedPane(null);
     state.visible[name] = visible;
     render();
   }
@@ -596,6 +662,7 @@
     }
 
     wireToolbar();
+    wirePaneHeaders();
     render();
   }
 
