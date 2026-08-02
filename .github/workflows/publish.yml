@@ -36,6 +36,18 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Set release version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF#refs/tags/v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must have the form vMAJOR.MINOR.PATCH." >&2
+            exit 1
+          fi
+          echo "DUETS_RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+
       - name: Setup Biome
         uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51 # v2
         with:
@@ -85,20 +97,60 @@ jobs:
           path: '**/TestResults/*.trx'
           reporter: dotnet-trx
 
-      - name: Extract version from tag
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        run: echo "PACK_VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_ENV"
-
       - name: Pack (release)
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        run: dotnet pack --no-build -c Release -o ./artifacts /p:Version=${{ env.PACK_VERSION }}
-
-      - name: Pack (snapshot)
-        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
         run: dotnet pack --no-build -c Release -o ./artifacts
 
+      - name: Select snapshot projects
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          projects=(
+            src/Duets/Duets.csproj
+            src/Duets.Jint/Duets.Jint.csproj
+            src/Duets.Pad/Duets.Pad.csproj
+            src/HttpHarker/HttpHarker.csproj
+          )
+          selected=()
+          before="${{ github.event.before }}"
+
+          if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "${before}^{commit}"; then
+            selected=("${projects[@]}")
+          else
+            common_changed=false
+            if ! git diff --quiet "$before" "$GITHUB_SHA" -- \
+              version.json \
+              Directory.Build.props \
+              global.json \
+              key.snk \
+              src/shared; then
+              common_changed=true
+            fi
+
+            for project in "${projects[@]}"; do
+              project_directory="${project%/*}"
+              if [[ "$common_changed" == true ]] || \
+                ! git diff --quiet "$before" "$GITHUB_SHA" -- "$project_directory"; then
+                selected+=("$project")
+              fi
+            done
+          fi
+
+          echo "SNAPSHOT_PROJECTS=${selected[*]}" >> "$GITHUB_ENV"
+
+      - name: Pack (snapshot)
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') && env.SNAPSHOT_PROJECTS != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          for project in $SNAPSHOT_PROJECTS; do
+            dotnet pack "$project" --no-build -c Release -o ./artifacts
+          done
+
       - name: Publish to GitHub Packages
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/') || env.SNAPSHOT_PROJECTS != '')
         run: |
           dotnet nuget push ./artifacts/*.nupkg \
             --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json \

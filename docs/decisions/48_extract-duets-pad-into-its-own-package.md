@@ -4,7 +4,8 @@
 
 Accepted — partially supersedes [ADR-23](23_ci-and-package-publishing.md) (package topology,
 `IsPackable` set, signing scope) and [ADR-16](16_samples-directory-and-sandbox-role-clarification.md)
-(flat samples layout)
+(flat samples layout); solution-wide snapshot packing partially superseded by
+[ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md)
 
 ## Context
 

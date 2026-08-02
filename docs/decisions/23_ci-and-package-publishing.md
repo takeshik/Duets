@@ -4,10 +4,13 @@
 
 Accepted — supersedes [ADR-17](17_versioning-strategy-and-ci.md); package topology, `IsPackable`
 set, and signing scope partially superseded by
-[ADR-48](48_extract-duets-pad-into-its-own-package.md)
+[ADR-48](48_extract-duets-pad-into-its-own-package.md); snapshot version production and package
+selection partially superseded by
+[ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md)
 
 The CI/publish workflow (single `publish.yml`, snapshot on push to `main`, release on tags), the
-GitHub Packages target, and the independent-packages principle decided here remain in force. The
+GitHub Packages target, and the independent-packages principle decided here remain in force. ADR-54
+refines snapshot publishing to pack only packages whose independently versioned inputs changed. The
 concrete package inventory is no longer two: `Duets.Jint`
 ([ADR-27](27_split-javascript-runtime-backends-from-duets-core.md)) and `Duets.Pad`
 ([ADR-48](48_extract-duets-pad-into-its-own-package.md)) were extracted later, and `Duets` no longer

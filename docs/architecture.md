@@ -133,11 +133,16 @@ This avoids bundling large JS files in the library assembly. `lib.es5.d.ts` is o
 
 ## Versioning and CI
 
-Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) ([ADR-23](decisions/23_ci-and-package-publishing.md)). Releases are triggered by `v{major}.{minor}.{patch}` Git tags and publish a NuGet package to GitHub Packages. Development builds carry a `-dev.{height}+g{commit}` prerelease suffix (SemVer 2.0).
+Versions are managed by [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning)
+([ADR-23](decisions/23_ci-and-package-publishing.md),
+[ADR-54](decisions/54_independent-snapshot-versioning-for-nuget-packages.md)). Each package derives its development
+snapshot height from its own build inputs and is packed only when those inputs change; the NuGet version has the form
+`0.1.0-dev.{height}`, while assembly and package repository metadata retain the exact commit. Releases are triggered
+by `v{major}.{minor}.{patch}` Git tags and publish all packages to GitHub Packages at the same explicit stable version.
 
 ## Key Dependencies
 
 | Package | Role |
 |---|---|
 | [Jint](https://github.com/sebastienros/jint) | JavaScript runtime backend used by `Duets.Jint` ([ADR-4](decisions/4_use-jint-as-the-javascript-engine.md), [ADR-27](decisions/27_split-javascript-runtime-backends-from-duets-core.md)) |
-| [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated versioning from Git history and tags ([ADR-23](decisions/23_ci-and-package-publishing.md)) |
+| [Nerdbank.GitVersioning](https://github.com/dotnet/Nerdbank.GitVersioning) | Automated package-specific snapshot versioning from filtered Git history ([ADR-23](decisions/23_ci-and-package-publishing.md), [ADR-54](decisions/54_independent-snapshot-versioning-for-nuget-packages.md)) |
