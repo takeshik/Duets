@@ -24,6 +24,25 @@
     <PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" IsImplicit="true" />
   </ItemGroup>
 
+  <Target
+    Name="SetDuetsReleaseVersion"
+    AfterTargets="GetBuildVersion"
+    Condition="'$(DUETS_RELEASE_VERSION)' != ''"
+  >
+    <PropertyGroup>
+      <BuildVersion>$(DUETS_RELEASE_VERSION)</BuildVersion>
+      <BuildVersionSimple>$(DUETS_RELEASE_VERSION)</BuildVersionSimple>
+      <Version>$(DUETS_RELEASE_VERSION)</Version>
+      <PackageVersion>$(DUETS_RELEASE_VERSION)</PackageVersion>
+      <NuGetPackageVersion>$(DUETS_RELEASE_VERSION)</NuGetPackageVersion>
+      <AssemblyVersion>$([System.Version]::Parse('$(DUETS_RELEASE_VERSION)').ToString(2)).0.0</AssemblyVersion>
+      <AssemblyFileVersion>$(DUETS_RELEASE_VERSION)</AssemblyFileVersion>
+      <AssemblyInformationalVersion>$(DUETS_RELEASE_VERSION)+$(GitCommitIdShort)</AssemblyInformationalVersion>
+      <PrereleaseVersion />
+      <PublicRelease>true</PublicRelease>
+    </PropertyGroup>
+  </Target>
+
   <ItemGroup Condition="'$(Configuration)' != 'Release'">
     <InternalsVisibleTo Include="LINQPadQuery" />
   </ItemGroup>

@@ -1,0 +1,11 @@
+{
+  "inherit": true,
+  "pathFilters": [
+    ".",
+    "../shared",
+    "../../Directory.Build.props",
+    "../../global.json",
+    "../../key.snk",
+    "../../version.json"
+  ]
+}

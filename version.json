@@ -4,5 +4,8 @@
   "nugetPackageVersion": {
     "semVer": 2
   },
-  "publicReleaseRefSpec": ["^refs/tags/v\\d+\\.\\d+\\.\\d+$"]
+  "publicReleaseRefSpec": [
+    "^refs/heads/main$",
+    "^refs/tags/v\\d+\\.\\d+\\.\\d+$"
+  ]
 }
