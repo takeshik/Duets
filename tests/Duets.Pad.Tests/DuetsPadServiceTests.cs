@@ -209,6 +209,131 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    [Fact]
+    public async Task Post_sessions_applies_editor_candidate_only_to_a_fresh_session()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                using var createResponse = await client.PostAsync(
+                    prefix + "sessions",
+                    new StringContent(
+                        "{\"editorText\":\"fresh\"}",
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                var createPayload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+                var sessionId = createPayload.GetProperty("sessionId").GetString();
+
+                using var resumeResponse = await client.PostAsync(
+                    prefix + "sessions",
+                    new StringContent(
+                        $"{{\"sessionId\":\"{sessionId}\",\"editorText\":\"stale local copy\"}}",
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                var resumePayload = await resumeResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(sessionId, resumePayload.GetProperty("sessionId").GetString());
+
+                using var editorResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/editor"
+                );
+                var editorPayload = await editorResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.True(editorPayload.GetProperty("ok").GetBoolean());
+                Assert.Equal("fresh", editorPayload.GetProperty("text").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Post_sessions_with_stale_id_mints_a_fresh_session_with_editor_candidate()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var staleId = Guid.NewGuid();
+                using var createResponse = await client.PostAsync(
+                    prefix + "sessions",
+                    new StringContent(
+                        $"{{\"sessionId\":\"{staleId}\",\"editorText\":\"candidate\"}}",
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                var createPayload = await createResponse.Content.ReadFromJsonAsync<JsonElement>();
+                var sessionId = createPayload.GetProperty("sessionId").GetString();
+                Assert.NotEqual(staleId.ToString(), sessionId);
+
+                using var editorResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/editor"
+                );
+                var editorPayload = await editorResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal("candidate", editorPayload.GetProperty("text").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Editor_put_and_get_use_whole_document_last_write_wins()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                foreach (var text in new[] { "first", "second" })
+                {
+                    using var request = new HttpRequestMessage(
+                        HttpMethod.Put,
+                        prefix + $"sessions/{sessionId}/editor"
+                    )
+                    {
+                        Content = new StringContent(text, Encoding.UTF8, "text/plain"),
+                    };
+                    using var response = await client.SendAsync(request);
+                    var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    Assert.True(payload.GetProperty("ok").GetBoolean());
+                }
+
+                using var getResponse = await client.GetAsync(
+                    prefix + $"sessions/{sessionId}/editor"
+                );
+                var getPayload = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal("second", getPayload.GetProperty("text").GetString());
+            }
+        );
+    }
+
+    [Fact]
+    public async Task Editor_get_and_put_fail_for_an_unknown_session_without_creating_one()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var unknownId = Guid.NewGuid();
+                using var getResponse = await client.GetAsync(
+                    prefix + $"sessions/{unknownId}/editor"
+                );
+                var getPayload = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(getPayload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", getPayload.GetProperty("error").GetString());
+
+                using var putRequest = new HttpRequestMessage(
+                    HttpMethod.Put,
+                    prefix + $"sessions/{unknownId}/editor"
+                )
+                {
+                    Content = new StringContent("text", Encoding.UTF8, "text/plain"),
+                };
+                using var putResponse = await client.SendAsync(putRequest);
+                var putPayload = await putResponse.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.False(putPayload.GetProperty("ok").GetBoolean());
+                Assert.Equal("Unknown session.", putPayload.GetProperty("error").GetString());
+            }
+        );
+    }
+
     // DELETE /sessions/{sessionId}
 
     [Fact]
@@ -1023,6 +1148,145 @@ public sealed class DuetsPadServiceTests
         );
     }
 
+    [Fact]
+    public async Task DuetsPadJs_retries_oversized_bootstrap_without_editor_candidate()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains("if (res.status === 413)", js, StringComparison.Ordinal);
+                Assert.Contains("candidateApplied = false", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "body: JSON.stringify(stored ? { sessionId: stored } : {})",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "!bootstrap.candidateApplied && !bootstrap.resumed",
+                    js,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_retries_oversized_session_reset_without_discarding_local_editor_text()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+                var swapStart = js.IndexOf(
+                    "async function swapSession()",
+                    StringComparison.Ordinal
+                );
+                var swapEnd = js.IndexOf("// Control channel", swapStart, StringComparison.Ordinal);
+                Assert.True(swapStart >= 0 && swapEnd > swapStart);
+                var swapSource = js[swapStart..swapEnd];
+
+                Assert.Contains("if (res.status === 413)", swapSource, StringComparison.Ordinal);
+                Assert.Contains("body: \"{}\"", swapSource, StringComparison.Ordinal);
+                Assert.Contains(
+                    "newEditorText = editorCandidate",
+                    swapSource,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "newCommittedEditorText = candidateApplied ? editorCandidate : \"\"",
+                    swapSource,
+                    StringComparison.Ordinal
+                );
+                Assert.DoesNotContain(
+                    "await readEditorText(newId)",
+                    swapSource,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_passive_editor_commits_only_when_the_local_text_changed()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains(
+                    "if (text === lastCommittedEditorText) return;",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains("lastCommittedEditorText = text", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "void commitEditorTextIfChanged(text).catch",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "void commitEditorTextIfChanged(text, { keepalive: true }).catch",
+                    js,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_modal_snapshot_does_not_restore_stale_pending_field_values()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains(
+                    "addOrReplaceModal(projection, { preserveFieldEdits: false })",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "options.preserveFieldEdits !== false",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains("addOrReplaceModal(msg.modal)", js, StringComparison.Ordinal);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task DuetsPadJs_consumes_handoff_only_after_Monaco_is_ready()
+    {
+        await RunAsync(
+            async (client, prefix) =>
+            {
+                var js = await client.GetStringAsync(prefix + "duetspad.js");
+
+                Assert.Contains("function readHandoff(uuid)", js, StringComparison.Ordinal);
+                Assert.Contains(
+                    "setupMonaco(bootstrap.id, editorText, () => {",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.Contains(
+                    "finishEditorBootstrapCandidate(candidate)",
+                    js,
+                    StringComparison.Ordinal
+                );
+                Assert.DoesNotContain(
+                    "const handoffContent = handoffParam ? consumeHandoff",
+                    js,
+                    StringComparison.Ordinal
+                );
+            }
+        );
+    }
+
     // Canvas SSE
 
     [Fact]
@@ -1208,12 +1472,17 @@ public sealed class DuetsPadServiceTests
     }
 
     [Fact]
-    public async Task Field_commit_route_stores_the_value_without_broadcasting()
+    public async Task Field_commit_route_stores_and_broadcasts_the_authoritative_value()
     {
         await RunAsync(
             async (client, prefix) =>
             {
                 var sessionId = await CreateSessionAsync(client, prefix);
+                await using var eventStream = await client.GetStreamAsync(
+                    prefix + $"sessions/{sessionId}/events"
+                );
+                using var eventReader = new StreamReader(eventStream);
+                _ = await ReadNextSseDataAsync(eventReader, typePrefix: "canvas.");
 
                 using var evalResponse = await client.PostAsync(
                     prefix + $"sessions/{sessionId}/eval",
@@ -1224,6 +1493,7 @@ public sealed class DuetsPadServiceTests
                     )
                 );
                 evalResponse.EnsureSuccessStatusCode();
+                _ = await ReadNextSseDataAsync(eventReader, typePrefix: "canvas.");
 
                 using var snapshotResponse = await client.GetAsync(
                     prefix + $"sessions/{sessionId}/canvas?name=default"
@@ -1240,6 +1510,18 @@ public sealed class DuetsPadServiceTests
                 commitResponse.EnsureSuccessStatusCode();
                 var commitPayload = await commitResponse.Content.ReadFromJsonAsync<JsonElement>();
                 Assert.True(commitPayload.GetProperty("ok").GetBoolean());
+
+                var projectedCommit = await ReadNextSseDataAsync(
+                    eventReader,
+                    typePrefix: "canvas.patch"
+                );
+                Assert.Contains(
+                    projectedCommit.GetProperty("operations").EnumerateArray(),
+                    operation =>
+                        operation.GetProperty("op").GetString() == "set-attr"
+                        && operation.GetProperty("name").GetString() == "value"
+                        && operation.GetProperty("value").GetString() == "hello"
+                );
 
                 using var readResponse = await client.PostAsync(
                     prefix + $"sessions/{sessionId}/eval",

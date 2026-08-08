@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — concurrent field-commit projection and conflict resolution partially superseded by
+[ADR-55](55_first-class-headless-clients-and-shared-session-control-for-duetspad.md)
 
 ## Context
 

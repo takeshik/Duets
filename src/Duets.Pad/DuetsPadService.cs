@@ -55,6 +55,8 @@ public sealed class DuetsPadService : IDisposable
                         .MapGet("/tabler-icons.woff2", this._assets.HandleTablerIconsFontAsync)
                         .MapPost("/sessions", this.HandlePostSessionAsync)
                         .MapDelete("/sessions/{sessionId}", this.HandleDeleteSessionAsync)
+                        .MapGet("/sessions/{sessionId}/editor", this.HandleGetEditorAsync)
+                        .MapPut("/sessions/{sessionId}/editor", this.HandlePutEditorAsync)
                         .MapPost("/sessions/{sessionId}/eval", this.HandleEvalAsync)
                         .MapPost("/sessions/{sessionId}/complete", this.HandleCompleteAsync)
                         .MapGet("/sessions/{sessionId}/canvas", this.HandleCanvasSnapshotAsync)
@@ -190,6 +192,7 @@ public sealed class DuetsPadService : IDisposable
         }
 
         Guid? existingId = null;
+        string? initialEditorText = null;
 
         if (!string.IsNullOrWhiteSpace(body))
         {
@@ -205,6 +208,14 @@ public sealed class DuetsPadService : IDisposable
                 {
                     existingId = parsedId;
                 }
+
+                if (
+                    root.TryGetProperty("editorText", out var editorTextEl)
+                    && editorTextEl.ValueKind == JsonValueKind.String
+                )
+                {
+                    initialEditorText = editorTextEl.GetString() ?? "";
+                }
             }
             catch (JsonException)
             {
@@ -212,7 +223,10 @@ public sealed class DuetsPadService : IDisposable
             }
         }
 
-        if (await this._registry.GetOrCreateSessionAsync(existingId) is not { } created)
+        if (
+            await this._registry.GetOrCreateSessionAsync(existingId, initialEditorText)
+            is not { } created
+        )
         {
             ctx.Response.StatusCode = 429;
             await ctx.CloseAsync(
@@ -229,6 +243,64 @@ public sealed class DuetsPadService : IDisposable
         await ctx.CloseAsync(
             "application/json; charset=utf-8",
             new JsonObject { ["sessionId"] = created.Id.ToString() }.ToJsonString()
+        );
+    }
+
+    // GET /sessions/{sessionId}/editor
+
+    private async Task HandleGetEditorAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
+        {
+            return;
+        }
+
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject
+            {
+                ["ok"] = true,
+                ["sessionId"] = session.Id.ToString(),
+                ["text"] = session.GetEditorText(),
+            }.ToJsonString()
+        );
+    }
+
+    // PUT /sessions/{sessionId}/editor
+
+    private async Task HandlePutEditorAsync(HttpActionContext ctx)
+    {
+        var sessionId = ctx.Args["sessionId"];
+        if (await this.ResolveSessionOrRespondAsync(ctx, sessionId) is not { } session)
+        {
+            return;
+        }
+
+        if (
+            await this.ReadBodyWithinLimitOrRespondAsync(ctx, session.Id.ToString()) is not { } text
+        )
+        {
+            return;
+        }
+
+        if (!await session.ReplaceEditorTextAsync(text))
+        {
+            await ctx.CloseAsync(
+                "application/json; charset=utf-8",
+                new JsonObject
+                {
+                    ["ok"] = false,
+                    ["error"] = "Unknown session.",
+                    ["sessionId"] = sessionId ?? "",
+                }.ToJsonString()
+            );
+            return;
+        }
+
+        await ctx.CloseAsync(
+            "application/json; charset=utf-8",
+            new JsonObject { ["ok"] = true, ["sessionId"] = session.Id.ToString() }.ToJsonString()
         );
     }
 
@@ -408,11 +480,8 @@ public sealed class DuetsPadService : IDisposable
     // POST /sessions/{sessionId}/fields/{fieldId}/commit
 
     /// <summary>
-    /// Browser-originated field-value commit (ADR-47): stores the raw request body as the field's
-    /// value and updates authoritative projected state in place, but never broadcasts — the
-    /// committing browser already reflects the value it is sending, so echoing it back would be
-    /// redundant (and updating the authoritative state without a broadcast is what lets a later SSE
-    /// reconnect see the committed value instead of reverting to the pre-commit projection).
+    /// Browser-originated field-value commit: stores the raw request body as the field's value and
+    /// broadcasts the resulting authoritative projection so every connected peer converges.
     /// </summary>
     private async Task HandleCommitFieldAsync(HttpActionContext ctx)
     {

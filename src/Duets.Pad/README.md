@@ -28,7 +28,8 @@ Runnable examples live in [`samples/Duets.Pad/`](../../samples/Duets.Pad/).
 The pad presents five surfaces:
 
 - **Editor** — a Monaco editor with TypeScript completions for the .NET types registered in the
-  session. Each browser tab gets its own isolated server-side session.
+  session. Its last committed whole-document text belongs to the server session and can be read or
+  replaced by a headless client.
 - **Canvas** — persistent display state, updated in place. A session can hold multiple named
   canvases, each shown as its own tab.
 - **Timeline** — append-only execution history: `dump` output, `console.*` output, evaluation
@@ -61,6 +62,43 @@ The editor's final evaluation result is **not** automatically appended to the Ti
 concrete type, so chains such as `query.where(...).dump().select(...)` retain completions. The
 equivalent global `dump(value)` remains available for `null`, `undefined`, null-prototype objects,
 and values whose own `dump` member shadows DuetsPad's method.
+
+## Headless access to an existing session
+
+`DuetsPadClient` lets a test, agent adapter, or other .NET process operate the same existing session
+as a browser. Evaluate `pad.sessionId` in the browser session, then supply that id explicitly:
+
+```csharp
+using var client = new DuetsPadClient(
+    new Uri("http://127.0.0.1:17375/"),
+    sessionId,
+    bearerCredential: accessToken);
+
+var editor = await client.GetEditorTextAsync();
+if (!editor.Ok)
+{
+    throw new InvalidOperationException(editor.Error);
+}
+Console.WriteLine(editor.Value!.Text);
+var replacement = "canvas.set('updated by a headless peer')";
+await client.ReplaceEditorTextAsync(replacement);
+var evaluation = await client.EvaluateAsync(replacement);
+```
+
+The client also exposes tagged-template completion, Canvas snapshots, the unified SSE stream,
+interaction and field submission, streaming attachment transactions, and explicit deletion. It
+does not create, list, search for, or silently replace sessions. An unknown, expired, or deleted id
+therefore produces `Unknown session.` from the attempted operation. The same Bearer credential is
+sent on direct requests and SSE opening. Disposing the client or an event stream closes only the
+resources it owns and never deletes the session. Only one `ReadAsync` call may be active on an event
+stream; an overlapping read fails with `InvalidOperationException` instead of racing the stream
+parser's pending state.
+
+Editor sharing is explicit and non-realtime: `GET` reads the last committed text and `PUT` replaces
+the whole document with server-order last-write-wins behavior. The browser commits before running;
+on Editor blur, hiding, or departure it sends only when the local buffer differs from the last text
+that browser read from or successfully wrote to the server. Characters still being typed may not
+yet be visible to a headless read. Editor changes do not produce SSE events.
 
 ## Building UI with `ui.*`
 

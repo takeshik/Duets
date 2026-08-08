@@ -1,95 +1,217 @@
-using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Duets.Pad;
 
 namespace Duets.Sandbox;
 
-internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
+/// <summary>Adapts the public session-scoped client to Sandbox JSONL records.</summary>
+internal sealed class DuetsPadProtocolClient : IDisposable
 {
-    private readonly HttpClient _http = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
-        BaseAddress = baseUri,
-        Timeout = TimeSpan.FromSeconds(10),
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
-    private readonly Dictionary<string, OpenSseStream> _sseStreams = [];
 
-    public async Task<JsonObject> CreateSessionAsync(string? sessionId)
+    private readonly Dictionary<string, DuetsPadEventStream> _sseStreams = [];
+    private DuetsPadClient? _client;
+    private Uri? _localServiceUri;
+    private string? _localServiceBearerCredential;
+    private bool _targetUsesLocalService;
+
+    public bool HasTarget => this._client is not null;
+
+    public string? TargetSessionId => this._client?.SessionId;
+
+    public void SetLocalService(Uri baseUri, string? bearerCredential)
     {
-        var body = sessionId is null ? [] : new JsonObject { ["sessionId"] = sessionId };
-        using var response = await this._http.PostAsync(
-            "sessions",
-            new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        );
-
-        return await ReadJsonResponseAsync(response);
+        this._localServiceUri = baseUri;
+        this._localServiceBearerCredential = bearerCredential;
     }
 
-    public async Task<JsonObject> DeleteSessionAsync(string sessionId)
+    public void ClearLocalService()
     {
-        using var response = await this._http.DeleteAsync($"sessions/{sessionId}");
-        return await ReadJsonResponseAsync(response);
-    }
-
-    public async Task<JsonObject> EvaluateAsync(string sessionId, string code, string? source)
-    {
-        var path = $"sessions/{sessionId}/eval";
-        if (!string.IsNullOrWhiteSpace(source))
+        if (this._targetUsesLocalService)
         {
-            path += $"?source={Uri.EscapeDataString(source)}";
+            this.CloseTarget();
         }
 
-        using var response = await this._http.PostAsync(
-            path,
-            new StringContent(code, Encoding.UTF8, "text/plain")
-        );
-        return await ReadJsonResponseAsync(response);
+        this._localServiceUri = null;
+        this._localServiceBearerCredential = null;
     }
 
-    public async Task<JsonObject> InvokeInteractionAsync(string sessionId, string handlerId)
+    public JsonObject Target(Uri baseUri, string sessionId, string? bearerCredential)
     {
-        using var response = await this._http.PostAsync(
-            $"sessions/{sessionId}/interactions/{handlerId}/invoke",
-            content: null
-        );
-        return await ReadJsonResponseAsync(response);
+        this.CloseTarget();
+        this._client = new DuetsPadClient(baseUri, sessionId, bearerCredential);
+        this._targetUsesLocalService = false;
+        return new JsonObject
+        {
+            ["ok"] = true,
+            ["baseUri"] = baseUri.ToString(),
+            ["sessionId"] = sessionId,
+        };
     }
 
-    public async Task<JsonObject> OpenSseAsync(string streamId, string sessionId, string stream)
+    /// <summary>
+    /// Preserves the repository-only local-server creation operation. Creation is deliberately
+    /// performed outside the public existing-session client, then the returned id becomes the
+    /// retained target for subsequent operations.
+    /// </summary>
+    public async Task<JsonObject> CreateLocalSessionAsync(string? sessionId)
+    {
+        var baseUri =
+            this._localServiceUri
+            ?? throw new InvalidOperationException("The DuetsPad server is not running.");
+        using var http = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, "sessions"));
+        if (this._localServiceBearerCredential is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                this._localServiceBearerCredential
+            );
+        }
+
+        var body = sessionId is null ? [] : new JsonObject { ["sessionId"] = sessionId };
+        request.Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var response = await http.SendAsync(request);
+        var result = await ReadJsonObjectAsync(response);
+        if (
+            response.IsSuccessStatusCode
+            && result["sessionId"] is JsonValue value
+            && value.TryGetValue<string>(out var createdId)
+        )
+        {
+            this.Target(baseUri, createdId, this._localServiceBearerCredential);
+            this._targetUsesLocalService = true;
+        }
+
+        result["httpOk"] = response.IsSuccessStatusCode;
+        result["statusCode"] = (int)response.StatusCode;
+        return result;
+    }
+
+    public async Task<JsonObject> DeleteSessionAsync()
+    {
+        var result = await this.RequireClient().DeleteSessionAsync();
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> EvaluateAsync(string code, bool appendResult)
+    {
+        var result = await this.RequireClient().EvaluateAsync(code, appendResult);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> CompleteAsync(DuetsPadCompletionRequest request)
+    {
+        var result = await this.RequireClient().CompleteAsync(request);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> GetCanvasAsync(string name)
+    {
+        var result = await this.RequireClient().GetCanvasAsync(name);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> InvokeInteractionAsync(
+        string handlerId,
+        DuetsPadInteractionSnapshot? snapshot
+    )
+    {
+        var result = await this.RequireClient().InvokeInteractionAsync(handlerId, snapshot);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> CommitFieldAsync(string fieldId, string value)
+    {
+        var result = await this.RequireClient().CommitFieldAsync(fieldId, value);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> BeginAttachmentSelectionAsync(
+        string pickerId,
+        Guid clientId,
+        long generation,
+        IReadOnlyList<DuetsPadAttachmentFile> files
+    )
+    {
+        var result = await this.RequireClient()
+            .BeginAttachmentSelectionAsync(pickerId, clientId, generation, files);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> UploadAttachmentFileAsync(
+        string pickerId,
+        string token,
+        string fileId,
+        byte[] content,
+        string contentType
+    )
+    {
+        using var stream = new MemoryStream(content, writable: false);
+        var result = await this.RequireClient()
+            .UploadAttachmentFileAsync(pickerId, token, fileId, stream, contentType);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> CommitAttachmentSelectionAsync(string pickerId, string token)
+    {
+        var result = await this.RequireClient().CommitAttachmentSelectionAsync(pickerId, token);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> CancelAttachmentSelectionAsync(string pickerId, string token)
+    {
+        var result = await this.RequireClient().CancelAttachmentSelectionAsync(pickerId, token);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> CancelFailedAttachmentSelectionAsync(
+        string pickerId,
+        long revision
+    )
+    {
+        var result = await this.RequireClient()
+            .CancelFailedAttachmentSelectionAsync(pickerId, revision);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> GetEditorTextAsync()
+    {
+        var result = await this.RequireClient().GetEditorTextAsync();
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> ReplaceEditorTextAsync(string text)
+    {
+        var result = await this.RequireClient().ReplaceEditorTextAsync(text);
+        return ToJson(result);
+    }
+
+    public async Task<JsonObject> OpenSseAsync(string streamId)
     {
         if (this._sseStreams.ContainsKey(streamId))
         {
             throw new InvalidOperationException($"SSE stream already exists: {streamId}");
         }
 
-        if (!DuetsPadStreamKind.TryParse(stream, out var streamKind))
+        var result = await this.RequireClient().OpenEventsAsync();
+        if (!result.Ok || result.Value is null)
         {
-            throw new ArgumentException(
-                $"stream must be one of: {string.Join(", ", DuetsPadStreamKind.AllTokens)}",
-                nameof(stream)
-            );
+            return ToJson(result);
         }
 
-        var path = streamKind.BuildRelativePath(sessionId);
-
-        var response = await this._http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
-        {
-            var error = await ReadJsonResponseAsync(response);
-            response.Dispose();
-            return error;
-        }
-
-        var body = await response.Content.ReadAsStreamAsync();
-        var reader = new StreamReader(body, Encoding.UTF8);
-        this._sseStreams.Add(streamId, new OpenSseStream(streamId, stream, response, reader));
-
+        this._sseStreams.Add(streamId, result.Value);
         return new JsonObject
         {
             ["ok"] = true,
             ["streamId"] = streamId,
-            ["stream"] = stream,
-            ["statusCode"] = (int)response.StatusCode,
+            ["stream"] = "events",
+            ["statusCode"] = (int)result.StatusCode,
         };
     }
 
@@ -105,138 +227,29 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
             throw new InvalidOperationException($"SSE stream does not exist: {streamId}");
         }
 
-        if (maxRecords <= 0)
+        var result = await stream.ReadAsync(
+            maxRecords,
+            TimeSpan.FromMilliseconds(timeoutMs),
+            includeComments
+        );
+        var node = JsonSerializer.SerializeToNode(result, _jsonOptions)!.AsObject();
+        node["ok"] = !result.Ended;
+        node["streamId"] = streamId;
+        node["stream"] = "events";
+        if (result.Ended)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxRecords),
-                "maxRecords must be positive."
-            );
+            node["error"] = "SSE stream ended.";
         }
 
-        if (timeoutMs < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(timeoutMs),
-                "timeoutMs cannot be negative."
-            );
-        }
-
-        var records = new JsonArray();
-        var commentsSkipped = 0;
-        var deadline = Task.Delay(TimeSpan.FromMilliseconds(timeoutMs));
-        var dataLines = stream.TakePendingDataLines();
-        var eventName = stream.TakePendingEventName();
-
-        while (records.Count < maxRecords)
-        {
-            // Reuse a read started by a previous timed-out call, if any, so no line is dropped.
-            // The read task is never cancelled: cancelling it would tear down the underlying
-            // HttpClient response stream and make every later read on this stream fail.
-            var readTask = stream.TakePendingRead() ?? stream.Reader.ReadLineAsync();
-
-            string? line;
-            if (readTask.IsCompleted)
-            {
-                line = await readTask;
-            }
-            else
-            {
-                var completed = await Task.WhenAny(readTask, deadline);
-                if (completed != readTask)
-                {
-                    // Timed out: hand the in-flight read to the next call instead of cancelling it.
-                    stream.SetPendingRead(readTask);
-                    stream.SetPendingRecord(eventName, dataLines);
-                    return new JsonObject
-                    {
-                        ["ok"] = true,
-                        ["streamId"] = streamId,
-                        ["stream"] = stream.Stream,
-                        ["timedOut"] = true,
-                        ["commentsSkipped"] = commentsSkipped,
-                        ["records"] = records,
-                    };
-                }
-
-                line = await readTask;
-            }
-
-            if (line is null)
-            {
-                return new JsonObject
-                {
-                    ["ok"] = false,
-                    ["streamId"] = streamId,
-                    ["stream"] = stream.Stream,
-                    ["error"] = "SSE stream ended.",
-                    ["commentsSkipped"] = commentsSkipped,
-                    ["records"] = records,
-                };
-            }
-
-            if (line.Length == 0)
-            {
-                if (dataLines.Count == 0)
-                {
-                    continue;
-                }
-
-                var data = string.Join('\n', dataLines);
-                records.Add(BuildDataRecord(eventName, data));
-                dataLines.Clear();
-                eventName = null;
-                continue;
-            }
-
-            if (line.StartsWith(':'))
-            {
-                if (includeComments)
-                {
-                    records.Add(
-                        new JsonObject { ["kind"] = "comment", ["comment"] = line[1..].TrimStart() }
-                    );
-                }
-                else
-                {
-                    commentsSkipped++;
-                }
-
-                continue;
-            }
-
-            var separator = line.IndexOf(':', StringComparison.Ordinal);
-            var field = separator >= 0 ? line[..separator] : line;
-            var value = separator >= 0 ? line[(separator + 1)..].TrimStart() : "";
-            switch (field)
-            {
-                case "event":
-                    eventName = value;
-                    break;
-                case "data":
-                    dataLines.Add(value);
-                    break;
-            }
-        }
-
-        return new JsonObject
-        {
-            ["ok"] = true,
-            ["streamId"] = streamId,
-            ["stream"] = stream.Stream,
-            ["timedOut"] = false,
-            ["commentsSkipped"] = commentsSkipped,
-            ["records"] = records,
-        };
+        return node;
     }
 
     public JsonObject ListSseStreams()
     {
         var streams = new JsonArray();
-        foreach (var stream in this._sseStreams.Values)
+        foreach (var streamId in this._sseStreams.Keys)
         {
-            streams.Add(
-                new JsonObject { ["streamId"] = stream.StreamId, ["stream"] = stream.Stream }
-            );
+            streams.Add(new JsonObject { ["streamId"] = streamId, ["stream"] = "events" });
         }
 
         return new JsonObject { ["ok"] = true, ["streams"] = streams };
@@ -255,127 +268,52 @@ internal sealed class DuetsPadProtocolClient(Uri baseUri) : IDisposable
 
     public void Dispose()
     {
+        this.CloseTarget();
+        this.ClearLocalService();
+    }
+
+    private static JsonObject ToJson<T>(DuetsPadClientResult<T> result)
+    {
+        var node = result.Value is null
+            ? []
+            : JsonSerializer.SerializeToNode(result.Value, _jsonOptions)?.AsObject() ?? [];
+        node["ok"] = result.Ok;
+        node["error"] = result.Error;
+        node["sessionId"] = result.SessionId;
+        node["httpOk"] = (int)result.StatusCode is >= 200 and <= 299;
+        node["statusCode"] = (int)result.StatusCode;
+        return node;
+    }
+
+    private static async Task<JsonObject> ReadJsonObjectAsync(HttpResponseMessage response)
+    {
+        var text = await response.Content.ReadAsStringAsync();
+        try
+        {
+            return JsonNode.Parse(text) as JsonObject ?? new JsonObject { ["body"] = text };
+        }
+        catch (JsonException)
+        {
+            return new JsonObject { ["body"] = text };
+        }
+    }
+
+    private DuetsPadClient RequireClient() =>
+        this._client
+        ?? throw new InvalidOperationException(
+            "No DuetsPad target is configured. Use pad-target or pad-session-create first."
+        );
+
+    private void CloseTarget()
+    {
         foreach (var stream in this._sseStreams.Values)
         {
             stream.Dispose();
         }
 
         this._sseStreams.Clear();
-        this._http.Dispose();
-    }
-
-    private static JsonObject BuildDataRecord(string? eventName, string data)
-    {
-        var record = new JsonObject
-        {
-            ["kind"] = "data",
-            ["event"] = eventName,
-            ["data"] = data,
-        };
-
-        try
-        {
-            record["json"] = JsonNode.Parse(data);
-        }
-        catch (JsonException)
-        {
-            // Keep the raw data field for non-JSON SSE payloads.
-        }
-
-        return record;
-    }
-
-    private static async Task<JsonObject> ReadJsonResponseAsync(HttpResponseMessage response)
-    {
-        JsonObject body;
-        try
-        {
-            body = await response.Content.ReadFromJsonAsync<JsonObject>() ?? [];
-        }
-        catch (JsonException)
-        {
-            body = new JsonObject { ["body"] = await response.Content.ReadAsStringAsync() };
-        }
-
-        body["httpOk"] = response.IsSuccessStatusCode;
-        body["statusCode"] = (int)response.StatusCode;
-        return body;
-    }
-
-    private sealed class OpenSseStream(
-        string streamId,
-        string stream,
-        HttpResponseMessage response,
-        StreamReader reader
-    ) : IDisposable
-    {
-        public string StreamId { get; } = streamId;
-
-        public string Stream { get; } = stream;
-
-        public StreamReader Reader { get; } = reader;
-
-        // A read started by a timed-out ReadSseAsync call. The underlying read is never
-        // cancelled (that would break the HttpClient response stream), so the in-flight task
-        // is carried here and resumed by the next call to avoid dropping a line.
-        private Task<string?>? _pendingRead;
-        private List<string> _pendingDataLines = [];
-        private string? _pendingEventName;
-
-        /// <summary>
-        /// Returns the in-flight read carried over from a previous timed-out call, clearing it,
-        /// or <see langword="null"/> when no read is pending.
-        /// </summary>
-        public Task<string?>? TakePendingRead()
-        {
-            var pending = this._pendingRead;
-            this._pendingRead = null;
-            return pending;
-        }
-
-        /// <summary>
-        /// Stores an in-flight read so the next call can resume it instead of starting a new one.
-        /// </summary>
-        public void SetPendingRead(Task<string?> readTask) => this._pendingRead = readTask;
-
-        /// <summary>
-        /// Returns data lines parsed before a timeout, clearing the stored partial record.
-        /// </summary>
-        public List<string> TakePendingDataLines()
-        {
-            var lines = this._pendingDataLines;
-            this._pendingDataLines = [];
-            return lines;
-        }
-
-        /// <summary>
-        /// Returns the event name parsed before a timeout, clearing the stored value.
-        /// </summary>
-        public string? TakePendingEventName()
-        {
-            var eventName = this._pendingEventName;
-            this._pendingEventName = null;
-            return eventName;
-        }
-
-        /// <summary>
-        /// Stores the partial SSE record parsed before a timed-out read.
-        /// </summary>
-        public void SetPendingRecord(string? eventName, List<string> dataLines)
-        {
-            this._pendingEventName = eventName;
-            this._pendingDataLines = dataLines;
-        }
-
-        public void Dispose()
-        {
-            // Observe any in-flight read so its eventual failure (e.g. the disposed-stream
-            // exception this Dispose triggers) does not surface as an unobserved task exception.
-            this._pendingRead?.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
-            this._pendingRead = null;
-
-            this.Reader.Dispose();
-            response.Dispose();
-        }
+        this._client?.Dispose();
+        this._client = null;
+        this._targetUsesLocalService = false;
     }
 }

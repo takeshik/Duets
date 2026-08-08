@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using Duets.Sandbox;
 using Duets.Tests.TestSupport;
 using Duets.Tests.TestTypes.NamespaceTargets;
@@ -25,6 +27,15 @@ public sealed class SandboxContextTests
             declarations => this._assets.CreateTypeScriptServiceAsync(declarations, true),
             this._assets.CreateBabelTranspilerAsync
         );
+    }
+
+    private static int ReserveFreePort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 
     [Fact]
@@ -96,5 +107,33 @@ public sealed class SandboxContextTests
             ctx.GetTypeDeclarations(),
             declaration => declaration.Content.Contains("class NamespaceAlpha")
         );
+    }
+
+    [Fact]
+    public async Task StopWebServerAsync_preserves_an_external_pad_target()
+    {
+        await using var ctx = await this.CreateContextAsync();
+        var sessionId = Guid.NewGuid().ToString("D");
+        ctx.PadProtocolClient.Target(new Uri("http://127.0.0.1:1/"), sessionId, null);
+        ctx.StartWebServer(ReserveFreePort());
+
+        await ctx.StopWebServerAsync();
+
+        Assert.True(ctx.PadProtocolClient.HasTarget);
+        Assert.Equal(sessionId, ctx.PadProtocolClient.TargetSessionId);
+    }
+
+    [Fact]
+    public async Task StopWebServerAsync_closes_a_target_created_by_the_local_server()
+    {
+        await using var ctx = await this.CreateContextAsync();
+        ctx.StartWebServer(ReserveFreePort());
+        var creation = await ctx.PadProtocolClient.CreateLocalSessionAsync(null);
+        Assert.True(creation["httpOk"]?.GetValue<bool>());
+        Assert.True(ctx.PadProtocolClient.HasTarget);
+
+        await ctx.StopWebServerAsync();
+
+        Assert.False(ctx.PadProtocolClient.HasTarget);
     }
 }

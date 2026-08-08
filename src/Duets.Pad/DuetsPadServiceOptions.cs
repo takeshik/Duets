@@ -106,9 +106,10 @@ public sealed class DuetsPadServiceOptions
     public int? MaxActiveModals { get; set; } = DefaultMaxActiveModals;
 
     /// <summary>
-    /// Maximum accepted request body size, in bytes, applied to control-message <c>POST</c>
-    /// endpoints, including attachment begin and commit. Bodies larger than this are rejected with
-    /// <c>413</c>. Raw attachment bodies use <see cref="MaxAttachmentBytesPerFile"/> instead;
+    /// Maximum accepted request body size, in bytes, applied to control-message request endpoints,
+    /// including Editor replacement and attachment begin and commit. Bodies larger than this are
+    /// rejected with <c>413</c>. Raw attachment bodies use
+    /// <see cref="MaxAttachmentBytesPerFile"/> instead;
     /// <c>/complete</c> additionally enforces its own stricter
     /// <see cref="TaggedTemplateCompletionMaxRequestBytes"/> cap.
     /// </summary>

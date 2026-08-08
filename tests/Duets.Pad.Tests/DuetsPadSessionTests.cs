@@ -1689,7 +1689,7 @@ public sealed class DuetsPadSessionTests
         Assert.Equal("b", controls[1].Payload["message"]);
     }
 
-    // pad global — resetSession / openText / setEditorText
+    // pad global — sessionId / editorText / resetSession / openText
 
     [Fact]
     public async Task Pad_resetSession_delivers_one_control_reset_event_after_eval()
@@ -1725,40 +1725,30 @@ public sealed class DuetsPadSessionTests
     }
 
     [Fact]
-    public async Task Pad_setEditorText_delivers_control_event_with_text_payload()
+    public async Task Pad_sessionId_returns_the_current_session_id()
     {
         using var session = await CreatePadSessionAsync();
-        var channel = Channel.CreateUnbounded<PadEventMessage?>();
-        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
-        while (channel.Reader.TryRead(out _)) { }
 
-        var result = await session.EvaluateAsync("""pad.setEditorText("x")""");
+        var result = await session.EvaluateAsync("pad.sessionId");
 
         Assert.True(result.Ok, result.Error);
-        var controls = await CollectControlEventsAsync(channel.Reader);
-        var ctrl = Assert.Single(controls);
-        Assert.Equal("setEditorText", ctrl.Op);
-        Assert.Equal("x", ctrl.Payload["text"]);
+        Assert.Equal(session.Id.ToString(), result.Result);
     }
 
     [Fact]
-    public async Task Pad_setEditorText_called_twice_delivers_only_last_text_last_wins()
+    public async Task Pad_editorText_getter_and_setter_use_server_held_state_without_control_event()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
         session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
         while (channel.Reader.TryRead(out _)) { }
 
-        var result = await session.EvaluateAsync(
-            """pad.setEditorText("first"); pad.setEditorText("second")"""
-        );
+        var result = await session.EvaluateAsync("""pad.editorText = "first"; pad.editorText""");
 
         Assert.True(result.Ok, result.Error);
-        var controls = await CollectControlEventsAsync(channel.Reader);
-        // Last-wins: only the last text must be delivered.
-        var ctrl = Assert.Single(controls);
-        Assert.Equal("setEditorText", ctrl.Op);
-        Assert.Equal("second", ctrl.Payload["text"]);
+        Assert.Equal("first", result.Result);
+        Assert.Equal("first", session.GetEditorText());
+        Assert.Empty(await CollectControlEventsAsync(channel.Reader));
     }
 
     [Fact]
@@ -1790,9 +1780,11 @@ public sealed class DuetsPadSessionTests
         var allContent = string.Join("\n", declarations.Select(d => d.Content));
 
         Assert.Contains("declare const pad", allContent, StringComparison.Ordinal);
+        Assert.Contains("readonly sessionId", allContent, StringComparison.Ordinal);
+        Assert.Contains("editorText: string", allContent, StringComparison.Ordinal);
         Assert.Contains("resetSession", allContent, StringComparison.Ordinal);
         Assert.Contains("openText", allContent, StringComparison.Ordinal);
-        Assert.Contains("setEditorText", allContent, StringComparison.Ordinal);
+        Assert.DoesNotContain("setEditorText", allContent, StringComparison.Ordinal);
         Assert.Contains("toast(message", allContent, StringComparison.Ordinal);
     }
 }

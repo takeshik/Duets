@@ -5,7 +5,9 @@
 Accepted — partially supersedes [ADR-23](23_ci-and-package-publishing.md) (package topology,
 `IsPackable` set, signing scope) and [ADR-16](16_samples-directory-and-sandbox-role-clarification.md)
 (flat samples layout); solution-wide snapshot packing partially superseded by
-[ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md)
+[ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md); protocol reference-client
+ownership partially superseded by
+[ADR-55](55_first-class-headless-clients-and-shared-session-control-for-duetspad.md)
 
 ## Context
 

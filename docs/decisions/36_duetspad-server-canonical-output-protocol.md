@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted — `timeline.update` event shape amended by
+[ADR-55](55_first-class-headless-clients-and-shared-session-control-for-duetspad.md)
 
 ## Context
 

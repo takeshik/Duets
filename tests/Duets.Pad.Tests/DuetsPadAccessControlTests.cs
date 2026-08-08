@@ -340,6 +340,8 @@ public sealed class DuetsPadAccessControlTests
     [Theory]
     [InlineData("POST", "sessions")]
     [InlineData("DELETE", "sessions/{sessionId}")]
+    [InlineData("GET", "sessions/{sessionId}/editor")]
+    [InlineData("PUT", "sessions/{sessionId}/editor")]
     [InlineData("POST", "sessions/{sessionId}/eval")]
     [InlineData("POST", "sessions/{sessionId}/complete")]
     [InlineData("GET", "sessions/{sessionId}/canvas")]
@@ -538,6 +540,29 @@ public sealed class DuetsPadAccessControlTests
                     prefix + $"sessions/{sessionId}/eval",
                     new StringContent(new string('x', 1024), Encoding.UTF8, "text/plain")
                 );
+
+                Assert.Equal((HttpStatusCode)413, response.StatusCode);
+            }
+        );
+    }
+
+    [Fact]
+    public async Task MaxRequestBodyBytes_oversized_editor_put_returns_413()
+    {
+        await RunAsync(
+            opts => opts.MaxRequestBodyBytes = 64,
+            async (client, prefix) =>
+            {
+                var sessionId = await CreateSessionAsync(client, prefix);
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Put,
+                    prefix + $"sessions/{sessionId}/editor"
+                )
+                {
+                    Content = new StringContent(new string('x', 1024), Encoding.UTF8, "text/plain"),
+                };
+
+                using var response = await client.SendAsync(request);
 
                 Assert.Equal((HttpStatusCode)413, response.StatusCode);
             }

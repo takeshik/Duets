@@ -281,7 +281,7 @@ public sealed class DuetsPadFieldTests
     }
 
     [Fact]
-    public async Task CommitFieldValue_updates_canvas_state_without_broadcasting_or_advancing_revision()
+    public async Task CommitFieldValue_updates_canvas_state_and_broadcasts_the_next_revision()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -298,17 +298,80 @@ public sealed class DuetsPadFieldTests
 
         await session.CommitFieldValue(fieldId, "committed");
 
-        // No echo: the committing browser's own DOM already reflects the value it sent.
-        Assert.False(channel.Reader.TryRead(out _));
+        var commit = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, commit.Type);
+        Assert.Equal(add.Revision + 1, commit.Revision);
 
         Assert.True(session.TryGetCanvasSnapshot("default", out var snapshot));
-        Assert.Equal(add.Revision, snapshot.Revision);
+        Assert.Equal(commit.Revision, snapshot.Revision);
         var committedInput = Assert.IsType<Element>(snapshot.State.Root.Children.Single());
         Assert.Equal("committed", committedInput.Attributes["value"]);
     }
 
     [Fact]
-    public async Task CommitFieldValue_updates_checkbox_checked_state_without_broadcasting()
+    public async Task CommitFieldValue_broadcasts_an_authoritative_patch_when_value_is_unchanged()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync(
+            """var t = ui.textBox({ name: "n", value: "same" }); canvas.add(t);"""
+        );
+        var add = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+        var input = SingleChild(session);
+        var fieldId = Guid.Parse(input.Attributes[FieldMarker.AttributeName]!);
+
+        await session.CommitFieldValue(fieldId, "same");
+
+        var commit = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, commit.Type);
+        Assert.Equal(add.Revision, commit.BaseRevision);
+        Assert.Equal(add.Revision + 1, commit.Revision);
+        var operation = Assert.Single(commit.Operations);
+        Assert.Equal(
+            new SetAttributeOperation(new DisplayPath([0]), FieldMarker.ValueAttributeName, "same"),
+            operation
+        );
+    }
+
+    [Fact]
+    public async Task Script_assignment_broadcasts_an_authoritative_patch_when_value_is_unchanged()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync(
+            """var t = ui.textBox({ name: "n", value: "same" }); canvas.add(t);"""
+        );
+        var add = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync("""t.value = "same";""");
+
+        var update = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, update.Type);
+        Assert.Equal(add.Revision, update.BaseRevision);
+        Assert.Equal(add.Revision + 1, update.Revision);
+        Assert.Equal(
+            new SetAttributeOperation(new DisplayPath([0]), FieldMarker.ValueAttributeName, "same"),
+            Assert.Single(update.Operations)
+        );
+    }
+
+    [Fact]
+    public async Task CommitFieldValue_updates_and_broadcasts_checkbox_checked_state()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -324,17 +387,21 @@ public sealed class DuetsPadFieldTests
 
         await session.CommitFieldValue(fieldId, "True");
 
-        Assert.False(channel.Reader.TryRead(out _));
+        var commit = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, commit.Type);
 
         Assert.True(session.TryGetCanvasSnapshot("default", out var snapshot));
-        Assert.Equal(add.Revision, snapshot.Revision);
+        Assert.Equal(add.Revision + 1, snapshot.Revision);
         var committedWrapper = Assert.IsType<Element>(snapshot.State.Root.Children.Single());
         var committedInput = Assert.IsType<Element>(committedWrapper.Children.Single());
         Assert.True(committedInput.Attributes.ContainsKey("checked"));
     }
 
     [Fact]
-    public async Task CommitFieldValue_checks_only_the_matching_radio_option_without_broadcasting()
+    public async Task CommitFieldValue_checks_and_broadcasts_only_the_matching_radio_option()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -353,10 +420,14 @@ public sealed class DuetsPadFieldTests
 
         await session.CommitFieldValue(fieldId, "b");
 
-        Assert.False(channel.Reader.TryRead(out _));
+        var commit = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, commit.Type);
 
         Assert.True(session.TryGetCanvasSnapshot("default", out var snapshot));
-        Assert.Equal(add.Revision, snapshot.Revision);
+        Assert.Equal(add.Revision + 1, snapshot.Revision);
         var committedWrapper = Assert.IsType<Element>(snapshot.State.Root.Children.Single());
         var committedA = Assert.IsType<Element>(
             Assert.IsType<Element>(committedWrapper.Children[0]).Children[0]
@@ -369,7 +440,54 @@ public sealed class DuetsPadFieldTests
     }
 
     [Fact]
-    public async Task CommitFieldValue_updates_timeline_entry_body_without_broadcasting()
+    public async Task CommitFieldValue_asserts_every_radio_option_when_value_is_unchanged()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync(
+            """var r = ui.radioGroup(["a", "b"], { value: "a" }); canvas.add(r);"""
+        );
+        var add = await ReadCanvasEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+        var wrapper = SingleChild(session);
+        var optionA = Assert.IsType<Element>(wrapper.Children[0]);
+        var inputA = Assert.IsType<Element>(optionA.Children[0]);
+        var fieldId = Guid.Parse(inputA.Attributes[FieldMarker.AttributeName]!);
+
+        await session.CommitFieldValue(fieldId, "a");
+
+        var commit = await ReadCanvasEventAsync(
+            channel.Reader,
+            TestContext.Current.CancellationToken
+        );
+        Assert.Equal(CanvasEventTypes.Patch, commit.Type);
+        Assert.Equal(add.Revision + 1, commit.Revision);
+        Assert.Collection(
+            commit.Operations,
+            operation =>
+                Assert.Equal(
+                    new SetAttributeOperation(
+                        new DisplayPath([0, 0, 0]),
+                        FieldMarker.CheckedAttributeName,
+                        null
+                    ),
+                    operation
+                ),
+            operation =>
+                Assert.Equal(
+                    new RemoveAttributeOperation(
+                        new DisplayPath([0, 1, 0]),
+                        FieldMarker.CheckedAttributeName
+                    ),
+                    operation
+                )
+        );
+    }
+
+    [Fact]
+    public async Task CommitFieldValue_updates_and_broadcasts_the_timeline_entry_body()
     {
         using var session = await CreatePadSessionAsync();
         var channel = Channel.CreateUnbounded<PadEventMessage?>();
@@ -387,12 +505,70 @@ public sealed class DuetsPadFieldTests
 
         await session.CommitFieldValue(fieldId, "committed");
 
-        // No timeline.update broadcast (no echo).
-        Assert.False(channel.Reader.TryRead(out _));
+        var update = Assert.IsType<UpdateMessage>(
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+        );
+        Assert.Equal(fieldId, update.AuthoritativeFieldId);
+        Assert.Equal("committed", Assert.IsType<Element>(update.Entry.Body).Attributes["value"]);
 
         var entry = Assert.Single(session.Timeline.State);
         var committedInput = Assert.IsType<Element>(entry.Body);
         Assert.Equal("committed", committedInput.Attributes["value"]);
+    }
+
+    [Fact]
+    public async Task CommitFieldValue_broadcasts_timeline_update_when_value_is_unchanged()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync(
+            """var t = ui.textBox({ name: "n", value: "same" }); dump(t);"""
+        );
+        var append = Assert.IsType<AppendMessage>(
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+        );
+        var fieldId = Guid.Parse(
+            Assert.IsType<Element>(append.Entry.Body).Attributes[FieldMarker.AttributeName]!
+        );
+
+        await session.CommitFieldValue(fieldId, "same");
+
+        var update = Assert.IsType<UpdateMessage>(
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+        );
+        Assert.Equal(append.Entry.Id, update.Entry.Id);
+        Assert.Equal("same", Assert.IsType<Element>(update.Entry.Body).Attributes["value"]);
+    }
+
+    [Fact]
+    public async Task Script_assignment_marks_the_authoritative_timeline_field_when_value_is_unchanged()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        _ = await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken);
+
+        await session.EvaluateAsync(
+            """var t = ui.textBox({ name: "n", value: "same" }); dump(t);"""
+        );
+        var append = Assert.IsType<AppendMessage>(
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+        );
+        var fieldId = Guid.Parse(
+            Assert.IsType<Element>(append.Entry.Body).Attributes[FieldMarker.AttributeName]!
+        );
+
+        await session.EvaluateAsync("""t.value = "same";""");
+
+        var update = Assert.IsType<UpdateMessage>(
+            await ReadTimelineEventAsync(channel.Reader, TestContext.Current.CancellationToken)
+        );
+        Assert.Equal(fieldId, update.AuthoritativeFieldId);
+        Assert.Equal(append.Entry.Id, update.Entry.Id);
+        Assert.Equal("same", Assert.IsType<Element>(update.Entry.Body).Attributes["value"]);
     }
 
     [Fact]

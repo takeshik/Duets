@@ -106,6 +106,7 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Timeline_update_event_carries_one_entry()
     {
+        var authoritativeFieldId = Guid.NewGuid();
         var entry = new TimelineEntry(
             0,
             "render-error",
@@ -113,13 +114,24 @@ public sealed class DuetsPadProtocolTests
             DateTimeOffset.MinValue
         );
 
-        var message = TimelineEventMessage.Update(entry, []);
+        var message = TimelineEventMessage.Update(entry, [], authoritativeFieldId);
 
         Assert.IsType<UpdateMessage>(message);
         Assert.Equal(TimelineEventTypes.Update, message.Type);
         Assert.Same(entry, message.Entry);
         Assert.NotNull(message.EntryInteractions);
         Assert.Empty(message.EntryInteractions);
+        Assert.Equal(authoritativeFieldId, message.AuthoritativeFieldId);
+    }
+
+    [Fact]
+    public void Timeline_update_event_omits_authoritative_field_when_not_field_initiated()
+    {
+        var entry = new TimelineEntry(0, "dump", new Text("hello"), DateTimeOffset.MinValue);
+
+        var json = SseSerializer.Serialize(TimelineEventMessage.Update(entry, []));
+
+        Assert.DoesNotContain("authoritativeFieldId", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -310,13 +322,19 @@ public sealed class DuetsPadProtocolTests
     [Fact]
     public void Serializer_timeline_update_emits_type_and_entry()
     {
+        var authoritativeFieldId = Guid.NewGuid();
         var entry = new TimelineEntry(0, "render-error", new Text("oops"), DateTimeOffset.MinValue);
-        var message = TimelineEventMessage.Update(entry, []);
+        var message = TimelineEventMessage.Update(entry, [], authoritativeFieldId);
 
         var json = SseSerializer.Serialize(message);
 
         Assert.Contains($"\"{TimelineEventTypes.Update}\"", json, StringComparison.Ordinal);
         Assert.Contains("\"entry\"", json, StringComparison.Ordinal);
+        Assert.Contains(
+            $"\"authoritativeFieldId\":\"{authoritativeFieldId:D}\"",
+            json,
+            StringComparison.Ordinal
+        );
     }
 
     [Fact]

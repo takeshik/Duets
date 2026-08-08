@@ -21,17 +21,26 @@ internal sealed class BatchRunner(SandboxContext session)
         | `register` | `type` | | Register a .NET type by assembly-qualified name; returns `type` (full name) |
         | `types` | | | List registered declaration file names; returns `types` (string array) |
         | `types-dump` | | | Dump registered declaration files; returns `types` array of `{fileName, content}` |
-        | `server-start` | | `port` (int, default: 17375) | Start the DuetsPad web server; returns `url` |
-        | `server-stop` | | | Stop the web server |
+        | `server-start` | | `port` (int, default: 17375), `accessToken` (string) | Start the DuetsPad web server; returns `url` |
+        | `server-stop` | | | Stop the local web server; preserve an external `pad-target` |
         | `server-status` | | | Returns `running` (boolean) |
-        | `pad-session-create` | | `sessionId` (string) | POST `/sessions`; returns the DuetsPad session payload |
-        | `pad-session-delete` | `sessionId` | | DELETE `/sessions/{sessionId}` |
-        | `pad-eval` | `sessionId`, `code` | `source` (string) | POST `/sessions/{sessionId}/eval` |
-        | `pad-interaction-invoke` | `sessionId`, `handlerId` | | POST an interaction handler invocation |
-        | `pad-sse-open` | `streamId`, `sessionId`, `stream` | | Open a DuetsPad SSE stream. `stream` is {{string.Join(
-            ", ",
-            DuetsPadStreamKind.AllTokens.Select(t => $"`{t}`")
-        )}} |
+        | `pad-target` | `baseUri`, `sessionId` | `bearerCredential` | Retain an existing external DuetsPad session as the target for later operations |
+        | `pad-target-status` | | | Return the retained target session id |
+        | `pad-session-create` | | `sessionId` (string) | Repository-only helper that creates/resumes on the Sandbox-started service and retains the returned target |
+        | `pad-session-delete` | | | Explicitly delete the retained target session |
+        | `pad-eval` | `code` | `appendResult` (bool) | Evaluate in the retained session |
+        | `pad-complete` | `tag`, `textBeforeCaret`, `textAfterCaret`, `currentSegmentRaw`, `caretOffsetInSegment` | | Request tagged-template completions |
+        | `pad-canvas-get` | | `name` (string, default: `default`) | Retrieve a Canvas snapshot |
+        | `pad-editor-get` | | | Retrieve last-committed Editor text |
+        | `pad-editor-put` | `text` | | Replace the whole Editor document |
+        | `pad-field-commit` | `fieldId`, `value` | | Commit a field value |
+        | `pad-interaction-invoke` | `handlerId` | `fields`, `attachments` | Invoke an interaction with optional snapshots |
+        | `pad-attachment-begin` | `pickerId`, `clientId`, `generation`, `files` | | Begin an attachment selection |
+        | `pad-attachment-upload` | `pickerId`, `token`, `fileId`, `contentBase64` | `contentType` | Upload one attachment file |
+        | `pad-attachment-commit` | `pickerId`, `token` | | Commit an attachment selection |
+        | `pad-attachment-cancel` | `pickerId`, `token` | | Cancel an attachment selection |
+        | `pad-attachment-cancel-failed` | `pickerId`, `revision` | | Cancel a failed attachment selection |
+        | `pad-sse-open` | `streamId` | | Open the retained session's unified SSE stream |
         | `pad-sse-read` | `streamId` | `maxRecords` (int, default: 1), `timeoutMs` (int, default: 1000), `includeComments` (bool, default: false) | Read SSE data records from an open stream |
         | `pad-sse-close` | `streamId` | | Close an open SSE stream |
         | `pad-sse-list` | | | List open SSE streams |
@@ -72,11 +81,11 @@ internal sealed class BatchRunner(SandboxContext session)
         {"op":"types"}
         {"op":"types-dump"}
         {"op":"server-start","port":17375}
-        {"op":"pad-session-create"}
-        {"op":"pad-sse-open","streamId":"events","sessionId":"...","stream":"events"}
+        {"op":"pad-target","baseUri":"http://127.0.0.1:17375/","sessionId":"...","bearerCredential":"..."}
+        {"op":"pad-sse-open","streamId":"events"}
         {"op":"pad-sse-read","streamId":"events","maxRecords":1,"timeoutMs":1000}
-        {"op":"pad-eval","sessionId":"...","code":"canvas.add(ui.button('hello', () => dump(Date())))"}
-        {"op":"pad-interaction-invoke","sessionId":"...","handlerId":"..."}
+        {"op":"pad-eval","code":"canvas.add(ui.button('hello', () => dump(Date())))"}
+        {"op":"pad-interaction-invoke","handlerId":"..."}
         {"op":"pad-sse-close","streamId":"events"}
         {"op":"server-stop"}
         {"op":"server-status"}
@@ -129,28 +138,90 @@ internal sealed class BatchRunner(SandboxContext session)
                         state = session.WebServerState,
                         error = session.WebServerError,
                     },
-                    "pad-session-create" => await session.PadProtocolClient.CreateSessionAsync(
+                    "pad-target" => session.PadProtocolClient.Target(
+                        new Uri(cmd.GetProperty("baseUri").GetString()!, UriKind.Absolute),
+                        cmd.GetProperty("sessionId").GetString()!,
+                        cmd.TryGetProperty("bearerCredential", out var credentialEl)
+                            ? credentialEl.GetString()
+                            : null
+                    ),
+                    "pad-target-status" => new
+                    {
+                        ok = session.PadProtocolClient.HasTarget,
+                        sessionId = session.PadProtocolClient.TargetSessionId,
+                    },
+                    "pad-session-create" => await session.PadProtocolClient.CreateLocalSessionAsync(
                         cmd.TryGetProperty("sessionId", out var sessionIdEl)
                             ? sessionIdEl.GetString()
                             : null
                     ),
-                    "pad-session-delete" => await session.PadProtocolClient.DeleteSessionAsync(
-                        cmd.GetProperty("sessionId").GetString()!
-                    ),
+                    "pad-session-delete" => await session.PadProtocolClient.DeleteSessionAsync(),
                     "pad-eval" => await session.PadProtocolClient.EvaluateAsync(
-                        cmd.GetProperty("sessionId").GetString()!,
                         cmd.GetProperty("code").GetString()!,
-                        cmd.TryGetProperty("source", out var sourceEl) ? sourceEl.GetString() : null
+                        cmd.TryGetProperty("appendResult", out var appendResultEl)
+                            && appendResultEl.GetBoolean()
+                    ),
+                    "pad-complete" => await session.PadProtocolClient.CompleteAsync(
+                        new Duets.Pad.DuetsPadCompletionRequest(
+                            cmd.GetProperty("tag").GetString()!,
+                            cmd.GetProperty("textBeforeCaret").GetString()!,
+                            cmd.GetProperty("textAfterCaret").GetString()!,
+                            cmd.GetProperty("currentSegmentRaw").GetString()!,
+                            cmd.GetProperty("caretOffsetInSegment").GetInt32()
+                        )
+                    ),
+                    "pad-canvas-get" => await session.PadProtocolClient.GetCanvasAsync(
+                        cmd.TryGetProperty("name", out var canvasNameEl)
+                            ? canvasNameEl.GetString()!
+                            : "default"
+                    ),
+                    "pad-editor-get" => await session.PadProtocolClient.GetEditorTextAsync(),
+                    "pad-editor-put" => await session.PadProtocolClient.ReplaceEditorTextAsync(
+                        cmd.GetProperty("text").GetString()!
+                    ),
+                    "pad-field-commit" => await session.PadProtocolClient.CommitFieldAsync(
+                        cmd.GetProperty("fieldId").GetString()!,
+                        cmd.GetProperty("value").GetString()!
                     ),
                     "pad-interaction-invoke" =>
                         await session.PadProtocolClient.InvokeInteractionAsync(
-                            cmd.GetProperty("sessionId").GetString()!,
-                            cmd.GetProperty("handlerId").GetString()!
+                            cmd.GetProperty("handlerId").GetString()!,
+                            ParseInteractionSnapshot(cmd)
+                        ),
+                    "pad-attachment-begin" =>
+                        await session.PadProtocolClient.BeginAttachmentSelectionAsync(
+                            cmd.GetProperty("pickerId").GetString()!,
+                            cmd.GetProperty("clientId").GetGuid(),
+                            cmd.GetProperty("generation").GetInt64(),
+                            ParseAttachmentFiles(cmd.GetProperty("files"))
+                        ),
+                    "pad-attachment-upload" =>
+                        await session.PadProtocolClient.UploadAttachmentFileAsync(
+                            cmd.GetProperty("pickerId").GetString()!,
+                            cmd.GetProperty("token").GetString()!,
+                            cmd.GetProperty("fileId").GetString()!,
+                            Convert.FromBase64String(cmd.GetProperty("contentBase64").GetString()!),
+                            cmd.TryGetProperty("contentType", out var contentTypeEl)
+                                ? contentTypeEl.GetString()!
+                                : "application/octet-stream"
+                        ),
+                    "pad-attachment-commit" =>
+                        await session.PadProtocolClient.CommitAttachmentSelectionAsync(
+                            cmd.GetProperty("pickerId").GetString()!,
+                            cmd.GetProperty("token").GetString()!
+                        ),
+                    "pad-attachment-cancel" =>
+                        await session.PadProtocolClient.CancelAttachmentSelectionAsync(
+                            cmd.GetProperty("pickerId").GetString()!,
+                            cmd.GetProperty("token").GetString()!
+                        ),
+                    "pad-attachment-cancel-failed" =>
+                        await session.PadProtocolClient.CancelFailedAttachmentSelectionAsync(
+                            cmd.GetProperty("pickerId").GetString()!,
+                            cmd.GetProperty("revision").GetInt64()
                         ),
                     "pad-sse-open" => await session.PadProtocolClient.OpenSseAsync(
-                        cmd.GetProperty("streamId").GetString()!,
-                        cmd.GetProperty("sessionId").GetString()!,
-                        cmd.GetProperty("stream").GetString()!
+                        cmd.GetProperty("streamId").GetString()!
                     ),
                     "pad-sse-read" => await session.PadProtocolClient.ReadSseAsync(
                         cmd.GetProperty("streamId").GetString()!,
@@ -201,6 +272,59 @@ internal sealed class BatchRunner(SandboxContext session)
         var node = JsonSerializer.SerializeToNode(result, JsonOptions)!.AsObject();
         node["op"] = op;
         Console.WriteLine(node.ToJsonString(JsonOptions));
+    }
+
+    private static Duets.Pad.DuetsPadInteractionSnapshot? ParseInteractionSnapshot(
+        JsonElement command
+    )
+    {
+        Dictionary<Guid, string>? fields = null;
+        if (
+            command.TryGetProperty("fields", out var fieldsElement)
+            && fieldsElement.ValueKind == JsonValueKind.Object
+        )
+        {
+            fields = [];
+            foreach (var property in fieldsElement.EnumerateObject())
+            {
+                fields.Add(Guid.Parse(property.Name), property.Value.GetString()!);
+            }
+        }
+
+        Dictionary<Guid, long>? attachments = null;
+        if (
+            command.TryGetProperty("attachments", out var attachmentsElement)
+            && attachmentsElement.ValueKind == JsonValueKind.Object
+        )
+        {
+            attachments = [];
+            foreach (var property in attachmentsElement.EnumerateObject())
+            {
+                attachments.Add(Guid.Parse(property.Name), property.Value.GetInt64());
+            }
+        }
+
+        return fields is null && attachments is null
+            ? null
+            : new Duets.Pad.DuetsPadInteractionSnapshot(fields, attachments);
+    }
+
+    private static IReadOnlyList<Duets.Pad.DuetsPadAttachmentFile> ParseAttachmentFiles(
+        JsonElement files
+    )
+    {
+        return
+        [
+            .. files
+                .EnumerateArray()
+                .Select(file => new Duets.Pad.DuetsPadAttachmentFile(
+                    file.GetProperty("name").GetString()!,
+                    file.TryGetProperty("contentType", out var contentType)
+                        ? contentType.GetString() ?? ""
+                        : "",
+                    file.GetProperty("size").GetInt64()
+                )),
+        ];
     }
 
     private object Eval(string code)
@@ -264,7 +388,10 @@ internal sealed class BatchRunner(SandboxContext session)
         }
 
         var port = cmd.TryGetProperty("port", out var portEl) ? portEl.GetInt32() : 17375;
-        session.StartWebServer(port);
+        var accessToken = cmd.TryGetProperty("accessToken", out var accessTokenEl)
+            ? accessTokenEl.GetString()
+            : null;
+        session.StartWebServer(port, accessToken);
         await Task.Delay(100);
         if (!session.IsServerRunning)
         {

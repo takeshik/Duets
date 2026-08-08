@@ -41,11 +41,13 @@ internal abstract record TimelineEventMessage
 
     public static UpdateMessage Update(
         TimelineEntry entry,
-        IReadOnlyList<CommittedInteraction> interactions
+        IReadOnlyList<CommittedInteraction> interactions,
+        Guid? authoritativeFieldId = null
     ) =>
         new(
             entry ?? throw new ArgumentNullException(nameof(entry)),
-            interactions ?? throw new ArgumentNullException(nameof(interactions))
+            interactions ?? throw new ArgumentNullException(nameof(interactions)),
+            authoritativeFieldId
         );
 
     public static TrimMessage Trim(long removeBeforeId, TimelineEntry? marker) =>
@@ -135,9 +137,19 @@ internal sealed record UpdateMessage : EntryEventMessage
 {
     internal UpdateMessage(
         TimelineEntry entry,
-        IReadOnlyList<CommittedInteraction> entryInteractions
+        IReadOnlyList<CommittedInteraction> entryInteractions,
+        Guid? authoritativeFieldId
     )
-        : base(TimelineEventTypes.Update, entry, entryInteractions) { }
+        : base(TimelineEventTypes.Update, entry, entryInteractions)
+    {
+        this.AuthoritativeFieldId = authoritativeFieldId;
+    }
+
+    /// <summary>
+    /// Gets the field whose accepted value must replace browser-local input, or
+    /// <see langword="null"/> when this is an ordinary Timeline update.
+    /// </summary>
+    public Guid? AuthoritativeFieldId { get; }
 }
 
 /// <summary>

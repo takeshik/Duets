@@ -127,6 +127,7 @@ internal sealed class DuetsPadSession
     private readonly AttachmentStore _attachmentStore;
     private readonly Guid _directAttachmentClientId = Guid.NewGuid();
     private long _directAttachmentSequence;
+    private string _editorText;
 
     private readonly int? _timelineEntryLimit;
     private readonly int? _maxActiveModals;
@@ -153,7 +154,8 @@ internal sealed class DuetsPadSession
             DuetsPadServiceOptions.DefaultMaxAttachmentBytesPerSession,
         int maxAttachmentsPerSession = DuetsPadServiceOptions.DefaultMaxAttachmentsPerSession,
         TimeSpan? attachmentStorageDrainTimeout = null,
-        int? maxActiveModals = DuetsPadServiceOptions.DefaultMaxActiveModals
+        int? maxActiveModals = DuetsPadServiceOptions.DefaultMaxActiveModals,
+        string? initialEditorText = null
     )
     {
         this.Id =
@@ -199,6 +201,7 @@ internal sealed class DuetsPadSession
             attachmentStorageDrainTimeout
                 ?? DuetsPadServiceOptions.DefaultAttachmentStorageDrainTimeout
         );
+        this._editorText = initialEditorText ?? "";
 
         // Wire the JS environment: console/dump/canvas/ui globals and per-session .d.ts declarations.
         SessionBootstrap.Bootstrap(this, this._renderer);
@@ -265,6 +268,65 @@ internal sealed class DuetsPadSession
     internal void Touch()
     {
         Interlocked.Exchange(ref this._lastActivityTicks, this._clock().UtcTicks);
+    }
+
+    /// <summary>Returns the last committed Editor text.</summary>
+    internal string GetEditorText()
+    {
+        lock (this._stateLock)
+        {
+            return this._editorText;
+        }
+    }
+
+    /// <summary>
+    /// Replaces the Editor text from an HTTP operation, serialized with evaluation and interaction
+    /// execution so script and client writes have one server processing order.
+    /// </summary>
+    internal async Task<bool> ReplaceEditorTextAsync(string text)
+    {
+        this.Touch();
+        if (Volatile.Read(ref this._disposed) == 1)
+        {
+            return false;
+        }
+
+        try
+        {
+            await this._evalSemaphore.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (Volatile.Read(ref this._disposed) == 1)
+            {
+                return false;
+            }
+
+            lock (this._stateLock)
+            {
+                this._editorText = text ?? "";
+            }
+
+            return true;
+        }
+        finally
+        {
+            this._evalSemaphore.Release();
+        }
+    }
+
+    /// <summary>Replaces the Editor text from code already running under the evaluation gate.</summary>
+    internal void ReplaceEditorTextFromScript(string text)
+    {
+        lock (this._stateLock)
+        {
+            this._editorText = text ?? "";
+        }
     }
 
     /// <summary>
@@ -1136,11 +1198,11 @@ internal sealed class DuetsPadSession
     /// a no-op when the field's marker is no longer reachable from any projected surface (a stale,
     /// delayed commit from a since-removed control must not revive a value whose
     /// rendered content no longer exists, ADR-47), otherwise stores the value and updates the
-    /// authoritative projected state in place without broadcasting (no echo — the committing
-    /// browser's own DOM already reflects the value). Shared by <see cref="CommitFieldValue"/> (the
-    /// blur-commit HTTP path) and <see cref="InvokeInteractionAsync"/> (the invoke-body snapshot path)
-    /// so both browser-originated commit routes apply the same liveness guard and projection update.
-    /// Must be called while <c>_stateLock</c> is held.
+    /// authoritative projected state through the same broadcast path used by script-side writes.
+    /// Shared by <see cref="CommitFieldValue"/> (the blur-commit HTTP path) and
+    /// <see cref="InvokeInteractionAsync"/> (the invoke-body snapshot path) so both
+    /// browser-originated commit routes apply the same liveness guard and projection update. Must
+    /// be called while <c>_stateLock</c> is held.
     /// </summary>
     private void ApplyBrowserFieldCommit(Guid fieldId, string value)
     {
@@ -1150,14 +1212,14 @@ internal sealed class DuetsPadSession
         }
 
         this._fieldStore.SetValue(fieldId, value);
-        this.CommitFieldValueInCanvases(fieldId, value);
-        this.CommitFieldValueInTimeline(fieldId, value);
-        this.CommitFieldValueInModals(fieldId, value);
+        this.UpdateFieldInCanvases(fieldId, kind, value);
+        this.UpdateFieldInTimeline(fieldId, kind, value);
+        this.UpdateFieldInModals(fieldId, kind, value);
     }
 
     /// <summary>
     /// Returns whether the field identified by <paramref name="fieldId"/> currently has at least one
-    /// marker placement in any canvas projection or Timeline entry. Must be called while
+    /// marker placement in any Canvas, Timeline, or Modal projection. Must be called while
     /// <c>_stateLock</c> is held.
     /// </summary>
     private bool TryGetReachableFieldKind(Guid fieldId, out FieldKind kind)
@@ -1215,12 +1277,6 @@ internal sealed class DuetsPadSession
             var newRoot = (Element)
                 FieldMarker.ApplyValue(projection.State.Root, markers, kind, value);
             var newState = new CanvasState(newRoot);
-            if (newState.Equals(projection.State))
-            {
-                // Identical value: a true no-op. Skip so reassigning the same value does not emit
-                // a phantom empty-operation patch or advance the revision.
-                continue;
-            }
 
             // A field carries no interactions of its own; the existing canvas interaction set is
             // preserved unchanged (paths still resolve because only attributes changed).
@@ -1236,7 +1292,12 @@ internal sealed class DuetsPadSession
                 projection,
                 newState,
                 projection.Revision + 1,
-                plan
+                plan,
+                authoritativeFieldOperations: CreateAuthoritativeFieldOperations(
+                    newRoot,
+                    markers,
+                    kind
+                )
             );
         }
     }
@@ -1258,12 +1319,6 @@ internal sealed class DuetsPadSession
             }
 
             var newBody = FieldMarker.ApplyValue(entry.Body, markers, kind, value);
-            if (newBody.Equals(entry.Body))
-            {
-                // Identical value: skip the redundant timeline.update.
-                continue;
-            }
-
             var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
             this._timelineState = this._timelineState.Replace(newEntry);
             var interactions = this._interactionStore.TimelineInteractions.TryGetValue(
@@ -1272,7 +1327,9 @@ internal sealed class DuetsPadSession
             )
                 ? existing
                 : [];
-            this.BroadcastTimeline(TimelineEventMessage.Update(newEntry, interactions));
+            this.BroadcastTimeline(
+                TimelineEventMessage.Update(newEntry, interactions, authoritativeFieldId: fieldId)
+            );
         }
     }
 
@@ -1295,10 +1352,6 @@ internal sealed class DuetsPadSession
             var newRoot = (Element)
                 FieldMarker.ApplyValue(projection.State.Root, markers, kind, value);
             var newState = new CanvasState(newRoot);
-            if (newState.Equals(projection.State))
-            {
-                continue;
-            }
 
             var plan = new ModalInteractionCommitPlan(
                 modalId,
@@ -1306,96 +1359,68 @@ internal sealed class DuetsPadSession
                 [],
                 []
             );
-            this.CommitModalMutation(projection, newState, projection.Revision + 1, plan);
+            this.CommitModalMutation(
+                projection,
+                newState,
+                projection.Revision + 1,
+                plan,
+                authoritativeFieldOperations: CreateAuthoritativeFieldOperations(
+                    newRoot,
+                    markers,
+                    kind
+                )
+            );
         }
     }
 
     /// <summary>
-    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
-    /// marker in every canvas projection's <see cref="CanvasState"/>, resolving each marker's
-    /// <see cref="FieldKind"/> from its own <c>data-duetspad-field-kind</c> attribute (a
-    /// browser-originated commit does not carry the kind). Unlike <see cref="UpdateFieldInCanvases"/>,
-    /// this replaces only the projection's <c>State</c> at its current revision — it does not
-    /// broadcast a patch and does not advance the revision (no echo). Must be called while
-    /// <c>_stateLock</c> is held.
+    /// Creates one value-encoding operation for every placement of an accepted field commit.
+    /// These operations are intentionally emitted even when the projected attribute already has
+    /// the committed value: the browser must treat every accepted commit as authoritative and
+    /// discard any uncommitted live value at every placement.
     /// </summary>
-    private void CommitFieldValueInCanvases(Guid fieldId, string value)
+    private static IReadOnlyList<CanvasPatchOperation> CreateAuthoritativeFieldOperations(
+        Element root,
+        IReadOnlyList<DisplayPath> markers,
+        FieldKind kind
+    )
     {
-        foreach (var name in this._canvasProjections.Keys.ToList())
+        var attributeName = kind is FieldKind.CheckBox or FieldKind.Radio
+            ? FieldMarker.CheckedAttributeName
+            : FieldMarker.ValueAttributeName;
+        var operations = new List<CanvasPatchOperation>(markers.Count);
+        foreach (var marker in markers)
         {
-            var projection = this._canvasProjections[name];
-            var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
-            if (markers.Count == 0 || kind is null)
-            {
-                continue;
-            }
-
-            var newRoot = (Element)
-                FieldMarker.ApplyValue(projection.State.Root, markers, kind.Value, value);
-            var newState = new CanvasState(newRoot);
-            if (newState.Equals(projection.State))
-            {
-                // Identical value: a true no-op. Skip so re-committing the same value does not
-                // needlessly rebuild the projection's State.
-                continue;
-            }
-
-            this._canvasProjections[name] = projection with { State = newState };
+            var element = ResolveElement(root, marker);
+            operations.Add(
+                element.Attributes.TryGetValue(attributeName, out var attributeValue)
+                    ? new SetAttributeOperation(marker, attributeName, attributeValue)
+                    : new RemoveAttributeOperation(marker, attributeName)
+            );
         }
+
+        return operations;
     }
 
-    /// <summary>
-    /// Updates the value-encoding attribute of every placement of <paramref name="fieldId"/>'s
-    /// marker in every Timeline entry's body, resolving each marker's <see cref="FieldKind"/> from
-    /// its own <c>data-duetspad-field-kind</c> attribute. Unlike <see cref="UpdateFieldInTimeline"/>,
-    /// this does not broadcast a <c>timeline.update</c> (no echo). Must be called while
-    /// <c>_stateLock</c> is held.
-    /// </summary>
-    private void CommitFieldValueInTimeline(Guid fieldId, string value)
+    private static Element ResolveElement(Element root, DisplayPath path)
     {
-        for (var i = 0; i < this._timelineState.Count; i++)
+        ITerminalRenderNode node = root;
+        foreach (var segment in path.Segments)
         {
-            var entry = this._timelineState[i];
-            var (markers, kind) = FieldMarker.FindWithKind(entry.Body, fieldId);
-            if (markers.Count == 0 || kind is null)
+            if (node is not Element element || segment >= element.Children.Count)
             {
-                continue;
+                throw new InvalidOperationException(
+                    "A field marker path is outside the projected render tree."
+                );
             }
 
-            var newBody = FieldMarker.ApplyValue(entry.Body, markers, kind.Value, value);
-            if (newBody.Equals(entry.Body))
-            {
-                // Identical value: skip the redundant entry replacement.
-                continue;
-            }
-
-            var newEntry = new TimelineEntry(entry.Id, entry.Reason, newBody, entry.Timestamp);
-            this._timelineState = this._timelineState.Replace(newEntry);
+            node = element.Children[segment];
         }
-    }
 
-    private void CommitFieldValueInModals(Guid fieldId, string value)
-    {
-        // This path cannot interleave with a claimed modal: invoke snapshots are applied before
-        // the handler claims it, while standalone HTTP commits wait for the same eval semaphore and
-        // therefore run only after the claiming callback has closed the modal.
-        foreach (var modalId in this._modalOrder.ToList())
-        {
-            var projection = this._modalProjections[modalId];
-            var (markers, kind) = FieldMarker.FindWithKind(projection.State.Root, fieldId);
-            if (markers.Count == 0 || kind is null)
-            {
-                continue;
-            }
-
-            var newRoot = (Element)
-                FieldMarker.ApplyValue(projection.State.Root, markers, kind.Value, value);
-            var newState = new CanvasState(newRoot);
-            if (!newState.Equals(projection.State))
-            {
-                this._modalProjections[modalId] = projection with { State = newState };
-            }
-        }
+        return node as Element
+            ?? throw new InvalidOperationException(
+                "A field marker path does not resolve to a projected element."
+            );
     }
 
     /// <summary>
@@ -1818,20 +1843,6 @@ internal sealed class DuetsPadSession
         this.EnqueueControl(
             ControlEventTypes.OpenText,
             new Dictionary<string, object?> { ["text"] = text }
-        );
-    }
-
-    /// <summary>
-    /// Enqueues a <c>setEditorText</c> control command with last-wins collapse semantics.
-    /// Multiple calls within the same eval retain only the last value.
-    /// </summary>
-    /// <param name="text">The text to place in the editor.</param>
-    internal void RequestSetEditorText(string text)
-    {
-        this.EnqueueControl(
-            ControlEventTypes.SetEditorText,
-            new Dictionary<string, object?> { ["text"] = text },
-            replace: true
         );
     }
 
@@ -2356,7 +2367,8 @@ internal sealed class DuetsPadSession
         CanvasProjection oldProjection,
         CanvasState newState,
         long revision,
-        CanvasInteractionCommitPlan interactions
+        CanvasInteractionCommitPlan interactions,
+        IReadOnlyList<CanvasPatchOperation>? authoritativeFieldOperations = null
     )
     {
         ValidateCanvasInteractions(newState, interactions.Interactions);
@@ -2367,7 +2379,8 @@ internal sealed class DuetsPadSession
             oldProjection,
             newState,
             revision,
-            interactions.Interactions
+            interactions.Interactions,
+            authoritativeFieldOperations
         );
 
         this._interactionStore.CommitCanvasInteractions(interactions);
@@ -2382,7 +2395,8 @@ internal sealed class DuetsPadSession
         CanvasProjection oldProjection,
         CanvasState newState,
         long revision,
-        IReadOnlyList<CommittedInteraction> interactions
+        IReadOnlyList<CommittedInteraction> interactions,
+        IReadOnlyList<CanvasPatchOperation>? authoritativeFieldOperations = null
     )
     {
         var replace = CanvasEventMessage.Replace(name, newState, interactions, revision);
@@ -2391,7 +2405,8 @@ internal sealed class DuetsPadSession
             return replace;
         }
 
-        var operations = this._canvasDiffer.Diff(oldProjection.State, newState);
+        var operations =
+            authoritativeFieldOperations ?? this._canvasDiffer.Diff(oldProjection.State, newState);
         var patch = CanvasEventMessage.Patch(
             name,
             oldProjection.Revision,
@@ -2400,20 +2415,29 @@ internal sealed class DuetsPadSession
             interactions
         );
 
-        return SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
+        // A full replacement would either destroy unrelated dirty Canvas fields or cause the
+        // Modal client to restore the dirty value over the accepted commit. Authoritative field
+        // writes therefore always use their targeted patch, regardless of serialized size.
+        return
+            authoritativeFieldOperations is not null
+            || SerializedByteLength(patch) < SerializedByteLength(replace)
+            ? patch
+            : replace;
     }
 
     private void CommitModalMutation(
         ModalProjection oldProjection,
         CanvasState newState,
         long revision,
-        ModalInteractionCommitPlan interactions
+        ModalInteractionCommitPlan interactions,
+        IReadOnlyList<CanvasPatchOperation>? authoritativeFieldOperations = null
     )
     {
         ValidateCanvasInteractions(newState, interactions.Interactions);
         var projection = oldProjection with { State = newState, Revision = revision };
         var replace = ModalEventMessage.Replace(projection, interactions.Interactions);
-        var operations = this._canvasDiffer.Diff(oldProjection.State, newState);
+        var operations =
+            authoritativeFieldOperations ?? this._canvasDiffer.Diff(oldProjection.State, newState);
         var patch = ModalEventMessage.Patch(
             oldProjection.Id,
             oldProjection.Revision,
@@ -2421,7 +2445,11 @@ internal sealed class DuetsPadSession
             operations,
             interactions.Interactions
         );
-        var message = SerializedByteLength(patch) < SerializedByteLength(replace) ? patch : replace;
+        var message =
+            authoritativeFieldOperations is not null
+            || SerializedByteLength(patch) < SerializedByteLength(replace)
+                ? patch
+                : replace;
 
         this._interactionStore.CommitModalInteractions(interactions);
         this._modalProjections[oldProjection.Id] = projection;

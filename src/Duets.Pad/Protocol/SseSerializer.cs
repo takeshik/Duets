@@ -112,7 +112,7 @@ internal static class SseSerializer
     /// <list type="bullet">
     ///   <item>timeline.reset  → <c>{ "type": "timeline.reset",  "reason": "...", "entries": [ ... ] }</c></item>
     ///   <item>timeline.append → <c>{ "type": "timeline.append", "entry":   { ... } }</c></item>
-    ///   <item>timeline.update → <c>{ "type": "timeline.update", "entry":   { ... } }</c></item>
+    ///   <item>timeline.update → <c>{ "type": "timeline.update", "entry": { ... }, "authoritativeFieldId"?: "..." }</c></item>
     ///   <item>timeline.trim   → <c>{ "type": "timeline.trim",   "removeBeforeId": ..., "marker": ... }</c></item>
     /// </list>
     /// </summary>
@@ -130,6 +130,12 @@ internal static class SseSerializer
                 r.State,
                 r.Reason,
                 r.StateInteractions
+            ),
+            UpdateMessage u => SerializeTimelineEntryEvent(
+                u.Type,
+                u.Entry,
+                u.EntryInteractions,
+                u.AuthoritativeFieldId
             ),
             EntryEventMessage e => SerializeTimelineEntryEvent(
                 e.Type,
@@ -301,14 +307,21 @@ internal static class SseSerializer
     private static string SerializeTimelineEntryEvent(
         string type,
         TimelineEntry entry,
-        IReadOnlyList<CommittedInteraction> interactions
+        IReadOnlyList<CommittedInteraction> interactions,
+        Guid? authoritativeFieldId = null
     )
     {
-        return new JsonObject
+        var result = new JsonObject
         {
             ["type"] = type,
             ["entry"] = SerializeEntry(entry, interactions),
-        }.ToJsonString();
+        };
+        if (authoritativeFieldId is { } fieldId)
+        {
+            result["authoritativeFieldId"] = fieldId.ToString("D");
+        }
+
+        return result.ToJsonString();
     }
 
     private static string SerializeTimelineTrim(

@@ -155,20 +155,37 @@
 
   let sessionId = null;
 
-  async function initSession() {
+  async function initSession(initialEditorText) {
     const hasHandoff = new URLSearchParams(window.location.search).has(
       "handoff",
     );
     const stored = hasHandoff
       ? null
       : sessionStorage.getItem("duetspad.sessionId");
-    const body = stored ? JSON.stringify({ sessionId: stored }) : "{}";
+    const body = JSON.stringify({
+      ...(stored ? { sessionId: stored } : {}),
+      editorText: initialEditorText,
+    });
 
-    const res = await padFetch(padUrl("sessions"), {
+    let res = await padFetch(padUrl("sessions"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
     });
+
+    let candidateApplied = true;
+    if (res.status === 413) {
+      // The editor candidate can exceed the service's request-body limit. Retry the lifecycle
+      // operation without it so a live stored session can still be resumed, or a fresh usable
+      // session can be created. The caller keeps the candidate as an uncommitted local value when
+      // this retry creates a fresh session.
+      candidateApplied = false;
+      res = await padFetch(padUrl("sessions"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stored ? { sessionId: stored } : {}),
+      });
+    }
 
     if (!res.ok) {
       throw new Error(`Session bootstrap failed: ${res.status}`);
@@ -177,7 +194,11 @@
     const data = await res.json();
     sessionId = data.sessionId;
     sessionStorage.setItem("duetspad.sessionId", sessionId);
-    return sessionId;
+    return {
+      id: sessionId,
+      candidateApplied,
+      resumed: stored !== null && sessionId === stored,
+    };
   }
 
   // Render-node projection
@@ -212,8 +233,7 @@
               el.appendChild(projectNode(child));
             }
           }
-          // A freshly built element has never been focused or edited, so the
-          // live property is always applied unguarded (ADR-47).
+          // Project the encoded field attribute into the fresh element's live property.
           applyFieldLiveValue(el);
           return el;
         }
@@ -541,19 +561,28 @@
    * encoded attribute represents. Called after projecting a fresh element and
    * after every canvas-patch attribute mutation on an existing one.
    * @param {Element} el
-   * @param {{ checkGuard?: boolean }} [options]
+   * @param {{ authoritative?: boolean }} [options]
    */
   function applyFieldLiveValue(el, options = {}) {
     if (!(el instanceof HTMLElement)) return;
     const kind = el.getAttribute("data-duetspad-field-kind");
     if (!kind) return;
     if (kind === "file") return;
-    if (options.checkGuard && isFieldGuarded(el)) return;
+    if (!options.authoritative && isFieldGuarded(el)) return;
 
     if (kind === "checkbox" || kind === "radio") {
       el.checked = el.hasAttribute("checked");
     } else {
       el.value = el.getAttribute("value") ?? "";
+    }
+
+    if (options.authoritative) {
+      delete el.dataset.duetspadPending;
+      // Advance instead of resetting the generation. An older commit response may still be in
+      // flight; reusing its generation could let that response clear a newer pending edit.
+      el.dataset.duetspadEditGen = String(
+        (Number(el.dataset.duetspadEditGen) || 0) + 1,
+      );
     }
   }
 
@@ -626,7 +655,9 @@
     el.addEventListener(
       "focusout",
       () => {
-        void commitFieldValue(el);
+        if (el.dataset.duetspadPending === "1") {
+          void commitFieldValue(el);
+        }
       },
       listenerOptions,
     );
@@ -1155,6 +1186,7 @@
   // Assigned once Monaco has created the editors; null before that point.
 
   let activeEditor = null;
+  let lastCommittedEditorText = null;
 
   // Assigned inside setupMonaco() once the SSE dispatcher is ready.
   // swapSession() calls this to re-subscribe on the new session.
@@ -1167,9 +1199,8 @@
   const EDITOR_CONTENT_KEY = "duetspad.editor.content";
 
   // Handoff key utilities for one-shot localStorage text transfer across tabs.
-  // A handoff key stores text that a newly opened tab reads exactly once, then
-  // deletes. The key name embeds a UUID so concurrent openText calls do not
-  // collide.
+  // A handoff remains stored until the receiving tab has created a usable editor. The key name
+  // embeds a UUID so concurrent openText calls do not collide.
 
   const HANDOFF_KEY_PREFIX = "duetspad.handoff.";
   const HANDOFF_MAX_KEYS = 20;
@@ -1193,23 +1224,21 @@
     return uuid;
   }
 
-  /**
-   * Reads and immediately deletes the handoff for the given UUID.
-   * Returns the stored text, or null if the key is absent or storage is
-   * unavailable. The one-shot delete ensures a second caller gets nothing.
-   * @param {string} uuid - The UUID from the URL ?handoff= parameter.
-   * @returns {string|null} The stored text, or null.
-   */
-  function consumeHandoff(uuid) {
+  /** Returns the handoff text without consuming it. */
+  function readHandoff(uuid) {
     try {
-      const key = HANDOFF_KEY_PREFIX + uuid;
-      const value = localStorage.getItem(key);
-      if (value !== null) {
-        localStorage.removeItem(key);
-      }
-      return value;
+      return localStorage.getItem(HANDOFF_KEY_PREFIX + uuid);
     } catch {
       return null;
+    }
+  }
+
+  /** Deletes a handoff only after its text has reached a usable editor. */
+  function consumeHandoff(uuid) {
+    try {
+      localStorage.removeItem(HANDOFF_KEY_PREFIX + uuid);
+    } catch {
+      // localStorage unavailable; best-effort only.
     }
   }
 
@@ -1248,6 +1277,62 @@
     }
   }
 
+  /** Returns the local candidate used only when browser bootstrap creates a fresh session. */
+  function getEditorBootstrapCandidate() {
+    const handoffParam = new URLSearchParams(window.location.search).get(
+      "handoff",
+    );
+    const handoffContent = handoffParam ? readHandoff(handoffParam) : null;
+    if (handoffContent !== null) {
+      return { text: handoffContent, handoffId: handoffParam };
+    }
+
+    try {
+      return {
+        text: localStorage.getItem(EDITOR_CONTENT_KEY) ?? "",
+        handoffId: null,
+      };
+    } catch {
+      return { text: "", handoffId: null };
+    }
+  }
+
+  function finishEditorBootstrapCandidate(candidate) {
+    if (!candidate.handoffId) return;
+    consumeHandoff(candidate.handoffId);
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("handoff");
+    window.history.replaceState(null, "", cleanUrl.href);
+  }
+
+  async function readEditorText(targetId) {
+    const res = await padFetch(padUrl(`sessions/${targetId}/editor`));
+    const data = await res.json();
+    if (!res.ok || data.ok !== true || typeof data.text !== "string") {
+      throw new Error(data.error ?? `Editor read failed: ${res.status}`);
+    }
+    return data.text;
+  }
+
+  async function commitEditorText(text, options = {}) {
+    const res = await padFetch(padUrl(`sessions/${sessionId}/editor`), {
+      method: "PUT",
+      headers: { "Content-Type": "text/plain" },
+      body: text,
+      keepalive: options.keepalive === true,
+    });
+    const data = await res.json();
+    if (!res.ok || data.ok !== true) {
+      throw new Error(data.error ?? `Editor commit failed: ${res.status}`);
+    }
+    lastCommittedEditorText = text;
+  }
+
+  async function commitEditorTextIfChanged(text, options = {}) {
+    if (text === lastCommittedEditorText) return;
+    await commitEditorText(text, options);
+  }
+
   // Run current editor content
 
   async function runCurrent() {
@@ -1261,6 +1346,7 @@
     saveEditorContent(code);
     setEditorStatus("Running…", false);
     try {
+      await commitEditorText(code);
       const data = await evalCode(code);
       if (data.ok) {
         setEditorStatus("Run completed", false);
@@ -1345,6 +1431,19 @@
         const entry = msg.entry;
         if (!entry) break;
         const existing = timelineEntryMap.get(entry.id);
+        const authoritativeFieldId = msg.authoritativeFieldId ?? null;
+        if (
+          authoritativeFieldId !== null &&
+          (typeof authoritativeFieldId !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              authoritativeFieldId,
+            ))
+        ) {
+          throw new Error("timeline authoritative field id is invalid");
+        }
+        const edits = existing
+          ? captureFieldEdits(existing, authoritativeFieldId)
+          : [];
         const row = renderTimelineEntry(entry);
         timelineEntryMap.set(entry.id, row);
         if (existing && existing.parentNode === content) {
@@ -1352,6 +1451,7 @@
         } else {
           content.appendChild(row);
         }
+        restoreFieldEdits(row, edits);
         break;
       }
 
@@ -1741,17 +1841,22 @@
         case "set-attr": {
           const target = resolveNode(root, operation.path);
           target.setAttribute(operation.name, operation.value ?? "");
-          // The differ emits value/checked changes as plain attribute ops (ADR-47); mirror
-          // them onto the live DOM property, guarding a focused/mid-edit field from being
-          // clobbered by an incoming projection.
-          applyFieldLiveValue(target, { checkGuard: true });
+          // A value/checked mutation is an accepted server-canonical field write. It wins over
+          // local uncommitted input and clears the dirty marker so that value cannot be resent.
+          applyFieldLiveValue(target, {
+            authoritative:
+              operation.name === "value" || operation.name === "checked",
+          });
           break;
         }
 
         case "remove-attr": {
           const target = resolveNode(root, operation.path);
           target.removeAttribute(operation.name);
-          applyFieldLiveValue(target, { checkGuard: true });
+          applyFieldLiveValue(target, {
+            authoritative:
+              operation.name === "value" || operation.name === "checked",
+          });
           break;
         }
 
@@ -2465,10 +2570,10 @@
     };
   }
 
-  function captureModalEdits(entry) {
+  function captureFieldEdits(root, excludedFieldId = null) {
     const occurrences = new Map();
     const edits = [];
-    for (const field of fieldElements(entry.root)) {
+    for (const field of fieldElements(root)) {
       const fieldId = field.getAttribute("data-duetspad-field");
       const kind = field.getAttribute("data-duetspad-field-kind");
       if (!fieldId || !kind) continue;
@@ -2477,11 +2582,13 @@
       const key = `${fieldId}\u0000${kind}\u0000${option}`;
       const occurrence = occurrences.get(key) ?? 0;
       occurrences.set(key, occurrence + 1);
+      if (fieldId === excludedFieldId) continue;
       if (!isFieldGuarded(field)) continue;
 
       edits.push({
         key,
         occurrence,
+        kind,
         value: fieldCurrentValue(field),
         checked: "checked" in field ? field.checked : null,
         editGen: field.dataset.duetspadEditGen,
@@ -2496,10 +2603,10 @@
     return edits;
   }
 
-  function restoreModalEdits(entry, edits) {
+  function restoreFieldEdits(root, edits) {
     if (edits.length === 0) return;
     const candidates = new Map();
-    for (const field of fieldElements(entry.root)) {
+    for (const field of fieldElements(root)) {
       const fieldId = field.getAttribute("data-duetspad-field");
       const kind = field.getAttribute("data-duetspad-field-kind");
       if (!fieldId || !kind) continue;
@@ -2514,7 +2621,11 @@
     for (const edit of edits) {
       const field = candidates.get(edit.key)?.[edit.occurrence];
       if (!(field instanceof HTMLElement)) continue;
-      if (edit.checked !== null && "checked" in field) {
+      if (
+        (edit.kind === "checkbox" || edit.kind === "radio") &&
+        edit.checked !== null &&
+        "checked" in field
+      ) {
         field.checked = edit.checked;
       } else if (edit.value !== null && "value" in field) {
         field.value = edit.value;
@@ -2541,7 +2652,7 @@
     }
   }
 
-  function addOrReplaceModal(projection) {
+  function addOrReplaceModal(projection, options = {}) {
     if (!projection || typeof projection.modalId !== "string") {
       throw new Error("modal projection id is invalid");
     }
@@ -2551,7 +2662,10 @@
     const existing = modalMap.get(projection.modalId);
     if (existing && projection.revision <= existing.revision) return;
 
-    const edits = existing ? captureModalEdits(existing) : [];
+    const edits =
+      existing && options.preserveFieldEdits !== false
+        ? captureFieldEdits(existing.root)
+        : [];
     const entry = createModalEntry(projection);
     const container = document.getElementById("modal-container");
     if (!container) return;
@@ -2563,7 +2677,7 @@
       modalOrder.push(entry.id);
       container.appendChild(entry.layer);
     }
-    restoreModalEdits(entry, edits);
+    restoreFieldEdits(entry.root, edits);
     modalMap.set(entry.id, entry);
     bindModalProjection(entry, projection.interactions);
     if (entry.pending) setModalPending(entry, true);
@@ -2661,7 +2775,11 @@
         for (const modalId of [...modalOrder]) {
           if (!retainedIds.has(modalId)) removeModal(modalId);
         }
-        for (const projection of msg.modals) addOrReplaceModal(projection);
+        for (const projection of msg.modals) {
+          // A newer reconnect snapshot can contain accepted field writes missed while the stream
+          // was disconnected. It is authoritative, so stale local input must not be restored.
+          addOrReplaceModal(projection, { preserveFieldEdits: false });
+        }
         modalOrder.splice(0, modalOrder.length, ...retainedIds);
         updateModalPresentation();
       } else if (
@@ -2700,7 +2818,7 @@
    * Performs a no-reload session swap:
    * 1. Closes the current event stream.
    * 2. Deletes the old session on the server (best-effort).
-   * 3. Creates a new session via POST /sessions.
+   * 3. Creates a new session via POST /sessions with the current Editor text as its initial value.
    * 4. Updates sessionStorage and the module-level sessionId.
    * 5. Clears Canvas, Timeline, and Modal state (the initial SSE burst will re-populate them).
    * 6. Opens a new event stream on the new session.
@@ -2730,17 +2848,41 @@
 
     // Step 3: create a new session via POST /sessions (no prior id in the body).
     let newId;
+    let newEditorText;
+    let newCommittedEditorText;
     try {
-      const res = await padFetch(padUrl("sessions"), {
+      const editorCandidate = activeEditor?.getValue() ?? "";
+      let candidateApplied = true;
+      let res = await padFetch(padUrl("sessions"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ editorText: editorCandidate }),
       });
+      if (res.status === 413) {
+        candidateApplied = false;
+        res = await padFetch(padUrl("sessions"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      }
       if (!res.ok) {
         throw new Error(`Session creation failed: ${res.status}`);
       }
       const data = await res.json();
       newId = data.sessionId;
+      newEditorText = editorCandidate;
+      newCommittedEditorText = candidateApplied ? editorCandidate : "";
+      if (!candidateApplied) {
+        showToast(
+          "The editor text exceeded the server request limit. It remains in the editor as an uncommitted local value; shorten it before running or leaving the editor.",
+          {
+            title: "Editor text was not committed",
+            variant: "warning",
+            durationMs: 0,
+          },
+        );
+      }
     } catch (err) {
       console.error(
         "[DuetsPad] swapSession: failed to create new session",
@@ -2753,6 +2895,11 @@
     // Step 4: persist the new id.
     sessionId = newId;
     sessionStorage.setItem("duetspad.sessionId", newId);
+    lastCommittedEditorText = newCommittedEditorText;
+    if (activeEditor && activeEditor.getValue() !== newEditorText) {
+      activeEditor.setValue(newEditorText);
+    }
+    saveEditorContent(newEditorText);
 
     // Step 5: clear projected surfaces before the new stream arrives
     // so the old content does not persist during the brief gap.
@@ -2776,16 +2923,6 @@
    * @type {Map<string, function(object): void>}
    */
   const controlHandlers = new Map();
-
-  /**
-   * Replaces the editor content with the text supplied by the server.
-   * @param {object} msg - Control message with a `text` field.
-   */
-  controlHandlers.set("setEditorText", (msg) => {
-    if (activeEditor && typeof msg.text === "string") {
-      activeEditor.setValue(msg.text);
-    }
-  });
 
   controlHandlers.set("reset", (_msg) => {
     void swapSession();
@@ -3045,7 +3182,7 @@
 
   // Monaco setup
 
-  function setupMonaco(id) {
+  function setupMonaco(id, initialEditorText, onReady = null) {
     require.config({ paths: { vs: window.DUETSPAD_MONACO_VS } });
 
     require(["vs/editor/editor.main"], () => {
@@ -3094,7 +3231,7 @@
       const editor = monaco.editor.create(
         document.getElementById("editor-host"),
         {
-          value: "",
+          value: initialEditorText,
           language: "typescript",
           theme: monacoThemeFromUi(),
           automaticLayout: true,
@@ -3107,37 +3244,8 @@
       );
 
       activeEditor = editor;
-
-      /** Loads the last-saved editor content, returning "" on any error. */
-      function loadEditorContent() {
-        try {
-          return localStorage.getItem(EDITOR_CONTENT_KEY) ?? "";
-        } catch {
-          return "";
-        }
-      }
-
-      // Handoff: if the URL carries ?handoff=<uuid>, consume it from localStorage
-      // and use it as the initial content (one-shot; key is deleted on read).
-      // Otherwise fall back to the last persisted editor content.
-      const handoffParam = new URLSearchParams(window.location.search).get(
-        "handoff",
-      );
-      const handoffContent = handoffParam ? consumeHandoff(handoffParam) : null;
-      if (handoffContent !== null) {
-        editor.setValue(handoffContent);
-        // Remove the ?handoff= parameter from the URL without reloading so
-        // the next time the user refreshes they get a fresh empty editor.
-        const cleanUrl = new URL(window.location.href);
-        cleanUrl.searchParams.delete("handoff");
-        window.history.replaceState(null, "", cleanUrl.href);
-      } else {
-        // Restore previously saved content (overrides the empty initial value).
-        const savedContent = loadEditorContent();
-        if (savedContent) {
-          editor.setValue(savedContent);
-        }
-      }
+      saveEditorContent(initialEditorText);
+      onReady?.();
 
       new MutationObserver(() => {
         monaco.editor.setTheme(monacoThemeFromUi());
@@ -3198,18 +3306,31 @@
 
       // Save on blur so content survives tab switches and navigation.
       editor.onDidBlurEditorText(() => {
-        saveEditorContent(editor.getValue());
+        const text = editor.getValue();
+        saveEditorContent(text);
+        void commitEditorTextIfChanged(text).catch((err) => {
+          console.error("[DuetsPad] Editor commit failed", err);
+        });
       });
 
       // Save on page hide and visibility-hidden so content survives navigation
       // and backgrounding (the latter matters for mobile where pagehide may not
       // fire reliably).
       window.addEventListener("pagehide", () => {
-        if (activeEditor) saveEditorContent(activeEditor.getValue());
+        if (!activeEditor) return;
+        const text = activeEditor.getValue();
+        saveEditorContent(text);
+        void commitEditorTextIfChanged(text, { keepalive: true }).catch(
+          () => {},
+        );
       });
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden" && activeEditor) {
-          saveEditorContent(activeEditor.getValue());
+          const text = activeEditor.getValue();
+          saveEditorContent(text);
+          void commitEditorTextIfChanged(text, { keepalive: true }).catch(
+            () => {},
+          );
         }
       });
 
@@ -3537,8 +3658,27 @@
     // Apply initial disconnected state immediately (before SSE connects).
     syncConnectionUi();
     try {
-      const id = await initSession();
-      setupMonaco(id);
+      const candidate = getEditorBootstrapCandidate();
+      const bootstrap = await initSession(candidate.text);
+      const useLocalCandidate =
+        !bootstrap.candidateApplied && !bootstrap.resumed;
+      const editorText = useLocalCandidate
+        ? candidate.text
+        : await readEditorText(bootstrap.id);
+      lastCommittedEditorText = useLocalCandidate ? "" : editorText;
+      setupMonaco(bootstrap.id, editorText, () => {
+        finishEditorBootstrapCandidate(candidate);
+        if (useLocalCandidate) {
+          showToast(
+            "The editor text exceeded the server request limit. It remains in the editor as an uncommitted local value; shorten it before running or leaving the editor.",
+            {
+              title: "Editor text was not committed",
+              variant: "warning",
+              durationMs: 0,
+            },
+          );
+        }
+      });
     } catch (err) {
       console.error("[DuetsPad] Startup error", err);
       setEditorStatus(`Startup error: ${err}`, true);

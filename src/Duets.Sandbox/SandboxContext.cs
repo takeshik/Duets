@@ -32,7 +32,6 @@ internal sealed class SandboxContext : IAsyncDisposable
     private DuetsSession _session;
     private HttpServer? _webServer;
     private DuetsPadService? _padService;
-    private DuetsPadProtocolClient? _padProtocolClient;
     private Uri? _webServerBaseUri;
     private CancellationTokenSource? _webServerCts;
     private Task? _webServerTask;
@@ -59,9 +58,7 @@ internal sealed class SandboxContext : IAsyncDisposable
             ? task.Exception?.GetBaseException().Message
             : null;
 
-    public DuetsPadProtocolClient PadProtocolClient =>
-        this._padProtocolClient
-        ?? throw new InvalidOperationException("The DuetsPad server is not running.");
+    public DuetsPadProtocolClient PadProtocolClient { get; } = new();
 
     internal static async Task<SandboxContext> CreateAsync(
         Func<TypeDeclarations, Task<TypeScriptService>>? tsFactory = null,
@@ -215,7 +212,7 @@ internal sealed class SandboxContext : IAsyncDisposable
                     opts.Authenticate = DuetsPadAuthenticator.Token(accessToken);
                 }
             });
-        this._padProtocolClient = new DuetsPadProtocolClient(this._webServerBaseUri);
+        this.PadProtocolClient.SetLocalService(this._webServerBaseUri, accessToken);
         this._webServerTask = this._webServer.RunAsync(cancellationToken: this._webServerCts.Token);
         Console.Error.WriteLine($"DuetsPad server started at http://127.0.0.1:{port}/");
     }
@@ -244,8 +241,7 @@ internal sealed class SandboxContext : IAsyncDisposable
 
     private void TearDownWebServerCore()
     {
-        this._padProtocolClient?.Dispose();
-        this._padProtocolClient = null;
+        this.PadProtocolClient.ClearLocalService();
 
         this._padService?.Dispose();
         this._padService = null;
@@ -273,7 +269,7 @@ internal sealed class SandboxContext : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
 
-        this._padProtocolClient?.Dispose();
+        this.PadProtocolClient.Dispose();
         this._padService?.Dispose();
         this._webServer?.Dispose();
         this._session.Dispose();

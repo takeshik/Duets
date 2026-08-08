@@ -159,6 +159,10 @@ internal sealed class SessionRegistry : IDisposable
     /// An optional client-supplied session ID to reconnect to. When <see langword="null"/> or not
     /// found in the registry, a new session is always created with a fresh ID.
     /// </param>
+    /// <param name="initialEditorText">
+    /// Editor text used only when a fresh session is created. It is ignored when
+    /// <paramref name="existingId"/> resolves to a live session.
+    /// </param>
     /// <returns>
     /// A tuple of the session and its ID. The session is the existing one when
     /// <paramref name="existingId"/> was found, or a newly created session otherwise.
@@ -169,7 +173,8 @@ internal sealed class SessionRegistry : IDisposable
     /// collectively exceed it.
     /// </returns>
     internal async Task<(DuetsPadSession Session, Guid Id)?> GetOrCreateSessionAsync(
-        Guid? existingId
+        Guid? existingId,
+        string? initialEditorText = null
     )
     {
         if (existingId.HasValue && this.TryAcquireSession(existingId.Value) is { } existing)
@@ -212,7 +217,8 @@ internal sealed class SessionRegistry : IDisposable
                 this._options.MaxAttachmentBytesPerSession,
                 this._options.MaxAttachmentsPerSession,
                 this._options.AttachmentStorageDrainTimeout,
-                this._options.MaxActiveModals
+                this._options.MaxActiveModals,
+                initialEditorText
             );
 
             // DuetsPadSession now owns and disposes both resources. Clearing the local ownership

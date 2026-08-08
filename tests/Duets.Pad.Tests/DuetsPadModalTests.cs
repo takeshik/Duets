@@ -41,6 +41,29 @@ public sealed class DuetsPadModalTests
         }
     }
 
+    private static Element FindMarkedField(ITerminalRenderNode node)
+    {
+        var element = Assert.IsType<Element>(node);
+        if (element.Attributes.ContainsKey(FieldMarker.AttributeName))
+        {
+            return element;
+        }
+
+        foreach (var child in element.Children)
+        {
+            if (child is Element)
+            {
+                try
+                {
+                    return FindMarkedField(child);
+                }
+                catch (InvalidOperationException) { }
+            }
+        }
+
+        throw new InvalidOperationException("The modal contains no field marker.");
+    }
+
     [Fact]
     public async Task Modal_action_observes_latest_input_and_closes_once()
     {
@@ -98,6 +121,13 @@ public sealed class DuetsPadModalTests
 
         Assert.True(invoked.Ok, invoked.Error);
         Assert.Equal("action:save:Ada", Assert.IsType<Text>(session.Timeline.State[^1].Body).Value);
+        var fieldProjection = Assert.IsType<ModalEventMessage.PatchMessage>(
+            await ReadModalEventAsync(channel.Reader)
+        );
+        Assert.Contains(
+            fieldProjection.Operations,
+            operation => operation is SetAttributeOperation { Name: "value", Value: "Ada" }
+        );
         Assert.IsType<ModalEventMessage.CloseMessage>(await ReadModalEventAsync(channel.Reader));
 
         var duplicate = await session.InvokeInteractionAsync(save.HandlerId);
@@ -121,6 +151,39 @@ public sealed class DuetsPadModalTests
 
         Assert.Single(snapshot.Modals);
         Assert.Equal("Close", snapshot.Modals[0].Projection.Options.Buttons[0].Id);
+    }
+
+    [Fact]
+    public async Task Unchanged_field_commit_broadcasts_an_authoritative_modal_patch()
+    {
+        using var session = await CreatePadSessionAsync();
+        var channel = Channel.CreateUnbounded<PadEventMessage?>();
+        session.SubscribeEvents(channel.Writer, session.DuetsSession.Declarations);
+        while (channel.Reader.TryRead(out _)) { }
+
+        var evaluation = await session.EvaluateAsync(
+            """
+            var name = ui.textBox({ value: "same" });
+            ui.modal(name, () => {}, { buttons: ["Close"] });
+            """
+        );
+        Assert.True(evaluation.Ok, evaluation.Error);
+        var open = Assert.IsType<ModalEventMessage.FullStateMessage>(
+            await ReadModalEventAsync(channel.Reader)
+        );
+        var field = FindMarkedField(open.Projection.State.Root);
+        var fieldId = Guid.Parse(field.Attributes[FieldMarker.AttributeName]!);
+
+        await session.CommitFieldValue(fieldId, "same");
+
+        var patch = Assert.IsType<ModalEventMessage.PatchMessage>(
+            await ReadModalEventAsync(channel.Reader)
+        );
+        Assert.Equal(open.Projection.Revision + 1, patch.Revision);
+        var operation = Assert.Single(patch.Operations);
+        var set = Assert.IsType<SetAttributeOperation>(operation);
+        Assert.Equal(FieldMarker.ValueAttributeName, set.Name);
+        Assert.Equal("same", set.Value);
     }
 
     [Fact]
