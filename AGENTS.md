@@ -47,7 +47,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
     place cross-project internal helpers here
 - `samples/` — Runnable file-based app examples, grouped per package (run with `dotnet run samples/<package>/<file>.cs`)
 - `docs/`
-  - `architecture.md` — Architecture overview (current snapshot)
+  - `architecture/README.md` — Architecture overview (current snapshot)
   - `decisions/` — Architecture Decision Records (ADRs)
 - `tests/`
   - `Duets.Tests/` — Unit tests (xUnit v3)
@@ -57,7 +57,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 
 ## Architecture & Design
 
-- [docs/architecture.md](docs/architecture.md) — Current architecture snapshot. Read this before making structural
+- [docs/architecture/README.md](docs/architecture/README.md) — Current architecture snapshot. Read this before making structural
   changes or answering any design or feasibility question.
 - [docs/decisions/index.md](docs/decisions/index.md) — ADR index: Title, Keywords, and Abstract for all ADRs. Read this
   to identify relevant decisions before reading full ADRs.
@@ -65,7 +65,7 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 
 When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR
 in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
-`docs/architecture.md` to reflect the new state.
+`docs/architecture/README.md` to reflect the new state.
 
 ## Committing
 

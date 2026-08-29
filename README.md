@@ -88,7 +88,7 @@ More examples in [`samples/`](samples/).
   - `HttpHarker/` — Lightweight `HttpListener`-based HTTP server with middleware pipeline
   - `Duets.Sandbox/` — Multi-mode debugging CLI (run with `--help` or `batch` → `{"op":"help"}` for usage)
 - `samples/` — Runnable file-based app examples, grouped per package
-- `docs/` — [Architecture overview](docs/architecture.md) and [design decision records](docs/decisions/)
+- `docs/` — [Architecture overview](docs/architecture/README.md) and [design decision records](docs/decisions/)
 - `tests/`
   - `Duets.Tests/` — Unit tests
   - `Duets.Pad.Tests/` — Unit tests for `Duets.Pad`
