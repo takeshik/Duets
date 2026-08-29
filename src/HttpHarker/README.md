@@ -87,3 +87,8 @@ An inline middleware (via `UseContentTypeDetection(...)`) that sets `Content-Typ
 - Uses `System.Net.HttpListener` directly — no ASP.NET Core dependency.
 - Multiple concurrent worker tasks process requests from a shared listener.
 - The middleware pipeline uses a simple delegate chain (`Func<HttpListenerContext, Func<Task>, Task>`).
+
+## Architecture
+
+See the repository's [HttpHarker architecture](../../docs/architecture/HttpHarker.md) for its dependency boundary and
+role in Duets, and the [decision records](../../docs/decisions/) for the underlying trade-offs.

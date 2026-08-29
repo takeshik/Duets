@@ -32,7 +32,8 @@ Decisions that do **not** warrant an ADR:
    - For borderline cases, briefly explain the uncertainty and ask the user to decide.
 5. For decisions approved for ADR creation, invoke the `adr new` operation from the `adr` skill.
 6. After all ADRs are created, run `adr index` to update `docs/decisions/index.md`.
-7. If any new ADR affects the architecture snapshot, run `adr arch` to update `docs/architecture/README.md`.
+7. If any new ADR affects the current architecture, run `adr arch` to refresh the relevant pages under
+   `docs/architecture/`, including the landing page when whole-system boundaries or flow change.
 
 ## Presentation Format
 

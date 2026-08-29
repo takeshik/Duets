@@ -211,5 +211,6 @@ session with a live pad tab is never reclaimed.
 ## Architecture
 
 Design decisions and the rendering/protocol model are documented in the repository's
-[architecture overview](../../docs/architecture/README.md) and
-[decision records](../../docs/decisions/) (ADR-32 onward cover DuetsPad).
+[DuetsPad architecture](../../docs/architecture/Duets.Pad/), the
+[whole-repository architecture](../../docs/architecture/), and
+[decision records](../../docs/decisions/). Relevant DuetsPad decisions are linked from the architecture pages.
