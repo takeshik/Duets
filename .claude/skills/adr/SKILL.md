@@ -1,6 +1,6 @@
 ---
 name: adr
-description: Use when creating, updating, or managing Architecture Decision Records (ADRs) in this project. Invoke for operations like "create a new ADR", "update the ADR index", or "regenerate architecture.md". Also triggered when the user asks to write up a design decision or document a choice made during a session.
+description: Use when creating, updating, or managing Architecture Decision Records (ADRs) in this project. Invoke for operations like "create a new ADR", "update the ADR index", or "refresh the architecture documentation". Also triggered when the user asks to write up a design decision or document a choice made during a session.
 ---
 
 # ADR Management
@@ -31,7 +31,7 @@ The Abstract cell should be self-contained and fit on one line without line brea
 2. Convert title to kebab-case filename: `N_<kebab-title>.md`. Remove special characters (`.`, `/`, `'`); replace spaces with `-`; lowercase.
 3. Copy `docs/decisions/_template.md`, fill in all sections. Status: `Accepted`.
 4. Append a new row to the table in `docs/decisions/index.md`. If `index.md` does not exist, create it with the header row first, then append. Do not modify existing rows.
-5. If the decision meaningfully changes the current architecture snapshot, update `docs/architecture/README.md` accordingly. Add an ADR link wherever relevant.
+5. If the decision meaningfully changes the current architecture, update the relevant page under `docs/architecture/`. Also update `docs/architecture/README.md` when module boundaries, dependencies, or whole-system flow change. Add an ADR link wherever relevant.
 
 ### `adr index`
 
@@ -50,7 +50,7 @@ Full rebuild — read all ADR files and regenerate `docs/decisions/index.md` ent
 
 ### `adr arch`
 
-Read `docs/decisions/index.md` and all ADR files. Regenerate `docs/architecture/README.md` to reflect the current architectural state, preserving existing structure and tone. Every substantive claim should link to the ADR that supports it.
+Read `docs/decisions/index.md` and all ADR files. Refresh the documentation set under `docs/architecture/` to reflect the current architectural state, starting with `docs/architecture/README.md` and then updating each affected module or topic page. Preserve the existing responsibility boundaries, structure, and tone. Every substantive claim should link to the ADR that supports it.
 
 ## File Naming Convention
 

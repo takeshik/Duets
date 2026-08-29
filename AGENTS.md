@@ -47,7 +47,10 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
     place cross-project internal helpers here
 - `samples/` — Runnable file-based app examples, grouped per package (run with `dotnet run samples/<package>/<file>.cs`)
 - `docs/`
-  - `architecture/README.md` — Architecture overview (current snapshot)
+  - `README.md` — Documentation entry point
+  - `architecture/` — Current architecture documentation set
+    - `README.md` — Whole-repository architecture snapshot and module navigation
+    - `Duets.Pad/` — DuetsPad architecture by concern (overview, protocol, rendering/state, security)
   - `decisions/` — Architecture Decision Records (ADRs)
 - `tests/`
   - `Duets.Tests/` — Unit tests (xUnit v3)
@@ -57,15 +60,17 @@ The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
 
 ## Architecture & Design
 
-- [docs/architecture/README.md](docs/architecture/README.md) — Current architecture snapshot. Read this before making structural
-  changes or answering any design or feasibility question.
+- [docs/architecture/README.md](docs/architecture/README.md) — Whole-repository architecture snapshot. Read this
+  before making structural changes or answering any design or feasibility question, then read the linked module or
+  topic page relevant to the task.
 - [docs/decisions/index.md](docs/decisions/index.md) — ADR index: Title, Keywords, and Abstract for all ADRs. Read this
   to identify relevant decisions before reading full ADRs.
 - [docs/decisions/](docs/decisions/) — Architecture Decision Records (ADRs). ADR-N is at `docs/decisions/<N>_*.md`.
 
 When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR
 in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
-`docs/architecture/README.md` to reflect the new state.
+the relevant page under `docs/architecture/`; update `docs/architecture/README.md` as well when module boundaries,
+dependencies, or whole-system data flow change.
 
 ## Committing
 
@@ -141,6 +146,13 @@ use `--filter-class`/`--filter-method` instead of `--filter`.
 
 `Duets.Sandbox` provides a JSONL batch mode for agent-friendly end-to-end verification of the full stack (transpilation,
 completions, type registration, web server). Use this to validate changes without writing test code.
+
+| Mode | Invocation | Role |
+|---|---|---|
+| `repl` | *(default)* | Interactive TypeScript REPL for human exploration |
+| `complete` | `complete <src> [--position n]` | One-shot completion query with JSON output |
+| `serve` | `serve [--port n] [--auth]` | DuetsPad server; `--auth` prints an access-token URL |
+| `batch` | `batch` | Stateful JSONL input/output for agents and automation |
 
 ```bash
 # Pipe JSONL operations to stdin; one JSON result per line is written to stdout.

@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Accepted — the singleton form and path of the architecture snapshot are partially superseded by
+[ADR-55](55_scale-architecture-documentation-by-purpose-and-module.md)
+
+The three-layer model remains in force. ADR-55 expands its architecture layer from one file into a
+purpose-first documentation set with a repository-wide landing page.
 
 ## Context
 

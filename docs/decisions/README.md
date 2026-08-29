@@ -3,6 +3,7 @@
 This directory contains Architecture Decision Records (ADRs) for the Duets project. Each file documents a single architectural or design decision: the context that prompted it, the alternatives considered, and the rationale for the choice made.
 
 See [index.md](index.md) for a quick-reference table of all ADRs with keywords and abstracts.
+See the [architecture documentation](../architecture/) for the current state produced by those decisions.
 
 ## Adding a New ADR
 
