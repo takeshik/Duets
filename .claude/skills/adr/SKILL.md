@@ -31,7 +31,7 @@ The Abstract cell should be self-contained and fit on one line without line brea
 2. Convert title to kebab-case filename: `N_<kebab-title>.md`. Remove special characters (`.`, `/`, `'`); replace spaces with `-`; lowercase.
 3. Copy `docs/decisions/_template.md`, fill in all sections. Status: `Accepted`.
 4. Append a new row to the table in `docs/decisions/index.md`. If `index.md` does not exist, create it with the header row first, then append. Do not modify existing rows.
-5. If the decision meaningfully changes the current architecture snapshot, update `docs/architecture.md` accordingly. Add an ADR link wherever relevant.
+5. If the decision meaningfully changes the current architecture snapshot, update `docs/architecture/README.md` accordingly. Add an ADR link wherever relevant.
 
 ### `adr index`
 
@@ -50,7 +50,7 @@ Full rebuild — read all ADR files and regenerate `docs/decisions/index.md` ent
 
 ### `adr arch`
 
-Read `docs/decisions/index.md` and all ADR files. Regenerate `docs/architecture.md` to reflect the current architectural state, preserving existing structure and tone. Every substantive claim should link to the ADR that supports it.
+Read `docs/decisions/index.md` and all ADR files. Regenerate `docs/architecture/README.md` to reflect the current architectural state, preserving existing structure and tone. Every substantive claim should link to the ADR that supports it.
 
 ## File Naming Convention
 

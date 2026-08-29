@@ -29,7 +29,7 @@ Verify each item that applies to the changes in this commit unit:
 | New user-facing feature or API added, or existing one changed | Review `README.md` and update if necessary; do not add content that does not pull its weight |
 | Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
 | ADR added or updated | Row added/updated in `docs/decisions/index.md` |
-| Architecture change (new layer, dependency, or data flow) | `docs/architecture.md` updated |
+| Architecture change (new layer, dependency, or data flow) | `docs/architecture/README.md` updated |
 
 If a required action is missing, **stop and ask the user** before proceeding.
 
