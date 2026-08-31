@@ -16,8 +16,8 @@
       },
       "Acornima": {
         "type": "Transitive",
-        "resolved": "1.6.2",
-        "contentHash": "laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w=="
+        "resolved": "1.7.0",
+        "contentHash": "a2I4O4qkuAdB0oSaGz6/k0n/bXxMbGcLBra5dNTTVSLmTwM7uORA8ebpOrNMmDfFWOMwvuaRL6gPprRV4HTV0w=="
       },
       "duets": {
         "type": "Project"
@@ -26,7 +26,7 @@
         "type": "Project",
         "dependencies": {
           "Duets": "[1.0.0, )",
-          "Jint": "[4.14.0, )"
+          "Jint": "[4.16.1, )"
         }
       },
       "duets.pad": {
@@ -41,11 +41,11 @@
       },
       "Jint": {
         "type": "CentralTransitive",
-        "requested": "[4.14.0, )",
-        "resolved": "4.14.0",
-        "contentHash": "stG038w8SDWhv3/dQRfB6cdQPWhhrfgBtpGCNXu0q2oWDDcKaTL2tXF7MVtapc2rcxyRxCtAOenaLCXiU1J1+Q==",
+        "requested": "[4.16.1, )",
+        "resolved": "4.16.1",
+        "contentHash": "qBsTEDWhg2p4LZIV1sqzJw2evwvJ5davU7SNMprlRhLKv2t7mjk4ozzyrGTgXyZyqFIj1SdJ5ySvKWUvkqslfg==",
         "dependencies": {
-          "Acornima": "1.6.2"
+          "Acornima": "1.7.0"
         }
       }
     }
