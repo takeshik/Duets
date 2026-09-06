@@ -139,13 +139,27 @@ These rules apply equally to test code.
 dotnet test
 ```
 
-Tests use [xUnit v3](https://xunit.net/) and live in `tests/Duets.Tests/`. xUnit v3 runs on Microsoft.Testing.Platform;
-use `--filter-class`/`--filter-method` instead of `--filter`.
+Tests use [xUnit v3](https://xunit.net/) and are organized by the production area they cover:
+
+| Production area | Primary test project |
+|---|---|
+| `src/Duets/` and `src/Duets.Jint/` | `tests/Duets.Tests/` |
+| `src/Duets.Pad/` | `tests/Duets.Pad.Tests/` |
+| `src/HttpHarker/` | `tests/HttpHarker.Tests/` |
+| `src/Duets.Sandbox/` | `tests/Duets.Tests/` for CLI and session behavior; `tests/Duets.Pad.Tests/` for the DuetsPad protocol client |
+| `src/shared/` | Every test project affected by the changed shared source |
+| `tests/shared/` | Every test project that compiles the changed test-support source |
+
+Place regression tests with the component whose behavior they cover. Cross-component protocol tests belong with the
+project that owns the public boundary under test. xUnit v3 runs on Microsoft.Testing.Platform; use
+`--filter-class`/`--filter-method` instead of `--filter`.
 
 ## End-to-end verification with Duets.Sandbox
 
 `Duets.Sandbox` provides a JSONL batch mode for agent-friendly end-to-end verification of the full stack (transpilation,
-completions, type registration, web server). Use this to validate changes without writing test code.
+completions, type registration, web server). Use it as supplementary end-to-end verification of the initialized stack.
+It does not replace a regression test when a source change adds or changes behavior that can be covered by the owning
+test project.
 
 | Mode | Invocation | Role |
 |---|---|---|
