@@ -45,6 +45,14 @@ The pad presents five surfaces:
 | <kbd>Ctrl+Enter</kbd> | Evaluate the editor code |
 | <kbd>F5</kbd> | Evaluate the editor code |
 
+### Workspace controls
+
+The top toolbar can show or hide the Editor, Canvas, and Timeline panes in split view. It can
+arrange the workspace as vertical split, horizontal split, or full-size tabs; splitters adjust the
+relative pane sizes. Double-click an Editor, Canvas, or Timeline pane header to maximize that pane,
+then double-click the header again to restore the previous layout. The toolbar also switches the
+light/dark theme and provides session reset and clearing actions.
+
 ### Output rules
 
 Output goes to the pad's structured surfaces, not back into the editor:
@@ -62,6 +70,18 @@ The editor's final evaluation result is **not** automatically appended to the Ti
 concrete type, so chains such as `query.where(...).dump().select(...)` retain completions. The
 equivalent global `dump(value)` remains available for `null`, `undefined`, null-prototype objects,
 and values whose own `dump` member shadows DuetsPad's method.
+
+## Controlling the pad from a script
+
+The `pad` global schedules browser and session operations from evaluated TypeScript:
+
+| API | Effect |
+|---|---|
+| `pad.resetSession()` | Replace the current server-side session after the active run completes. The editor text is preserved; Canvas and Timeline state are cleared. |
+| `pad.openText(text)` | Open a new browser tab with the supplied editor text and a fresh isolated session. Every call is delivered. |
+| `pad.setEditorText(text)` | Replace the current tab's editor text after the active run. If called repeatedly in one run, the last value wins. |
+
+These calls enqueue control messages; they do not interrupt the script that requested them.
 
 ## Building UI with `ui.*`
 
@@ -148,6 +168,36 @@ reconnects. If a selection fails, its projected error includes a cancellation bu
 usable after a browser reload. Attachment quota is released after physical storage deletion succeeds,
 so clearing and immediately reselecting at the limit can briefly receive a quota rejection.
 
+## Tagged-template completions
+
+A host can register a tagged-template evaluator and completion callback on every session with
+`DuetsSession.RegisterTaggedTemplate`. DuetsPad observes that registry, advertises the tag to
+Monaco, and calls the host callback when the caret is inside the template body. Set
+`EnableTaggedTemplateCompletions` to `false` to disable this protocol surface.
+
+The request-size, field-length, per-session rate, and callback-timeout boundaries are controlled by
+`TaggedTemplateCompletionMaxRequestBytes`,
+`TaggedTemplateCompletionMaxFieldLength`, `TaggedTemplateCompletionRateLimitPerSecond`,
+`TaggedTemplateCompletionTimeout`; results are capped at
+`TaggedTemplateRegistry.DefaultMaxItems`. See the runnable
+[tagged-template completion sample](https://github.com/takeshik/Duets/blob/main/samples/Duets.Pad/tagged-template-completion.cs)
+for registration, filtering, and replacement-span handling.
+
+## Custom rendering and assets
+
+Implement `IObjectRenderer` to map an application CLR object to `DisplayContent`, then add instances
+to `DuetsPadServiceOptions.ObjectRenderers`. Renderers are consulted in last-wins order before the
+built-in renderer. Custom implementations should recurse through `RenderContext.RenderChild`; depth
+and cycle checks are centralized, while each renderer remains responsible for honoring
+`DumpOptions.MaxItems`. `DuetsPadServiceOptions.DumpOptions` sets the default rendering limits for
+all sessions.
+
+Frontend dependencies also use the core `IAssetSource` abstraction. Replace `MonacoLoader`,
+`TablerCss`, `TablerIconsCss`, and `TablerIconsFont` with `AssetSources.Http`,
+`AssetSources.EmbeddedResource`, or a delegate-backed source. `MonacoBaseUrl` separately tells the
+browser where the matching Monaco `min/vs` directory is served. Replace all related assets together
+when creating a pinned or offline deployment.
+
 ## Security
 
 The pad executes whatever the browser sends — evaluation is remote code execution on the host by
@@ -208,6 +258,8 @@ session with a live pad tab is never reclaimed.
 - `TimelineEntryLimit` — optional cap on retained Timeline entries (`null` = unlimited).
 - `IdleTimeout` — automatic reclamation of idle sessions (default 30 minutes; `null` disables).
 - `ObjectRenderers` / `DumpOptions` — customize how values are rendered.
+- `EnableTaggedTemplateCompletions` and `TaggedTemplateCompletion*` — enable and bound
+  host-provided tagged-template completion callbacks.
 - `MonacoLoader`, `TablerCss`, `TablerIconsCss`, `TablerIconsFont`, `MonacoBaseUrl` — pluggable
   asset sources for offline or custom-hosted frontend assets.
 

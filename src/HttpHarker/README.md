@@ -1,6 +1,8 @@
 # HttpHarker
 
-A minimal HTTP server library built on `System.Net.HttpListener` with a middleware pipeline. Designed to be lightweight enough to embed in any .NET application without pulling in ASP.NET Core.
+A minimal HTTP server library built on `System.Net.HttpListener` with a middleware pipeline.
+HttpHarker is small enough to embed in a .NET application without adopting ASP.NET Core, and it has
+no dependency on Duets.
 
 ## Usage
 
@@ -11,6 +13,9 @@ using var server = new HttpServer("http://127.0.0.1:8080/");
 
 server
     .UseContentTypeDetection()
+    .UseErrorPages(errors =>
+        errors.On(404, async ctx =>
+            await ctx.CloseAsync("text/plain", "Not Found")))
     .UseSimpleRouting("/api", routes =>
         routes.MapGet("/hello", async ctx =>
             await ctx.CloseAsync("text/plain", "Hello, world!"))
@@ -28,65 +33,109 @@ server
             suffix == "index.html"
                 ? "no-cache"
                 : "public, max-age=31536000, immutable";
-    })
-    .UseErrorPages(errors =>
-        errors.On(404, async ctx =>
-            await ctx.CloseAsync("text/plain", "Not Found")));
+    });
 
 await server.RunAsync(workersCount: 8);
 ```
 
-## Middleware Pipeline
+The runnable
+[standalone server sample](https://github.com/takeshik/Duets/blob/main/samples/HttpHarker/hello-http.cs)
+shows routing and response helpers in a complete file-based application.
 
-Requests flow through middleware in registration order. Each middleware receives the `HttpListenerContext` and a `next` delegate. Call `next()` to pass to the next middleware, or handle the response directly to short-circuit.
+## Middleware order
+
+Requests enter middleware in registration order. Each middleware receives the
+`HttpListenerContext` and a `next` delegate. Await `next()` to pass control to the rest of the
+pipeline; omit it after handling and closing the response to short-circuit.
 
 ```csharp
-server.Use(async (ctx, next) =>
+server.Use(async (context, next) =>
 {
-    Console.WriteLine($"{ctx.Request.HttpMethod} {ctx.Request.Url?.AbsolutePath}");
+    Console.WriteLine($"{context.Request.HttpMethod} {context.Request.Url?.AbsolutePath}");
     await next();
 });
 ```
 
-## Built-in Middleware
+Code before `next()` runs on the way into the pipeline, and code after it runs on the way out.
+`UseSimpleRouting` is terminal for a matched route: after its handler runs it does not call the next
+middleware. Register wrapping middleware such as `UseErrorPages` before routing and other terminal
+handlers. An unmatched route continues down the pipeline; if nothing handles a request, the server
+closes it as 404.
 
-### SimpleRoutingMiddleware
+Middleware must be registered before the server starts. `Use(...)` throws while the server is
+running.
 
-Template-based routing with parameter and catch-all segment support.
+## Built-in middleware
 
+| Registration | Role |
+|---|---|
+| `UseContentTypeDetection(...)` | Set the response content type from the request URL before continuing. A custom `ContentTypeProvider` can replace the extension map and fallback. |
+| `UseErrorPages(...)` | Run the downstream pipeline, then handle configured status codes if the response is still writable. Register it before terminal middleware. |
+| `UseSimpleRouting(root, ...)` | Match GET, POST, and other mapped handlers under a URL root. Literal segments outrank parameters, which outrank a terminal catch-all. |
+| `UseStaticFiles(provider, root, ...)` | Serve bytes from any `IFileProvider`, continuing only when the path is outside the root or no file exists. |
+| `UseEmbeddedResources(assembly, prefix, root, ...)` | Serve manifest resources whose slash-delimited URL suffix maps to a dot-delimited resource name. |
+| `UseZipArchive(stream, root, ...)` | Read a zip stream at registration time and serve its entries. An overload opens the stream from an assembly resource. |
+
+`UseStaticFiles`, `UseEmbeddedResources`, and `UseZipArchive` share `StaticFileOptions`. The options
+cover a default document, optional single-page-application fallback and predicate, ETag generation,
+cache-control selection, and content-type resolution. Static responses support GET/HEAD behavior;
+missing files continue to later middleware.
+
+## File providers
+
+`IFileProvider.GetFileContent(relativePath)` is the extension point for serving host-owned file
+bytes. Paths are normalized, forward-slash-delimited, and relative to the middleware root. Return
+`null` when a file is absent so the pipeline can continue.
+
+The built-in providers are:
+
+- `EmbeddedResourceFileProvider`, which reads assembly manifest resources under a prefix.
+- `ZipFileProvider`, which copies the archive into memory once and opens an independent reader per
+  request for safe concurrent access.
+
+The convenience middleware registrations construct these providers for the common cases. Pass a
+custom provider to `UseStaticFiles` for another source such as generated or application-managed
+content.
+
+## Routing
+
+Routes are matched relative to the root supplied to `UseSimpleRouting`:
+
+```text
+/users/{id}       parameter segment
+/files/{*path}    catch-all segment; must be last
 ```
-/users/{id}        → parameter segment
-/files/{*path}     → catch-all segment (must be last)
-```
 
-Routes are matched in priority order: literal segments first, then parameters, then catch-all. Route handlers receive an `HttpActionContext` with typed access to matched arguments via `ctx.Args`.
+Route handlers receive an `HttpActionContext` with the underlying request and response plus matched
+arguments in `ctx.Args`. A matched handler owns and normally closes its response. Because matched
+routing is terminal, middleware registered after routing is reachable only for unmatched requests.
 
-### EmbeddedResourceMiddleware
+## Concurrency and lifecycle
 
-Serves files from .NET embedded resources. Maps URL paths to resource names by replacing `/` with `.`. Supports root default document, optional SPA fallback, and optional ETag / Cache-Control handling.
+`workersCount` and `maxConcurrentRequests` control different parts of the server:
 
-### ErrorPagesMiddleware
+- `workersCount` on `Start` or `RunAsync` is the number of loops accepting connections from the
+  shared listener. Accepted requests are dispatched without occupying that loop for their whole
+  lifetime.
+- `maxConcurrentRequests` on the `HttpServer` constructor caps in-flight request handlers. Requests
+  above the cap receive HTTP 503 without entering the middleware pipeline. Long-lived responses
+  such as SSE streams hold a slot until they end.
 
-Catches unhandled requests (no prior middleware responded) and maps status codes to custom handlers.
+For an awaited lifetime, call `RunAsync(workersCount, cancellationToken)`; cancelling the token
+stops the listener and completes the call. For a background lifetime, call `Start(workersCount)` and
+later `Stop()`. `Dispose()` stops a background run and permanently closes the underlying listener,
+so keep the server in a `using` statement.
 
-### ContentTypeDetection
-
-An inline middleware (via `UseContentTypeDetection(...)`) that sets `Content-Type` using a configurable `ContentTypeProvider` (custom key selector, custom map, and fallback function).
-
-## Key Types
+## Public surface
 
 | Type | Description |
 |---|---|
-| `HttpServer` | Core server — manages `HttpListener`, middleware pipeline, and worker loop |
-| `HttpActionContext` | Wraps `HttpListenerRequest`, `HttpListenerResponse`, and route arguments |
-| `IMiddleware` | Interface for middleware classes |
-| `ContentTypeProvider` | Configurable request key -> `Content-Type` resolver with fallback function |
-
-## Design Notes
-
-- Uses `System.Net.HttpListener` directly — no ASP.NET Core dependency.
-- Multiple concurrent worker tasks process requests from a shared listener.
-- The middleware pipeline uses a simple delegate chain (`Func<HttpListenerContext, Func<Task>, Task>`).
+| `HttpServer` | Owns the `HttpListener`, middleware list, accept loops, and request concurrency cap. |
+| `HttpActionContext` | Wraps the request, response, and route arguments and provides response helpers. |
+| `IMiddleware` | Class-based middleware contract used by `HttpServer.Use`. |
+| `IFileProvider` | Supplies static bytes by normalized relative path. |
+| `StaticFileOptions` | Configures default documents, SPA fallback, caching, and content types. |
+| `ContentTypeProvider` | Resolves content types from request-derived keys with a configurable fallback. |
 
 ## Architecture
 
