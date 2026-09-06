@@ -70,6 +70,9 @@ jobs:
       - name: Check code format
         run: dotnet run scripts/format-check.cs
 
+      - name: Check documentation
+        run: dotnet run scripts/docs-check.cs
+
       - name: Build
         run: dotnet build --no-restore -c Release --verbosity normal
 

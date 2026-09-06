@@ -43,6 +43,7 @@ The normal local verification sequence is:
 ```bash
 dotnet run scripts/format.cs
 dotnet run scripts/format-check.cs
+dotnet run scripts/docs-check.cs
 dotnet build --no-restore --configuration Release
 dotnet test --no-build --configuration Release
 ```
@@ -53,6 +54,12 @@ remaining suggestion and either implement it when correct or suppress it with a 
 
 `scripts/format-check.cs` is the non-mutating check used by CI. Run it after the mutating formatter
 so the working tree, rather than CI, records any required changes.
+
+`scripts/docs-check.cs` validates local targets and heading anchors in non-ADR Markdown, the sample
+catalog, retired live paths, trailing whitespace, and whitespace errors in the current Git diff.
+ADR-specific validation remains outside this check. It uses only repository files and local Git
+metadata; it does not call AI services or the network. External links are excluded so transient
+network failures cannot make the required check nondeterministic.
 
 ### Test ownership
 
@@ -135,7 +142,8 @@ in English.
 Review the complete diff and keep each commit to one coherent change. At minimum:
 
 1. Run `git diff --check`.
-2. Run `dotnet run scripts/format.cs`, then `dotnet run scripts/format-check.cs`.
+2. Run `dotnet run scripts/format.cs`, then `dotnet run scripts/format-check.cs` and
+   `dotnet run scripts/docs-check.cs`.
 3. For source changes, run the Release build and all affected tests. Run the full test suite when
    the change crosses project boundaries or affects shared sources.
 4. Run the relevant sample or Sandbox scenario for user-visible behavior, in addition to tests.
@@ -158,6 +166,7 @@ updates to `main`:
 | Restore tools | `dotnet tool restore` |
 | Restore packages | `dotnet restore --locked-mode` |
 | Check code format | `dotnet run scripts/format-check.cs` |
+| Check documentation | `dotnet run scripts/docs-check.cs` |
 | Build | `dotnet build --no-restore --configuration Release` |
 | Test and produce TRX | `dotnet test --no-build --configuration Release -- --report-trx` |
 
