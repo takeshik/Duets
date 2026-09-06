@@ -9,7 +9,8 @@
 //
 // To use TypeScriptService for server-side completions instead of BabelTranspiler:
 //   await DuetsSession.CreateAsync(config => config
-//       .UseTranspiler(decls => TypeScriptService.CreateAsync(decls, injectStdLib: true))
+//       .UseTranspiler(async decls =>
+//           await TypeScriptService.CreateAsync(decls, injectStdLib: true))
 //       .UseJint(opts => opts.AllowClr()))
 #:project ../../src/Duets.Jint/Duets.Jint.csproj
 

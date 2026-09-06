@@ -15,7 +15,9 @@ using Jint;
 // (Array, Math, string, etc.) are available alongside registered .NET types.
 using var session = await DuetsSession.CreateAsync(config =>
     config
-        .UseTranspiler(decls => TypeScriptService.CreateAsync(decls, injectStdLib: true))
+        .UseTranspiler(async decls =>
+            await TypeScriptService.CreateAsync(decls, injectStdLib: true)
+        )
         .UseJint(opts => opts.AllowClr())
 );
 
