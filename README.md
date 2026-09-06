@@ -105,3 +105,8 @@ execution timeline, and a `ui.*` builder surface for interactive controls. See
 
 A minimal HTTP server library built on `System.Net.HttpListener` with a middleware pipeline. See
 [src/HttpHarker/README.md](src/HttpHarker/README.md) for details.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup, build and test commands, sample
+verification, documentation responsibilities, and the local checks corresponding to CI.

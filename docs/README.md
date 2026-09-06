@@ -17,6 +17,10 @@ to the repository or package it describes.
 
 ## For maintainers
 
+- [Contributing](../CONTRIBUTING.md) is the shared source of truth for human and agent development,
+  verification, documentation, and CI workflows.
+- [Agent guidance](../AGENTS.md) adds repository navigation, safety rules, and agent-specific
+  end-to-end verification requirements.
 - [Architecture](architecture/) describes the current system, module boundaries, data flow, state models, protocols,
   and security boundaries.
 - [Architecture Decision Records](decisions/) preserve the context, alternatives, and rationale behind durable design

@@ -15,20 +15,12 @@ Guidelines for coding agents when working on the Duets repository.
 > - **Repository content** (source code, comments, commits, docs, ADRs):
     > always write in **English only**.
 
-## Build & Run
+## Shared Development Workflow
 
-```bash
-# Build the entire solution
-dotnet build
-
-# Run the sample application
-dotnet run --project src/Duets.Sandbox
-
-# Run tests
-dotnet test
-```
-
-The solution targets **.NET 10**. The SDK version may be pinned via `mise.toml`.
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before changing the repository. It is the shared source
+of truth for the development environment, restore/build/format commands, test ownership, sample
+verification, documentation responsibilities, and pre-commit checks. The rules below add
+agent-specific navigation, safety, and acceptance requirements.
 
 ## Project Structure
 
@@ -135,24 +127,9 @@ These rules apply equally to test code.
 
 ## Testing
 
-```bash
-dotnet test
-```
-
-Tests use [xUnit v3](https://xunit.net/) and are organized by the production area they cover:
-
-| Production area | Primary test project |
-|---|---|
-| `src/Duets/` and `src/Duets.Jint/` | `tests/Duets.Tests/` |
-| `src/Duets.Pad/` | `tests/Duets.Pad.Tests/` |
-| `src/HttpHarker/` | `tests/HttpHarker.Tests/` |
-| `src/Duets.Sandbox/` | `tests/Duets.Tests/` for CLI and session behavior; `tests/Duets.Pad.Tests/` for the DuetsPad protocol client |
-| `src/shared/` | Every test project affected by the changed shared source |
-| `tests/shared/` | Every test project that compiles the changed test-support source |
-
-Place regression tests with the component whose behavior they cover. Cross-component protocol tests belong with the
-project that owns the public boundary under test. xUnit v3 runs on Microsoft.Testing.Platform; use
-`--filter-class`/`--filter-method` instead of `--filter`.
+Follow [the shared test ownership and command reference](CONTRIBUTING.md#test-ownership). Agents must
+place regression coverage with the component that owns the behavior and must not substitute an
+end-to-end check for a test that the owning project can express.
 
 ## End-to-end verification with Duets.Sandbox
 
