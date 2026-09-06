@@ -19,17 +19,15 @@ Do not bundle unrelated changes into a single commit.
 
 ## Step 2 — Pre-commit checklist
 
-Verify each item that applies to the changes in this commit unit:
+For each commit unit, follow the complete
+[Before committing](../../../CONTRIBUTING.md#before-committing) checklist. That checklist is the
+source of truth for the required diff, format, documentation, build, test, sample, documentation
+ownership, and package-content checks; do not rely on an agent hook as a substitute.
 
-| Condition | Required action |
-|-----------|-----------------|
-| Any source change | `dotnet test` passes with no failures |
-| New public API or behavior change | Test added or updated in `tests/Duets.Tests/` |
-| New feature visible to script authors | `samples/` updated or new sample added |
-| New user-facing feature or API added, or existing one changed | Review `README.md` and update if necessary; do not add content that does not pull its weight |
-| Design decision made (new component, technology choice, API shape, trade-off) | ADR written in `docs/decisions/` |
-| ADR added or updated | Row added/updated in `docs/decisions/index.md` |
-| Architecture change (new layer, dependency, or data flow) | Relevant page under `docs/architecture/` updated; landing page updated for whole-system changes |
+New public APIs and behavior changes require regression coverage in the owning test project; use
+[AGENTS.md](../../../AGENTS.md#testing) to select it. When behavior spans the initialized stack, run
+the relevant `Duets.Sandbox` check in addition to the owning regression tests as described by the
+shared workflow.
 
 If a required action is missing, **stop and ask the user** before proceeding.
 
