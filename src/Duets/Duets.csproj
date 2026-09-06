@@ -18,6 +18,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>TypeScript JavaScript REPL debug</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1572;CS1573;CS1574;CS1580;CS1584;CS1591</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +37,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\**" />
+    <None Include="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>

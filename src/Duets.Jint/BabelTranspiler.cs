@@ -44,11 +44,15 @@ public class BabelTranspiler : ITranspiler, IDisposable
     private JsValue? _babel;
     private JsValue? _babelTransform;
 
+    /// <summary>Gets the loaded Babel version, or <see langword="null"/> before initialization.</summary>
     public string? Version { get; private set; }
 
     /// <inheritdoc/>
     public string Description => $"Babel {this.Version ?? ""}".TrimEnd();
 
+    /// <summary>Creates and initializes a Babel transpiler.</summary>
+    /// <param name="options">Optional asset-loading configuration.</param>
+    /// <returns>The initialized transpiler.</returns>
     public static async Task<BabelTranspiler> CreateAsync(BabelTranspilerOptions? options = null)
     {
         var transpiler = new BabelTranspiler(options);
@@ -64,6 +68,10 @@ public class BabelTranspiler : ITranspiler, IDisposable
         }
     }
 
+    /// <summary>Reloads Babel and replaces the current compiler engine.</summary>
+    /// <param name="forceDownload">
+    /// <see langword="true"/> to bypass any asset-source cache when loading Babel.
+    /// </param>
     public async Task InitializeAsync(bool forceDownload = false)
     {
         var newEngine = new Engine(opts => opts.Strict(false));
@@ -98,6 +106,7 @@ public class BabelTranspiler : ITranspiler, IDisposable
         }
     }
 
+    /// <summary>Releases the Jint engine that hosts Babel.</summary>
     public void Dispose()
     {
         this._engine?.Dispose();

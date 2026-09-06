@@ -3,10 +3,19 @@ namespace Duets;
 /// <summary>The severity level of a <see cref="ScriptConsoleEntry"/>.</summary>
 public enum ConsoleLogLevel
 {
+    /// <summary>A general log message.</summary>
     Log,
+
+    /// <summary>An informational message.</summary>
     Info,
+
+    /// <summary>A warning message.</summary>
     Warn,
+
+    /// <summary>An error message.</summary>
     Error,
+
+    /// <summary>A debug message.</summary>
     Debug,
 }
 

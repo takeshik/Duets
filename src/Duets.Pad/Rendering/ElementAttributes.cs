@@ -9,10 +9,26 @@ public sealed class ElementAttributes
     : IReadOnlyDictionary<string, string?>,
         IEquatable<ElementAttributes>
 {
+    /// <summary>Gets an empty attribute set.</summary>
     public static ElementAttributes Empty { get; } = new([]);
 
     private readonly SortedDictionary<string, string?> attributes;
 
+    /// <summary>Creates an attribute set with trimmed, lowercase names.</summary>
+    /// <param name="attributes">The attribute names and values.</param>
+    /// <remarks>
+    /// Attribute names must use the supported syntax and remain unique after normalization.
+    /// Names beginning with <c>on</c> and the name <c>srcdoc</c> are rejected, as are
+    /// <c>javascript:</c> URLs in <c>href</c>, <c>src</c>, <c>action</c>, <c>formaction</c>,
+    /// <c>poster</c>, and <c>srcset</c>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="attributes"/> or an attribute name is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when an attribute name is invalid, duplicated after normalization, or disallowed,
+    /// or when a URL attribute uses the <c>javascript:</c> scheme.
+    /// </exception>
     public ElementAttributes(IEnumerable<KeyValuePair<string, string?>> attributes)
     {
         if (attributes is null)
@@ -38,15 +54,41 @@ public sealed class ElementAttributes
         }
     }
 
+    /// <summary>Creates an attribute set with trimmed, lowercase names.</summary>
+    /// <param name="attributes">The attribute names and values.</param>
+    /// <remarks>
+    /// Attribute names must use the supported syntax and remain unique after normalization.
+    /// Names beginning with <c>on</c> and the name <c>srcdoc</c> are rejected, as are
+    /// <c>javascript:</c> URLs in <c>href</c>, <c>src</c>, <c>action</c>, <c>formaction</c>,
+    /// <c>poster</c>, and <c>srcset</c>.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="attributes"/> or an attribute name is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when an attribute name is invalid, duplicated after normalization, or disallowed,
+    /// or when a URL attribute uses the <c>javascript:</c> scheme.
+    /// </exception>
     public ElementAttributes(params KeyValuePair<string, string?>[] attributes)
         : this((IEnumerable<KeyValuePair<string, string?>>)attributes) { }
 
+    /// <inheritdoc />
     public int Count => this.attributes.Count;
 
+    /// <inheritdoc />
     public IEnumerable<string> Keys => this.attributes.Keys;
 
+    /// <inheritdoc />
     public IEnumerable<string?> Values => this.attributes.Values;
 
+    /// <inheritdoc />
+    /// <remarks>The key is trimmed and matched case-insensitively.</remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="key"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="key"/> is not a syntactically valid attribute name.
+    /// </exception>
     public string? this[string key]
     {
         get
@@ -63,6 +105,14 @@ public sealed class ElementAttributes
         }
     }
 
+    /// <inheritdoc />
+    /// <remarks>The key is trimmed and matched case-insensitively.</remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="key"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="key"/> is not a syntactically valid attribute name.
+    /// </exception>
     public bool ContainsKey(string key)
     {
         var normalized = NormalizeAttributeName(key);
@@ -71,6 +121,14 @@ public sealed class ElementAttributes
         return this.attributes.ContainsKey(normalized);
     }
 
+    /// <inheritdoc />
+    /// <remarks>The name is trimmed and matched case-insensitively.</remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="name"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="name"/> is not a syntactically valid attribute name.
+    /// </exception>
     public bool TryGetValue(string name, out string? value)
     {
         var normalized = NormalizeAttributeName(name);
@@ -79,6 +137,7 @@ public sealed class ElementAttributes
         return this.attributes.TryGetValue(normalized, out value);
     }
 
+    /// <inheritdoc />
     public bool Equals(ElementAttributes? other)
     {
         if (ReferenceEquals(this, other))
@@ -108,9 +167,11 @@ public sealed class ElementAttributes
         return true;
     }
 
+    /// <inheritdoc />
     public override bool Equals(object? obj) =>
         obj is ElementAttributes other && this.Equals(other);
 
+    /// <inheritdoc />
     public override int GetHashCode()
     {
         var hash = new HashCode();
@@ -124,6 +185,7 @@ public sealed class ElementAttributes
         return hash.ToHashCode();
     }
 
+    /// <inheritdoc />
     public IEnumerator<KeyValuePair<string, string?>> GetEnumerator() =>
         this.attributes.GetEnumerator();
 

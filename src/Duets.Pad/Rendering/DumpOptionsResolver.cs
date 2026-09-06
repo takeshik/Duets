@@ -8,7 +8,7 @@ namespace Duets.Pad.Rendering;
 /// Merges a JS options object into a <see cref="DumpOptions"/> baseline.
 /// </summary>
 /// <remarks>
-/// The JS <c>dump(value, opts?)</c> function passes <paramref name="opts"/> as a dynamic
+/// The JS <c>dump(value, opts?)</c> function passes <c>opts</c> as a dynamic
 /// object whose concrete type depends on the script engine backend. This resolver normalises
 /// the three common shapes (generic dictionary, non-generic dictionary, IDynamicMetaObjectProvider
 /// enumerable) into a string-keyed map and extracts <c>maxDepth</c> / <c>maxItems</c>.

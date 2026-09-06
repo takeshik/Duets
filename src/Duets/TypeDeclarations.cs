@@ -50,8 +50,8 @@ public interface ITypeDeclarationRegistrar
 
 /// <summary>
 /// Thread-safe store for runtime TypeScript declarations generated from CLR types or provided as raw d.ts text.
-/// This component is independent from <see cref="TypeScriptService"/> so it can also be used with
-/// <see cref="BabelTranspiler"/> or any other <see cref="ITranspiler"/>.
+/// This component is independent from <c>TypeScriptService</c> so it can also be used with
+/// <c>BabelTranspiler</c> or any other <see cref="ITranspiler"/>.
 /// </summary>
 public sealed class TypeDeclarations : ITypeDeclarationProvider, ITypeDeclarationRegistrar
 {

@@ -90,5 +90,8 @@ An inline middleware (via `UseContentTypeDetection(...)`) that sets `Content-Typ
 
 ## Architecture
 
-See the repository's [HttpHarker architecture](../../docs/architecture/HttpHarker.md) for its dependency boundary and
-role in Duets, and the [decision records](../../docs/decisions/) for the underlying trade-offs.
+See the repository's
+[HttpHarker architecture](https://github.com/takeshik/Duets/blob/main/docs/architecture/HttpHarker.md)
+for its dependency boundary and role in Duets, and the
+[decision records](https://github.com/takeshik/Duets/tree/main/docs/decisions) for the underlying
+trade-offs.

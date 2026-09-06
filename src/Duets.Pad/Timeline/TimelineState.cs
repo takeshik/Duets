@@ -8,6 +8,7 @@ namespace Duets.Pad.Timeline;
 /// </summary>
 public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<TimelineState>
 {
+    /// <summary>Gets the empty Timeline state.</summary>
     public static TimelineState Empty { get; } = new([], nextId: 0);
 
     private readonly TimelineEntry[] entries;
@@ -28,12 +29,23 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         this.NextId = nextId >= 0 ? nextId : throw new ArgumentOutOfRangeException(nameof(nextId));
     }
 
+    /// <inheritdoc />
     public int Count => this.entries.Length;
 
+    /// <summary>
+    /// Gets the identifier assigned to the next appended entry. Trimming preserves this value;
+    /// clearing resets it to zero.
+    /// </summary>
     public long NextId { get; }
 
+    /// <inheritdoc />
     public TimelineEntry this[int index] => this.entries[index];
 
+    /// <summary>Creates a state with a new entry appended.</summary>
+    /// <param name="reason">The event category that produced the entry.</param>
+    /// <param name="body">The terminal render tree to display.</param>
+    /// <param name="timestamp">The entry creation time.</param>
+    /// <returns>The updated state.</returns>
     public TimelineState Append(string reason, ITerminalRenderNode body, DateTimeOffset timestamp)
     {
         if (body is null)
@@ -48,6 +60,9 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return new TimelineState(next, this.NextId + 1);
     }
 
+    /// <summary>Creates a state with an existing entry replaced by identifier.</summary>
+    /// <param name="entry">The replacement entry.</param>
+    /// <returns>The updated state.</returns>
     public TimelineState Replace(TimelineEntry entry)
     {
         if (entry is null)
@@ -66,6 +81,9 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return new TimelineState(next, Math.Max(this.NextId, entry.Id + 1));
     }
 
+    /// <summary>Removes entries whose identifiers are below a boundary.</summary>
+    /// <param name="removeBeforeId">The first identifier to retain.</param>
+    /// <returns>The trimmed state.</returns>
     public TimelineState Trim(long removeBeforeId)
     {
         var firstRetain = Array.FindIndex(this.entries, e => e.Id >= removeBeforeId);
@@ -121,8 +139,10 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return (new TimelineState(trimmed, this.NextId), removeBeforeId, removedIds);
     }
 
+    /// <summary>Returns the empty Timeline state and resets entry identifiers to zero.</summary>
     public TimelineState Clear() => Empty;
 
+    /// <inheritdoc />
     public bool Equals(TimelineState? other)
     {
         if (ReferenceEquals(this, other))
@@ -150,8 +170,10 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return true;
     }
 
+    /// <inheritdoc />
     public override bool Equals(object? obj) => obj is TimelineState other && this.Equals(other);
 
+    /// <inheritdoc />
     public override int GetHashCode()
     {
         var hash = new HashCode();
@@ -164,6 +186,7 @@ public sealed class TimelineState : IReadOnlyList<TimelineEntry>, IEquatable<Tim
         return hash.ToHashCode();
     }
 
+    /// <inheritdoc />
     public IEnumerator<TimelineEntry> GetEnumerator() =>
         ((IEnumerable<TimelineEntry>)this.entries).GetEnumerator();
 

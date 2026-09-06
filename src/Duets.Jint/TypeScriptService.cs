@@ -32,6 +32,13 @@ public record TypeScriptServiceOptions
                 );
 }
 
+/// <summary>
+/// Hosts the TypeScript compiler and language service in Jint for transpilation and completions.
+/// </summary>
+/// <remarks>
+/// Create an initialized instance with <see cref="CreateAsync"/>. The service subscribes to the
+/// supplied declaration provider and replays declarations whenever its Jint engine is reset.
+/// </remarks>
 public class TypeScriptService : ITranspiler, IDisposable
 {
     private TypeScriptService(
@@ -51,11 +58,19 @@ public class TypeScriptService : ITranspiler, IDisposable
     private JsValue? _ts;
     private JsValue? _tsTranspile;
 
+    /// <summary>Gets the loaded TypeScript version, or <see langword="null"/> before initialization.</summary>
     public string? Version { get; private set; }
 
     /// <inheritdoc/>
     public string Description => $"TypeScript {this.Version ?? "unknown"}";
 
+    /// <summary>Creates and initializes a TypeScript compiler and language service.</summary>
+    /// <param name="typeDeclarations">The declaration provider to expose to completions.</param>
+    /// <param name="options">Optional asset-loading configuration.</param>
+    /// <param name="injectStdLib">
+    /// Whether to load the ES5 standard-library declarations after initialization.
+    /// </param>
+    /// <returns>The initialized service.</returns>
     public static async Task<TypeScriptService> CreateAsync(
         ITypeDeclarationProvider typeDeclarations,
         TypeScriptServiceOptions? options = null,
@@ -80,6 +95,10 @@ public class TypeScriptService : ITranspiler, IDisposable
         }
     }
 
+    /// <summary>Reloads TypeScript and replaces the compiler and language-service engine.</summary>
+    /// <param name="forceDownloadCodes">
+    /// <see langword="true"/> to bypass any asset-source cache when loading TypeScript.
+    /// </param>
     public async Task ResetAsync(bool forceDownloadCodes = false)
     {
         var typeScriptJs = await this._options.TypeScriptJs.GetStringAsync(forceDownloadCodes);
@@ -201,6 +220,7 @@ public class TypeScriptService : ITranspiler, IDisposable
         }
     }
 
+    /// <summary>Unsubscribes from declaration updates and releases the Jint engine.</summary>
     public void Dispose()
     {
         this._typeDeclarations.DeclarationChanged -= this.OnDeclarationChanged;
@@ -215,6 +235,7 @@ public class TypeScriptService : ITranspiler, IDisposable
         }
     }
 
+    /// <inheritdoc />
     public string Transpile(
         string input,
         string? fileName = null,
@@ -293,5 +314,9 @@ public class TypeScriptService : ITranspiler, IDisposable
         host.Get("addFile").Call(host, [declaration.FileName, declaration.Content]);
     }
 
+    /// <summary>A TypeScript language-service completion candidate.</summary>
+    /// <param name="Name">The text inserted for the candidate.</param>
+    /// <param name="Kind">The TypeScript completion kind.</param>
+    /// <param name="SortText">Optional text used to order the candidate.</param>
     public record CompletionEntry(string Name, string Kind, string? SortText);
 }

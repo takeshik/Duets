@@ -184,6 +184,7 @@ public sealed class DuetsSession : IDisposable
         }
     }
 
+    /// <summary>Releases the script engine and transpiler owned by this session.</summary>
     public void Dispose()
     {
         using var _ = this.EnterOperation();

@@ -8,7 +8,7 @@ public static class DuetsSessionConfigurationExtensions
     /// <summary>
     /// Configures the session to use the Jint JavaScript engine.
     /// Pass <paramref name="configure"/> to set Jint-specific options such as
-    /// <see cref="Options.AllowClr"/> for CLR interop and <c>typings</c> built-in registration.
+    /// <c>AllowClr</c> for CLR interop and <c>typings</c> built-in registration.
     /// When not called, the engine registered in <see cref="DuetsBackendRegistry"/> is used
     /// automatically — which defaults to Jint when <c>Duets.Jint</c> is referenced.
     /// </summary>

@@ -133,7 +133,7 @@ internal static class RecordProjector
     /// </param>
     /// <param name="cheapCount">
     /// Set to the exact entry count when <paramref name="value" /> exposes it cheaply via
-    /// <see cref="IDictionary.Count" /> or <see cref="ICollection{T}.Count" />; otherwise
+    /// <see cref="ICollection.Count" /> or a generic collection's <c>Count</c>; otherwise
     /// <see langword="null" />.
     /// </param>
     /// <returns>

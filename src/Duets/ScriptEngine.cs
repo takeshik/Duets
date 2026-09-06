@@ -9,45 +9,72 @@ public abstract class ScriptEngine<TValue>(
     IScriptValueConverter<TValue> converter
 ) : IScriptEngine
 {
+    /// <summary>Gets the transpiler used before engine execution.</summary>
     protected ITranspiler Transpiler { get; } = transpiler;
+
+    /// <summary>Gets the converter between backend and engine-neutral values.</summary>
     protected IScriptValueConverter<TValue> Converter { get; } = converter;
 
+    /// <inheritdoc />
     public abstract bool CanRegisterTypeBuiltins { get; }
 
     /// <summary>Raised synchronously each time user script calls a <c>console</c> method.</summary>
     public event Action<ScriptConsoleEntry>? ConsoleLogged;
 
+    /// <summary>Sets a script global to a backend-native value.</summary>
+    /// <param name="name">The script global name.</param>
+    /// <param name="value">The backend-native value.</param>
     protected abstract void SetValue(string name, TValue value);
 
+    /// <summary>Executes JavaScript source in the backend.</summary>
+    /// <param name="code">The JavaScript source to execute.</param>
     protected abstract void ExecuteJs(string code);
 
+    /// <summary>Asynchronously executes JavaScript source in the backend.</summary>
+    /// <param name="code">The JavaScript source to execute.</param>
+    /// <param name="cancellationToken">A token that cancels asynchronous execution.</param>
     protected abstract Task ExecuteJsAsync(string code, CancellationToken cancellationToken);
 
+    /// <summary>Evaluates JavaScript source in the backend.</summary>
+    /// <param name="code">The JavaScript source to evaluate.</param>
+    /// <returns>The backend-native evaluation result.</returns>
     protected abstract TValue EvaluateJs(string code);
 
+    /// <summary>Asynchronously evaluates JavaScript source in the backend.</summary>
+    /// <param name="code">The JavaScript source to evaluate.</param>
+    /// <param name="cancellationToken">A token that cancels asynchronous evaluation.</param>
+    /// <returns>The backend-native evaluation result.</returns>
     protected abstract Task<TValue> EvaluateJsAsync(
         string code,
         CancellationToken cancellationToken
     );
 
+    /// <summary>Raises <see cref="ConsoleLogged"/> for a backend console entry.</summary>
+    /// <param name="entry">The console entry.</param>
     protected void RaiseConsoleLogged(ScriptConsoleEntry entry)
     {
         this.ConsoleLogged?.Invoke(entry);
     }
 
+    /// <inheritdoc />
     public abstract void Dispose();
 
+    /// <inheritdoc />
     public abstract void SetValue(string name, object value);
 
+    /// <inheritdoc />
     public void SetValue(string name, ScriptValue value)
     {
         this.SetValue(name, this.Converter.Unwrap(value));
     }
 
+    /// <inheritdoc />
     public abstract IReadOnlyDictionary<ScriptValue, ScriptValue> GetGlobalVariables();
 
+    /// <inheritdoc />
     public abstract void RegisterTypeBuiltins(ITypeDeclarationRegistrar declarations);
 
+    /// <inheritdoc />
     public void Execute(string tsCode)
     {
         var jsCode = this.Transpiler.Transpile(tsCode);
@@ -66,6 +93,7 @@ public abstract class ScriptEngine<TValue>(
         }
     }
 
+    /// <inheritdoc />
     public async Task ExecuteAsync(string tsCode, CancellationToken cancellationToken = default)
     {
         var jsCode = this.Transpiler.Transpile(tsCode);
@@ -84,6 +112,7 @@ public abstract class ScriptEngine<TValue>(
         }
     }
 
+    /// <inheritdoc />
     public ScriptValue Evaluate(string tsCode)
     {
         var jsCode = this.Transpiler.Transpile(tsCode);
@@ -103,6 +132,7 @@ public abstract class ScriptEngine<TValue>(
         }
     }
 
+    /// <inheritdoc />
     public async Task<ScriptValue> EvaluateAsync(
         string tsCode,
         CancellationToken cancellationToken = default

@@ -3,6 +3,9 @@ using Duets.Pad.Attachments;
 
 namespace Duets.Pad.Rendering;
 
+/// <summary>
+/// A terminal render tree together with the server-side interactions attached to that tree.
+/// </summary>
 public sealed record DisplayContent
 {
     private static readonly ElementAttributes LabelAttributes = new(
@@ -19,6 +22,8 @@ public sealed record DisplayContent
 
     private static readonly RenderTreeReducer Reducer = new();
 
+    /// <summary>Creates display content without interactions.</summary>
+    /// <param name="body">The terminal render tree.</param>
     public DisplayContent(ITerminalRenderNode body)
         : this(body, PendingInteractions.Empty) { }
 
@@ -28,12 +33,15 @@ public sealed record DisplayContent
         this.Interactions = interactions ?? throw new ArgumentNullException(nameof(interactions));
     }
 
+    /// <summary>Gets the terminal render tree.</summary>
     public ITerminalRenderNode Body { get; }
 
     internal PendingInteractions Interactions { get; }
 
+    /// <summary>Builds a plain text node.</summary>
     public static DisplayContent Text(string value) => new(new Text(value));
 
+    /// <summary>Builds label text with DuetsPad label styling.</summary>
     public static DisplayContent Label(string value) =>
         new(new Element("span", LabelAttributes, new ElementChildren(new Text(value))));
 
@@ -73,6 +81,8 @@ public sealed record DisplayContent
         );
     }
 
+    /// <summary>Builds raw HTML content without escaping or sanitization.</summary>
+    /// <remarks>The caller is responsible for ensuring that <paramref name="content"/> is trusted.</remarks>
     public static DisplayContent RawHtml(string content) => new(new RawHtml(content));
 
     /// <summary>
@@ -443,12 +453,14 @@ public sealed record DisplayContent
         );
     }
 
+    /// <summary>Builds a structured HTML element and preserves child interactions.</summary>
     public static DisplayContent Element(
         string tag,
         ElementAttributes? attributes = null,
         IEnumerable<DisplayContent>? children = null
     ) => FromElement(tag, attributes ?? ElementAttributes.Empty, children ?? []);
 
+    /// <summary>Builds a vertical or horizontal stack of child content.</summary>
     public static DisplayContent Stack(
         IEnumerable<DisplayContent> children,
         StackOptions? options = null
@@ -595,6 +607,7 @@ public sealed record DisplayContent
         return new DisplayContent(body, interactions);
     }
 
+    /// <summary>Builds a button whose click invokes a server-side handler.</summary>
     public static DisplayContent Button(string label, Action handler, ButtonOptions? options = null)
     {
         if (handler is null)

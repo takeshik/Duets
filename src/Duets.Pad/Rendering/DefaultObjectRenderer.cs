@@ -401,6 +401,8 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     /// member (member name → rendered value). Used for ordinary CLR objects, JS object literals
     /// / dynamic-object values, and anonymous types.
     /// </summary>
+    /// <param name="value">The source object.</param>
+    /// <param name="members">The projected named members.</param>
     /// <param name="typeHeaderText">
     /// The conceptual type name displayed in the always-present collapsible header. Dynamic and
     /// anonymous objects use <c>Object</c> so implementation-specific CLR type names do not leak
@@ -418,6 +420,7 @@ internal sealed class DefaultObjectRenderer : IObjectRenderer
     /// <see langword="false" /> (ordinary CLR objects), a zero-member value falls back to
     /// <c>ToString()</c>.
     /// </param>
+    /// <param name="context">The current recursive rendering context.</param>
     private static DisplayContent RenderNamedMemberObject(
         object value,
         IReadOnlyList<KeyValuePair<string, object?>> members,

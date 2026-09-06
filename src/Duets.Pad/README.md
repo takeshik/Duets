@@ -1,9 +1,9 @@
 # DuetsPad
 
-A browser debug pad for [Duets](../../README.md): a Monaco Editor frontend served over HTTP with
+A browser debug pad for [Duets](https://github.com/takeshik/Duets): a Monaco Editor frontend served over HTTP with
 live .NET type completions, a persistent output canvas, and an execution timeline. Attach it to any
 application that hosts a `DuetsSession` and debug it from a browser — no ASP.NET Core required
-(the HTTP layer is [HttpHarker](../HttpHarker/README.md)).
+(the HTTP layer is [HttpHarker](https://github.com/takeshik/Duets/tree/main/src/HttpHarker)).
 
 ```
 dotnet add package Duets.Pad
@@ -21,7 +21,8 @@ using var pad = server.UseContentTypeDetection().UseDuetsPad(configure: opts =>
 await server.RunAsync(); // open http://127.0.0.1:17375/
 ```
 
-Runnable examples live in [`samples/Duets.Pad/`](../../samples/Duets.Pad/).
+Runnable examples live in
+[`samples/Duets.Pad/`](https://github.com/takeshik/Duets/tree/main/samples/Duets.Pad).
 
 ## Surfaces
 
@@ -117,7 +118,8 @@ compact diagnostics (`ui.dataGrid`, `ui.emptySpace`), indicators (`ui.badge`, `u
 `ui.spinner`, `ui.status`, `ui.icon`, `ui.progress`), tables and links (`ui.table`, `ui.link`),
 interactions (`ui.button`), notifications and modal flow (`ui.toast`, `ui.modal`), form inputs (`ui.textBox`, `ui.textArea`, `ui.numberBox`, `ui.checkBox`,
 `ui.dropDown`, `ui.slider`, `ui.radioGroup`, `ui.filePicker`), the in-place `ui.slot` handle, and raw escape
-hatches (`ui.element`, `ui.rawHtml`). See [`samples/Duets.Pad/duetspad-ui.cs`](../../samples/Duets.Pad/duetspad-ui.cs)
+hatches (`ui.element`, `ui.rawHtml`). See
+[`samples/Duets.Pad/duetspad-ui.cs`](https://github.com/takeshik/Duets/blob/main/samples/Duets.Pad/duetspad-ui.cs)
 for a copy-pasteable demo script.
 
 First-class builders encapsulate their framework classes and do not accept `className`. Use their
@@ -167,7 +169,8 @@ design. Decide your exposure deliberately (ADR-49):
   the URL fragment (never sent to the server, never logged), is kept in `sessionStorage`, and is
   attached to every API request as an `Authorization: Bearer` header. Without a valid token the UI
   loads but every session operation is rejected with `401`, and the pad shows a token prompt.
-  See [`samples/Duets.Pad/duetspad-access-token.cs`](../../samples/Duets.Pad/duetspad-access-token.cs)
+  See
+  [`samples/Duets.Pad/duetspad-access-token.cs`](https://github.com/takeshik/Duets/blob/main/samples/Duets.Pad/duetspad-access-token.cs)
   for a runnable end-to-end example.
 
   `Authenticate` accepts any `Func<DuetsPadAuthenticationContext, ValueTask<bool>>` if you need a
@@ -211,6 +214,7 @@ session with a live pad tab is never reclaimed.
 ## Architecture
 
 Design decisions and the rendering/protocol model are documented in the repository's
-[DuetsPad architecture](../../docs/architecture/Duets.Pad/), the
-[whole-repository architecture](../../docs/architecture/), and
-[decision records](../../docs/decisions/). Relevant DuetsPad decisions are linked from the architecture pages.
+[DuetsPad architecture](https://github.com/takeshik/Duets/tree/main/docs/architecture/Duets.Pad), the
+[whole-repository architecture](https://github.com/takeshik/Duets/tree/main/docs/architecture), and
+[decision records](https://github.com/takeshik/Duets/tree/main/docs/decisions). Relevant DuetsPad
+decisions are linked from the architecture pages.

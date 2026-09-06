@@ -185,6 +185,7 @@ public sealed class SimpleRoutingMiddleware : IMiddleware
 
         private RouteSegment[] Segments => field ??= ParseTemplate(this.Template);
 
+        /// <inheritdoc />
         public override string ToString()
         {
             return $"{this.Method} {this.Template}";

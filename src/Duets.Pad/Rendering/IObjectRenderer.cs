@@ -19,7 +19,7 @@ namespace Duets.Pad.Rendering;
 /// should be surfaced as exceptions and handled by the output dispatch layer; renderers
 /// should not signal failure by returning null.
 ///
-/// The <paramref name="context" /> parameter carries the current nesting depth, the shared
+/// The <c>context</c> parameter carries the current nesting depth, the shared
 /// cycle-detection set, and the caller-configured <see cref="Rendering.DumpOptions" />.
 /// Renderers must recurse into nested values via <see cref="RenderContext.RenderChild" />
 /// rather than calling the pipeline directly, so that depth limiting and cycle detection remain
@@ -35,7 +35,14 @@ namespace Duets.Pad.Rendering;
 /// </remarks>
 public interface IObjectRenderer
 {
+    /// <summary>Determines whether this renderer accepts a value.</summary>
+    /// <param name="value">The value to inspect.</param>
+    /// <returns><see langword="true"/> when the renderer can render the value.</returns>
     public bool CanRender(object value);
 
+    /// <summary>Renders a value into display content.</summary>
+    /// <param name="value">The accepted value to render.</param>
+    /// <param name="context">The current recursive rendering context.</param>
+    /// <returns>The rendered display content.</returns>
     public DisplayContent Render(object value, RenderContext context);
 }

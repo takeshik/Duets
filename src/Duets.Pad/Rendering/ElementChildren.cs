@@ -11,13 +11,19 @@ public sealed class ElementChildren
     : IReadOnlyList<ITerminalRenderNode>,
         IEquatable<ElementChildren>
 {
+    /// <summary>Gets an empty child list.</summary>
     public static ElementChildren Empty { get; } = new([]);
 
+    /// <summary>Creates a child list from a span for collection-expression support.</summary>
+    /// <param name="items">The terminal child nodes.</param>
+    /// <returns>The immutable child list.</returns>
     public static ElementChildren Create(ReadOnlySpan<ITerminalRenderNode> items) =>
         new(items.ToArray());
 
     private readonly ITerminalRenderNode[] children;
 
+    /// <summary>Creates a child list from a sequence.</summary>
+    /// <param name="children">The terminal child nodes.</param>
     public ElementChildren(IEnumerable<ITerminalRenderNode> children)
     {
         if (children is null)
@@ -33,13 +39,20 @@ public sealed class ElementChildren
         }
     }
 
+    /// <summary>Creates a child list from an array.</summary>
+    /// <param name="children">The terminal child nodes.</param>
     public ElementChildren(params ITerminalRenderNode[] children)
         : this((IEnumerable<ITerminalRenderNode>)children) { }
 
+    /// <inheritdoc />
     public int Count => this.children.Length;
 
+    /// <inheritdoc />
     public ITerminalRenderNode this[int index] => this.children[index];
 
+    /// <summary>Creates a child list with one node appended.</summary>
+    /// <param name="child">The node to append.</param>
+    /// <returns>The updated child list.</returns>
     public ElementChildren Add(ITerminalRenderNode child)
     {
         if (child is null)
@@ -53,6 +66,7 @@ public sealed class ElementChildren
         return [.. next];
     }
 
+    /// <inheritdoc />
     public bool Equals(ElementChildren? other)
     {
         if (ReferenceEquals(this, other))
@@ -76,8 +90,10 @@ public sealed class ElementChildren
         return true;
     }
 
+    /// <inheritdoc />
     public override bool Equals(object? obj) => obj is ElementChildren other && this.Equals(other);
 
+    /// <inheritdoc />
     public override int GetHashCode()
     {
         var hash = new HashCode();
@@ -90,6 +106,7 @@ public sealed class ElementChildren
         return hash.ToHashCode();
     }
 
+    /// <inheritdoc />
     public IEnumerator<ITerminalRenderNode> GetEnumerator() =>
         ((IEnumerable<ITerminalRenderNode>)this.children).GetEnumerator();
 
