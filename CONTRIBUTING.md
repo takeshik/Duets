@@ -127,7 +127,7 @@ Keep each kind of information with its designated owner:
 | Package workflow or user-visible behavior | Review the relevant package `README.md`; update it when the change affects how users configure or use the package. |
 | New usage path | Add or update the owning package's file-based sample and its entry in `samples/README.md`. |
 | Module boundary, dependency, state model, protocol, security boundary, or whole-system data flow | Update the relevant page under `docs/architecture/`; update its landing page when navigation or the whole-system view changes. |
-| Durable design choice or trade-off | Add an ADR under `docs/decisions/` and update `docs/decisions/index.md`. |
+| Durable design choice or trade-off | Add an ADR under `docs/decisions/` following [its governance](docs/decisions/README.md) and update `docs/decisions/index.md`; a change to what a decision means is expressed by a new ADR plus the existing ADR's Status metadata. The body of a record that has left `Proposed` changes only through an editorial revision, on the owner's instruction and under the conditions the governance states. |
 | Development or CI workflow | Update this guide and the workflow or agent guidance that consumes it. |
 
 Use the [documentation landing page](docs/README.md) to locate the current owner before adding new

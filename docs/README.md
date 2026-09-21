@@ -24,4 +24,5 @@ to the repository or package it describes.
 - [Architecture](architecture/) describes the current system, module boundaries, data flow, state models, protocols,
   and security boundaries.
 - [Architecture Decision Records](decisions/) preserve the context, alternatives, and rationale behind durable design
-  choices. Use the [ADR index](decisions/index.md) to find relevant decisions.
+  choices. Use the [ADR index](decisions/index.md) to find relevant decisions; the rules for writing, accepting, and
+  changing them are in the [ADR governance](decisions/README.md).

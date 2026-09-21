@@ -1,57 +1,68 @@
 ---
 name: adr-review
-description: Use at the end of a working session to assess whether any decisions made during the session warrant a new ADR. Invoke when the user says "review for ADRs", "check if we need ADRs", "end of session ADR check", or similar. Also invoke when the user asks whether a decision or design choice should be documented as an ADR.
+description: Read-only assessment of whether a decision made in the current session warrants a new Architecture Decision Record or a lifecycle update to an existing ADR. Invoke for "review for ADRs", "do we need an ADR for this", "end of session ADR check", or when the user asks whether a design choice should be recorded. Creates and edits nothing; approved items are handed to the adr skill.
 ---
 
-# ADR Session Review
+# ADR Need Review
 
-Review the current session's conversation and determine whether any decisions made warrant a new Architecture Decision Record.
-
-## Evaluation Criteria
-
-A decision warrants an ADR if it meets **all three**:
-
-1. **Non-obvious** — The rationale cannot be inferred by reading the code or git history alone. A future contributor encountering this code would reasonably ask "why?".
-2. **Durable** — Reversing the decision would require deliberate effort; it is not a casual implementation detail.
-3. **Real alternatives existed** — At least one credible alternative was available. The decision involved a genuine trade-off.
-
-Decisions that do **not** warrant an ADR:
-- Implementation details that follow directly from a prior ADR without introducing new trade-offs
-- Decisions made purely for consistency with established patterns
-- Bug fixes or corrections with no meaningful design alternatives
-- Clarifications or refinements of scope that do not change the architecture
-- Process/workflow decisions that do not affect the codebase structure
+This skill decides nothing on its own and writes no files. It applies the criteria in
+[docs/decisions/README.md](../../../docs/decisions/README.md), section *What an ADR records*
+(including *One decision per record*), to the decisions of the current session and presents
+verdicts for the owner to confirm.
 
 ## Process
 
-1. Review the full conversation history of this session.
-2. Identify candidate decisions — anything where a choice was made between alternatives, a design was settled on, or a direction was deliberately taken.
-3. Apply the three criteria to each candidate.
-4. Present findings to the user before proceeding:
-   - For each candidate: state the decision and your verdict (ADR warranted / not warranted / borderline).
-   - For borderline cases, briefly explain the uncertainty and ask the user to decide.
-5. For decisions approved for ADR creation, invoke the `adr new` operation from the `adr` skill.
-6. After all ADRs are created, run `adr index` to update `docs/decisions/index.md`.
-7. If any new ADR affects the current architecture, run `adr arch` to refresh the relevant pages under
-   `docs/architecture/`, including the landing page when whole-system boundaries or flow change.
+1. Read *What an ADR records* and skim [docs/decisions/index.md](../../../docs/decisions/index.md)
+   so that existing decisions are known.
+2. Collect candidates from the session: every place where a direction was deliberately taken, a
+   design was settled, or an option was chosen or rejected. Tooling, process, and governance
+   decisions are candidates like any other; the README's criteria decide, not the subject.
+3. For each candidate, answer the README's criteria. Then determine the operation that expresses
+   the outcome:
+   - a new record (`new`), declaring `Supersedes` (target) or `Amends` (target and scope) when it
+     changes an existing decision;
+   - a lifecycle transition of an existing record: `deprecate` (no longer applied, no replacement),
+     `reject` or `withdraw` (a `Proposed` record the session decided against);
+   - readiness for `accept`: a `Proposed` record whose acceptance review the session completed
+     (the `adr` skill's `review` operation).
+     This skill never recommends or performs acceptance itself; it reports readiness for the
+     owner's decision.
 
-## Presentation Format
+   A record that has become hard to read, or that has absorbed material belonging elsewhere, is not
+   a decision and is not a candidate here. Never propose supersession or deprecation as the remedy
+   for it: that would enter a decision the session did not make (README, *Editorial revision*).
+   Note the observation for the owner and stop; the `editorial-revision` operation runs only on the
+   owner's explicit instruction.
+4. Assign one verdict per candidate:
+   - **ADR warranted** — a new record; state the decision boundary, or the split if there are
+     several. Each part of a split must itself meet *What an ADR records*; a part that does not
+     stays with the decision it serves (*One decision per record*).
+   - **Existing ADR lifecycle update required** — the ADR and the transition, with the scope where
+     the transition is an amendment.
+   - **ADR not warranted** — with the criterion that fails.
+   - **Borderline, owner decides** — what makes it uncertain.
+5. Present the findings in the format below and stop. Do not create files, do not draft text, and
+   do not call the `adr` skill until the owner has confirmed which items proceed.
+6. After confirmation, hand each approved item to the `adr` skill with the operation named. Do not
+   ask `adr` to regenerate the index or the architecture documentation.
 
-Present findings before taking any action:
+## Presentation format
 
-```
-## ADR Review — [brief session description]
+```text
+## ADR Review — <session in one line>
 
-### Warranted
-- **[Decision summary]**: [one sentence on why it meets criteria]
+### ADR warranted
+- <decision>: <criteria met>; <one decision boundary, or proposed split>
+
+### Existing ADR lifecycle update required
+- <decision>: new record supersedes ADR-N | new record amends ADR-N — <scope> | deprecate ADR-N | reject / withdraw ADR-N
+- ADR-N: acceptance review complete — ready for the owner's acceptance decision
 
 ### Not warranted
-- **[Decision summary]**: [one sentence on why it does not meet criteria]
+- <decision>: <criterion that fails>
 
-### Borderline — your call
-- **[Decision summary]**: [explain the uncertainty]
+### Borderline — owner decides
+- <decision>: <what is uncertain>
 
-Proceed with creating ADRs for the "Warranted" items? Any borderline items to include?
+Which items should proceed?
 ```
-
-Wait for user confirmation before writing any files.

@@ -43,7 +43,7 @@ agent-specific navigation, safety, and acceptance requirements.
   - `architecture/` — Current architecture documentation set
     - `README.md` — Whole-repository architecture snapshot and module navigation
     - `Duets.Pad/` — DuetsPad architecture by concern (overview, protocol, rendering/state, security)
-  - `decisions/` — Architecture Decision Records (ADRs)
+  - `decisions/` — Architecture Decision Records (ADRs); `README.md` there is the canonical ADR governance
 - `tests/`
   - `Duets.Tests/` — Unit tests (xUnit v3)
   - `Duets.Pad.Tests/` — Unit tests for `Duets.Pad`
@@ -59,10 +59,21 @@ agent-specific navigation, safety, and acceptance requirements.
   to identify relevant decisions before reading full ADRs.
 - [docs/decisions/](docs/decisions/) — Architecture Decision Records (ADRs). ADR-N is at `docs/decisions/<N>_*.md`.
 
-When a session involves a design decision (new component, technology choice, API design trade-off, etc.), draft an ADR
-in `docs/decisions/` at the end of the session. If the decision affects the overall architecture, update
-the relevant page under `docs/architecture/`; update `docs/architecture/README.md` as well when module boundaries,
-dependencies, or whole-system data flow change.
+ADR governance is defined once, in [docs/decisions/README.md](docs/decisions/README.md), the only normative source.
+Skills hold procedures and name the README section each step applies; checks verify structure only. Neither restates
+a rule; where either disagrees with the README, the README is right and the skill or check is fixed. Two skills route
+ADR work:
+
+- `adr-review` — at the end of a session that involved a design decision (new component, technology choice, API
+  trade-off, durable governance rule, etc.), run it to assess whether a new ADR or a lifecycle update of an existing
+  ADR is warranted. It is read-only and waits for the owner's confirmation.
+- `adr` — creates a `Proposed` ADR, reviews one before acceptance without editing it, performs a lifecycle operation
+  (accept, reject, withdraw, supersede, amend, deprecate), or performs an editorial revision on the owner's explicit
+  instruction, each within what `docs/decisions/README.md` permits. It never regenerates the index or the
+  architecture documentation.
+
+If the decision affects the overall architecture, update the relevant page under `docs/architecture/`; update
+`docs/architecture/README.md` as well when module boundaries, dependencies, or whole-system data flow change.
 
 ## Committing
 
