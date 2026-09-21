@@ -55,11 +55,37 @@ remaining suggestion and either implement it when correct or suppress it with a 
 `scripts/format-check.cs` is the non-mutating check used by CI. Run it after the mutating formatter
 so the working tree, rather than CI, records any required changes.
 
-`scripts/docs-check.cs` validates local targets and heading anchors in non-ADR Markdown, the sample
-catalog, retired live paths, trailing whitespace, and whitespace errors in the current Git diff.
-ADR-specific validation remains outside this check. It uses only repository files and local Git
-metadata; it does not call AI services or the network. External links are excluded so transient
-network failures cannot make the required check nondeterministic.
+`scripts/docs-check.cs` validates local link targets and heading anchors in every Markdown file
+except ADR records, the sample catalog, retired live paths, trailing whitespace, and whitespace
+errors in the current Git diff. ADR records are historical text; their links are validated by the
+ADR check below with the same resolver (`scripts/_markdown.cs`).
+
+The resolver supports a deliberate Markdown subset rather than full CommonMark: inline links whose
+destination is one token without spaces or parentheses (optionally in angle brackets), closed by
+`)` on the same line and without a title; reference definitions `[label]: target` on their own
+line; and full, collapsed, and shortcut reference usages, with labels matched case-insensitively.
+Code spans and backslash-escaped brackets are not links. Anything that starts like a link but
+falls outside this subset is reported as an error rather than ignored, so a link the check cannot
+read cannot pass silently.
+ADR-specific validation is `scripts/adr-check.cs`, which checks the structural rules of
+`docs/decisions/README.md`, each against what its kind reaches (README, "How the rules apply"). On
+every record it checks numbering, headings, status vocabulary, reciprocal relations, Maintenance
+Note placement and entry shape, links, and index rows. On records open in the change — absent from
+the base or `Proposed` there, or without `--base`, `Proposed` now — it checks section layout, the
+title-derived filename, references to later records, and that no Maintenance Note is present. With
+`--base <revision>` it checks the change rules between that revision and the working tree: no
+removed records, allowed status transitions, no change to the historical text, title, or filename of
+a record that has left `Proposed`, no change to such a record's body unless the same change appends
+a `## Maintenance Note` entry, keeps the sections the template names, and adds no reference to a
+later record, Maintenance Note entries never removed, reworded, or reordered, and relation entries
+kept once a record leaves `Proposed` and established only at acceptance against a record in the
+permitted state. Whether an editorial revision actually preserved the decision is a question for
+review, not for the check: it sees that a body changed and that a note was written, never whether
+the note is true. The base is read fail-closed: a record whose base Status cannot be read fails the
+change rules. It verifies structure only and never semantic correctness; `--self-test` runs its
+scenarios in a temporary repository. Both checks use only repository files and local Git metadata;
+they do not call AI services or the network. External links are excluded so transient network
+failures cannot make the required check nondeterministic.
 
 ### Test ownership
 
@@ -142,8 +168,8 @@ in English.
 Review the complete diff and keep each commit to one coherent change. At minimum:
 
 1. Run `git diff --check`.
-2. Run `dotnet run scripts/format.cs`, then `dotnet run scripts/format-check.cs` and
-   `dotnet run scripts/docs-check.cs`.
+2. Run `dotnet run scripts/format.cs`, then `dotnet run scripts/format-check.cs`,
+   `dotnet run scripts/docs-check.cs`, and `dotnet run scripts/adr-check.cs -- --base HEAD`.
 3. For source changes, run the Release build and all affected tests. Run the full test suite when
    the change crosses project boundaries or affects shared sources.
 4. Run the relevant sample or Sandbox scenario for user-visible behavior, in addition to tests.

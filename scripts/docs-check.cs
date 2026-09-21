@@ -5,8 +5,6 @@
 */
 
 using System.Diagnostics;
-using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 
 var checker = new DocumentationChecker(solutionRoot);
@@ -61,167 +59,40 @@ internal sealed partial class DocumentationChecker(string root)
     {
         var fullPath = Path.Combine(this._root, relativePath);
         var lines = File.ReadAllLines(fullPath);
-        var inFence = false;
-        var fenceMarker = '\0';
-        var fenceLength = 0;
 
         for (var index = 0; index < lines.Length; index++)
         {
-            var line = lines[index];
-            var lineNumber = index + 1;
+            if (lines[index].EndsWith(' ') || lines[index].EndsWith('\t'))
+                errors.Add($"{relativePath}:{index + 1}: trailing whitespace");
+        }
 
-            if (line.EndsWith(' ') || line.EndsWith('\t'))
-                errors.Add($"{relativePath}:{lineNumber}: trailing whitespace");
+        foreach (var (lineNumber, label) in MarkdownLinks.UndefinedReferences(lines))
+            errors.Add($"{relativePath}:{lineNumber}: undefined reference label: [{label}]");
 
-            var fence = FenceRegex().Match(line);
-            if (fence.Success)
+        // A reference usage takes its target from its definition, which is resolved on its own.
+        foreach (var link in MarkdownLinks.Enumerate(lines))
+        {
+            if (link.Kind == MarkdownLinkKind.Malformed)
             {
-                var marker = fence.Groups["marker"].Value;
-                if (!inFence)
-                {
-                    inFence = true;
-                    fenceMarker = marker[0];
-                    fenceLength = marker.Length;
-                }
-                else if (marker[0] == fenceMarker && marker.Length >= fenceLength)
-                {
-                    inFence = false;
-                }
-
+                errors.Add(
+                    $"{relativePath}:{link.LineNumber}: link is outside the supported Markdown "
+                        + $"subset (see CONTRIBUTING.md): {link.RawTarget}"
+                );
                 continue;
             }
 
-            if (inFence)
+            if (link.Kind == MarkdownLinkKind.ReferenceUsage)
                 continue;
 
-            var definition = LinkDefinitionRegex().Match(line);
-            if (definition.Success)
-            {
-                this.CheckLink(relativePath, lineNumber, definition.Groups["target"].Value, errors);
-            }
-
-            foreach (Match link in InlineLinkRegex().Matches(line))
-                this.CheckLink(relativePath, lineNumber, link.Groups["target"].Value, errors);
+            var resolution = MarkdownLinks.Resolve(
+                this._root,
+                relativePath,
+                link.RawTarget,
+                this._anchorCache
+            );
+            if (resolution.Error is not null)
+                errors.Add($"{relativePath}:{link.LineNumber}: {resolution.Error}");
         }
-    }
-
-    private void CheckLink(string sourcePath, int lineNumber, string rawTarget, List<string> errors)
-    {
-        var target = rawTarget.Trim('<', '>');
-        if (target.Length == 0 || ExternalTargetRegex().IsMatch(target) || target.StartsWith('/'))
-            return;
-
-        var fragmentIndex = target.IndexOf('#');
-        var pathPart = fragmentIndex >= 0 ? target[..fragmentIndex] : target;
-        var fragment = fragmentIndex >= 0 ? target[(fragmentIndex + 1)..] : null;
-        var queryIndex = pathPart.IndexOf('?');
-        if (queryIndex >= 0)
-            pathPart = pathPart[..queryIndex];
-
-        var sourceFullPath = Path.Combine(this._root, sourcePath);
-        string targetFullPath;
-        try
-        {
-            pathPart = Uri.UnescapeDataString(pathPart);
-            fragment = fragment is null ? null : Uri.UnescapeDataString(fragment);
-            targetFullPath =
-                pathPart.Length == 0
-                    ? sourceFullPath
-                    : Path.GetFullPath(
-                        Path.Combine(Path.GetDirectoryName(sourceFullPath)!, pathPart)
-                    );
-        }
-        catch (Exception exception)
-            when (exception
-                    is ArgumentException
-                        or NotSupportedException
-                        or PathTooLongException
-                        or UriFormatException
-            )
-        {
-            errors.Add($"{sourcePath}:{lineNumber}: invalid local link target: {target}");
-            return;
-        }
-
-        if (!IsWithinRoot(this._root, targetFullPath))
-        {
-            errors.Add($"{sourcePath}:{lineNumber}: local link escapes the repository: {target}");
-            return;
-        }
-
-        if (!File.Exists(targetFullPath) && !Directory.Exists(targetFullPath))
-        {
-            errors.Add($"{sourcePath}:{lineNumber}: local link target does not exist: {target}");
-            return;
-        }
-
-        if (
-            string.IsNullOrEmpty(fragment)
-            || !File.Exists(targetFullPath)
-            || !Path.GetExtension(targetFullPath).Equals(".md", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return;
-        }
-
-        var anchors = this.GetAnchors(targetFullPath);
-        if (!anchors.Contains(fragment))
-            errors.Add($"{sourcePath}:{lineNumber}: Markdown anchor does not exist: {target}");
-    }
-
-    private IReadOnlySet<string> GetAnchors(string fullPath)
-    {
-        if (this._anchorCache.TryGetValue(fullPath, out var cached))
-            return cached;
-
-        var anchors = new HashSet<string>(StringComparer.Ordinal);
-        var slugCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-        var inFence = false;
-        var fenceMarker = '\0';
-        var fenceLength = 0;
-
-        foreach (var line in File.ReadLines(fullPath))
-        {
-            var fence = FenceRegex().Match(line);
-            if (fence.Success)
-            {
-                var marker = fence.Groups["marker"].Value;
-                if (!inFence)
-                {
-                    inFence = true;
-                    fenceMarker = marker[0];
-                    fenceLength = marker.Length;
-                }
-                else if (marker[0] == fenceMarker && marker.Length >= fenceLength)
-                {
-                    inFence = false;
-                }
-
-                continue;
-            }
-
-            if (inFence)
-                continue;
-
-            var heading = HeadingRegex().Match(line);
-            if (heading.Success)
-            {
-                var baseSlug = CreateHeadingSlug(heading.Groups["text"].Value);
-                if (baseSlug.Length > 0)
-                {
-                    slugCounts.TryGetValue(baseSlug, out var duplicateCount);
-                    var slug = duplicateCount == 0 ? baseSlug : $"{baseSlug}-{duplicateCount}";
-                    slugCounts[baseSlug] = duplicateCount + 1;
-                    anchors.Add(slug);
-                }
-            }
-
-            foreach (Match anchor in HtmlAnchorRegex().Matches(line))
-                anchors.Add(anchor.Groups["anchor"].Value);
-        }
-
-        this._anchorCache.Add(fullPath, anchors);
-        return anchors;
     }
 
     private void CheckSampleCatalog(IReadOnlyList<string> sampleFiles, List<string> errors)
@@ -366,74 +237,19 @@ internal sealed partial class DocumentationChecker(string root)
         return new ProcessResult(process.ExitCode, await standardOutput, await standardError);
     }
 
-    private static bool IsWithinRoot(string root, string path)
-    {
-        var relativePath = Path.GetRelativePath(root, path);
-        return relativePath != ".."
-            && !relativePath.StartsWith(
-                $"..{Path.DirectorySeparatorChar}",
-                StringComparison.Ordinal
-            )
-            && !Path.IsPathRooted(relativePath);
-    }
-
     private static bool IsExcludedDocumentation(string path) =>
-        path == "CLAUDE.md"
-        || path.StartsWith("docs/decisions/", StringComparison.Ordinal)
-        || path.StartsWith(".claude/skills/adr/", StringComparison.Ordinal)
-        || path.StartsWith(".claude/skills/adr-review/", StringComparison.Ordinal);
-
-    private static string CreateHeadingSlug(string heading)
-    {
-        var text = WebUtility.HtmlDecode(HtmlTagRegex().Replace(heading, ""));
-        var builder = new StringBuilder(text.Length);
-        foreach (var character in text.ToLowerInvariant())
-        {
-            if (
-                char.IsLetterOrDigit(character)
-                || character is '-' or '_'
-                || char.IsWhiteSpace(character)
-            )
-                builder.Append(character);
-        }
-
-        return WhitespaceRegex().Replace(builder.ToString().Trim(), "-");
-    }
+        path == "CLAUDE.md" || AdrRecordRegex().IsMatch(path);
 
     private static string NormalizePath(string path) => path.Replace('\\', '/');
 
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
-
-    [GeneratedRegex(@"^ {0,3}(?<marker>`{3,}|~{3,})")]
-    private static partial Regex FenceRegex();
-
-    [GeneratedRegex(@"!?\[[^\]]*\]\((?<target><[^>\r\n]+>|[^\s)>]+)")]
-    private static partial Regex InlineLinkRegex();
-
-    [GeneratedRegex(@"^ {0,3}\[[^\]]+\]:\s*(?<target><[^>\r\n]+>|[^\s]+)")]
-    private static partial Regex LinkDefinitionRegex();
-
-    [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*:", RegexOptions.IgnoreCase)]
-    private static partial Regex ExternalTargetRegex();
-
-    [GeneratedRegex(@"^ {0,3}#{1,6}\s+(?<text>.*?\S)(?:\s+#+\s*)?$")]
-    private static partial Regex HeadingRegex();
-
-    [GeneratedRegex(
-        """<a\s+(?:[^>]*?\s)?(?:id|name)=["'](?<anchor>[^"']+)["'][^>]*>""",
-        RegexOptions.IgnoreCase
-    )]
-    private static partial Regex HtmlAnchorRegex();
-
-    [GeneratedRegex(@"<[^>]+>")]
-    private static partial Regex HtmlTagRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex WhitespaceRegex();
 
     [GeneratedRegex(@"^##\s+(?<package>[^#]+?)\s*$")]
     private static partial Regex PackageHeadingRegex();
 
     [GeneratedRegex(@"^\|\s*`(?<file>[^`/]+\.cs)`\s*\|")]
     private static partial Regex SampleEntryRegex();
+
+    [GeneratedRegex(@"^docs/decisions/[0-9]+_[^/]*\.md$")]
+    private static partial Regex AdrRecordRegex();
 }

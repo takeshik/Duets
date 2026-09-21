@@ -11,5 +11,6 @@
 
   <ItemGroup>
     <Compile Include="_common.cs" />
+    <Compile Include="_markdown.cs" />
   </ItemGroup>
 </Project>
