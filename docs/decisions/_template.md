@@ -2,17 +2,28 @@
 
 ## Status
 
-<!-- Accepted / Deprecated (superseded by ADR-N) -->
+Proposed
+
+<!-- README.md, "Status and relation metadata":
+```
+- Supersedes: [ADR-M](M_title.md)
+- Amends: [ADR-M](M_title.md) — <scope>
+```
+-->
+
+<!-- README.md, "Maintenance Note": whether a record carries one, and where. -->
 
 ## Context
 
-<!-- What situation or problem prompted this decision? What constraints apply? -->
+<!-- README.md, "Guidance per section": Context. -->
 
 ## Decision Drivers
 
-<!-- What matters for this decision? List the key criteria, constraints, or priorities. -->
+<!-- README.md, "Sections": conditional. "Guidance per section": Decision Drivers. -->
 
 ## Considered Alternatives
+
+<!-- README.md, "Sections": conditional. "Guidance per section": Considered Alternatives. -->
 
 ### A: <Name>
 
@@ -26,15 +37,20 @@
 
 ## Decision
 
-<!-- Which alternative was chosen? -->
+<!-- README.md, "Guidance per section": Decision. -->
 
 ## Rationale
 
-<!-- Why this alternative over the others? How does it satisfy the decision drivers? -->
+<!-- README.md, "Guidance per section": Rationale. -->
 
 ## Consequences
 
-<!-- What follows from this decision? -->
+<!-- README.md, "Guidance per section": Consequences. -->
 
-- **Positive**: ...
-- **Negative / trade-offs**: ...
+## Confirmation
+
+<!-- README.md, "Sections": conditional. "Guidance per section": Confirmation. -->
+
+## Revisit Conditions
+
+<!-- README.md, "Sections": conditional. "Guidance per section": Revisit Conditions. -->
