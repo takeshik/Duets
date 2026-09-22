@@ -2,7 +2,9 @@
 
 ## Status
 
-~~Accepted~~ — **Superseded by ADR-24**
+Superseded
+
+- Superseded by: [ADR-24](24_typings-api-redesign.md)
 
 ## Context
 

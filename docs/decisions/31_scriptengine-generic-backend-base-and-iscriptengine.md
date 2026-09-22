@@ -1,7 +1,10 @@
 # ADR-31: ScriptEngine Generic Backend Base and IScriptEngine Interface
 
-**Status:** Accepted  
 **Keywords:** ScriptEngine, IScriptEngine, ScriptEngine<TValue>, IScriptValueConverter, backend, generics, interface, SetValue, Evaluate
+
+## Status
+
+Accepted
 
 ## Abstract
 

@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted — supersedes [ADR-17](17_versioning-strategy-and-ci.md); package topology, `IsPackable`
-set, and signing scope partially superseded by
-[ADR-48](48_extract-duets-pad-into-its-own-package.md); snapshot version production and package
-selection partially superseded by
-[ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md)
+Accepted
+
+- Supersedes: [ADR-17](17_versioning-strategy-and-ci.md)
+- Amended by: [ADR-48](48_extract-duets-pad-into-its-own-package.md) — package topology, `IsPackable` set, and signing scope
+- Amended by: [ADR-54](54_independent-snapshot-versioning-for-nuget-packages.md) — snapshot version production and package selection
 
 The CI/publish workflow (single `publish.yml`, snapshot on push to `main`, release on tags), the
 GitHub Packages target, and the independent-packages principle decided here remain in force. ADR-54

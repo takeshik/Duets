@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amends: [ADR-7](7_use-monaco-editor-as-the-browser-based-repl-ui.md) — the browser-based REPL UI shape and the `ReplService` framing
+
 ## Context
 
 `ReplService` ([ADR-7](7_use-monaco-editor-as-the-browser-based-repl-ui.md))

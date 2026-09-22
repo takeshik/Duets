@@ -2,7 +2,9 @@
 
 ## Status
 
-Superseded by [ADR-23](23_ci-and-package-publishing.md)
+Superseded
+
+- Superseded by: [ADR-23](23_ci-and-package-publishing.md)
 
 ## Context
 

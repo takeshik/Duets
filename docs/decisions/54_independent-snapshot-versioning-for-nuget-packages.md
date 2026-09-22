@@ -2,8 +2,10 @@
 
 ## Status
 
-Accepted — partially supersedes [ADR-23](23_ci-and-package-publishing.md) (snapshot version production and package
-selection) and [ADR-48](48_extract-duets-pad-into-its-own-package.md) (solution-wide snapshot packing)
+Accepted
+
+- Amends: [ADR-23](23_ci-and-package-publishing.md) — snapshot version production and package selection
+- Amends: [ADR-48](48_extract-duets-pad-into-its-own-package.md) — solution-wide snapshot packing
 
 ## Context
 

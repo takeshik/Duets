@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amends: [ADR-36](36_duetspad-server-canonical-output-protocol.md) — Canvas event payload and initial burst cardinality
+
 ## Context
 
 ADR-32 gives DuetsPad a single Canvas surface for persistent structured display

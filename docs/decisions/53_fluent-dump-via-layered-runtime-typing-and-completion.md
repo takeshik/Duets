@@ -4,9 +4,11 @@
 
 Accepted
 
-Supersedes the global-function-only syntax and the prototype/completion conclusions of
-[ADR-20](20_dump-as-global-function-not-prototype-extension.md). The DuetsPad ownership and
-render options established by [ADR-35](35_duetspad-rendering-model.md) remain unchanged.
+- Supersedes: [ADR-20](20_dump-as-global-function-not-prototype-extension.md)
+
+Supersedes the global-function-only syntax and prototype/completion conclusions of
+[ADR-20](20_dump-as-global-function-not-prototype-extension.md). ADR-35's DuetsPad
+ownership and render options remain unchanged.
 
 ## Context
 

@@ -2,7 +2,9 @@
 
 ## Status
 
-Deprecated — superseded by [ADR-18](18_pluggable-asset-source-abstraction.md)
+Superseded
+
+- Superseded by: [ADR-18](18_pluggable-asset-source-abstraction.md)
 
 ## Context
 

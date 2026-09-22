@@ -2,11 +2,14 @@
 
 ## Status
 
-Deprecated (superseded by [ADR-53](53_fluent-dump-via-layered-runtime-typing-and-completion.md))
+Superseded
 
-ADR-35 previously superseded the ownership and options in this decision. ADR-53 now
-supersedes its global-function-only syntax and prototype/completion conclusion by retaining
-the global function while adding a layered, type-preserving fluent method.
+- Amended by: [ADR-35](35_duetspad-rendering-model.md) — dump ownership and render options
+- Superseded by: [ADR-53](53_fluent-dump-via-layered-runtime-typing-and-completion.md)
+
+ADR-35 previously amended the ownership and options in this decision. ADR-53 now
+supersedes the decision: it replaces the global-function-only syntax and prototype/completion
+conclusion, retaining the global function while adding a layered, type-preserving fluent method.
 
 ## Context
 

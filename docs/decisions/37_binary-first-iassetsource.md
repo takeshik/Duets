@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amends: [ADR-18](18_pluggable-asset-source-abstraction.md) — the text-only `Task<string> GetAsync(...)` return type
+
 ## Context
 
 [ADR-18](18_pluggable-asset-source-abstraction.md) introduced `IAssetSource` and

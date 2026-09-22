@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted — partially supersedes [ADR-1](1_design-documentation-strategy.md) (singleton architecture snapshot form
-and path)
+Accepted
+
+- Amends: [ADR-1](1_design-documentation-strategy.md) — the singleton form and path of the architecture snapshot
 
 ## Context
 

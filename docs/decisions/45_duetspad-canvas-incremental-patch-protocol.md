@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amends: [ADR-36](36_duetspad-server-canonical-output-protocol.md) — the Canvas event family (`canvas.patch` and revisions)
+
 ## Context
 
 ADR-36 makes Canvas server-canonical: the server holds the canonical Canvas tree

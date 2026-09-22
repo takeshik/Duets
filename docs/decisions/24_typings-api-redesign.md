@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted — supersedes ADR-13 (method names) and ADR-21 (`importNamespace` / `useNamespace` split)
+Accepted
+
+- Amends: [ADR-13](13_script-built-ins-and-typings-object.md) — method names
+- Supersedes: [ADR-21](21_typings-import-namespace.md)
 
 ## Context
 

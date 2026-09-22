@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amended by: [ADR-24](24_typings-api-redesign.md) — method names
+
 ## Context
 
 `TypeScriptService.RegisterType` allows callers to add .NET type declarations to the TypeScript language service. Prior to this change, the only way to invoke this from within a running script was `importTypeDefs`, a function that `SandboxSession.RegisterBuiltins()` injected into the script engine. This arrangement had several problems:

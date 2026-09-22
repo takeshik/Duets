@@ -2,11 +2,14 @@
 
 ## Status
 
-Partially superseded by [ADR-37](37_binary-first-iassetsource.md)
+Accepted
+
+- Supersedes: [ADR-6](6_fetch-and-cache-runtime-js-assets-from-cdn.md)
+- Amended by: [ADR-37](37_binary-first-iassetsource.md) — the text-only `Task<string> GetAsync(...)` return type
 
 The pluggable abstraction, the `AssetSources` factory, the default CDN sources,
 and the composable disk cache decided here remain in force. The text-only
-`Task<string> GetAsync(...)` return type (and its rationale below) is superseded
+`Task<string> GetAsync(...)` return type (and its rationale below) is amended
 by ADR-37, which makes `IAssetSource` binary-first (`Task<byte[]> GetBytesAsync(...)`)
 with a UTF-8 `GetStringAsync` extension.
 

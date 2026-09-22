@@ -4,6 +4,9 @@
 
 Accepted
 
+- Amended by: [ADR-43](43_duetspad-named-multi-canvas.md) — Canvas event payload and initial burst cardinality
+- Amended by: [ADR-45](45_duetspad-canvas-incremental-patch-protocol.md) — the Canvas event family (`canvas.patch` and revisions)
+
 ## Context
 
 ADR-32 defines DuetsPad as the successor to `ReplService` and separates two

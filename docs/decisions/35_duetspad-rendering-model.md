@@ -4,6 +4,8 @@
 
 Accepted
 
+- Amends: [ADR-20](20_dump-as-global-function-not-prototype-extension.md) — dump ownership and render options
+
 ## Context
 
 ADR-32 defines DuetsPad as a browser debug pad that can display structured
