@@ -30,6 +30,7 @@ using System.Text.RegularExpressions;
 string? baseRevision = null;
 var root = solutionRoot;
 var selfTest = false;
+var noProposed = false;
 for (var index = 0; index < args.Length; index++)
 {
     switch (args[index])
@@ -40,12 +41,16 @@ for (var index = 0; index < args.Length; index++)
         case "--root":
             root = Path.GetFullPath(args[++index]);
             break;
+        case "--no-proposed":
+            noProposed = true;
+            break;
         case "--self-test":
             selfTest = true;
             break;
         default:
             Console.Error.WriteLine(
-                "usage: adr-check.cs [--base <revision>] [--root <dir>] | --self-test"
+                "usage: adr-check.cs [--base <revision>] [--root <dir>] [--no-proposed] "
+                    + "| --self-test"
             );
             return 2;
     }
@@ -56,7 +61,7 @@ Console.WriteLine("ADR check: structural rules only; semantic correctness is not
 if (selfTest)
     return await AdrSelfTest.RunAsync();
 
-var checker = new AdrChecker(root);
+var checker = new AdrChecker(root, noProposed: noProposed);
 var report = await checker.CheckAsync(baseRevision);
 
 foreach (var error in report.Errors)
@@ -151,7 +156,7 @@ internal sealed class AdrReport
     public int IndexRowCount { get; set; }
 }
 
-internal sealed partial class AdrChecker(string root)
+internal sealed partial class AdrChecker(string root, bool noProposed = false)
 {
     private const string DecisionsDirectory = "docs/decisions";
     private const string IndexFile = "index.md";
@@ -215,6 +220,8 @@ internal sealed partial class AdrChecker(string root)
 
     private readonly string _root = Path.GetFullPath(root);
 
+    // main carries no Proposed record (README, "Transitions"); CI sets this on a push to main.
+    private readonly bool _noProposed = noProposed;
     private readonly AdrReport _report = new();
     private readonly Dictionary<string, IReadOnlySet<string>> _anchorCache = new(
         StringComparer.Ordinal
@@ -661,7 +668,16 @@ internal sealed partial class AdrChecker(string root)
     {
         this.CheckNumbering(corpus);
         foreach (var record in corpus.Records.Values.OrderBy(record => record.Number))
+        {
             this.CheckRecord(corpus, record);
+            if (this._noProposed && record.Status == "Proposed")
+            {
+                this.Error(
+                    $"{DecisionsDirectory}/{record.FileName}: Status is 'Proposed'; a record reaches "
+                        + "main only once it has been accepted, rejected, or withdrawn"
+                );
+            }
+        }
 
         this.CheckIndex(corpus);
     }
@@ -1141,10 +1157,18 @@ internal sealed partial class AdrChecker(string root)
                 continue;
             var path = $"{DecisionsDirectory}/{record.FileName}";
             // A record that is new in a change starts as Proposed or, with the review performed,
-            // Accepted (README, "Transitions"); it never appears first in another state.
-            if (record.Status is not null and not ("Proposed" or "Accepted"))
+            // Accepted; it may also arrive already Rejected or Withdrawn, because main carries no
+            // Proposed record and a proposal settled before it reaches main lands in its outcome
+            // state (README, "Transitions"). It never appears first in a state that requires a
+            // prior accepted life.
+            if (
+                record.Status
+                is not null
+                    and not ("Proposed" or "Accepted" or "Rejected" or "Withdrawn")
+            )
                 this.Error(
-                    $"{path}: a new record is Proposed or Accepted, never '{record.Status}' from the "
+                    $"{path}: a new record is Proposed, Accepted, Rejected, or Withdrawn, never "
+                        + $"'{record.Status}' from the "
                         + "start"
                 );
             this.CheckRelationChanges(baseCorpus, corpus, null, record, path);
@@ -1362,6 +1386,7 @@ internal static class AdrSelfTest
         Action<string> Mutate,
         string[] Expected,
         Fixture Fixture = Fixture.Main,
+        bool NoProposed = false,
         bool WithBase = true
     );
 
@@ -1380,7 +1405,7 @@ internal static class AdrSelfTest
                     await GitAsync(temp, "reset", "--hard", "--quiet", "HEAD");
                     await GitAsync(temp, "clean", "-fdq");
                     scenario.Mutate(temp);
-                    var checker = new AdrChecker(temp);
+                    var checker = new AdrChecker(temp, scenario.NoProposed);
                     var report = await checker.CheckAsync(scenario.WithBase ? "HEAD" : null);
                     var expected = scenario.Expected;
                     var passed =
@@ -1682,7 +1707,6 @@ internal static class AdrSelfTest
             [
                 "which is Rejected now; only an Accepted record can be amended",
                 "a Rejected record cannot carry 'Amended by'",
-                "a new record is Proposed or Accepted, never 'Rejected' from the start",
             ]
         );
         yield return new(
@@ -1793,7 +1817,29 @@ internal static class AdrSelfTest
                     $"| [ADR-6]({Six}) | ~~Fixture Decision Six~~ *(Deprecated)* | six | Decides six because six. |\n"
                 );
             },
-            ["a new record is Proposed or Accepted, never 'Deprecated' from the start"]
+            [
+                "a new record is Proposed, Accepted, Rejected, or Withdrawn, never 'Deprecated' "
+                    + "from the start",
+            ]
+        );
+        yield return new(
+            "a Proposed record on main fails under --no-proposed",
+            _ => { },
+            [
+                "Status is 'Proposed'; a record reaches main only once it has been accepted, "
+                    + "rejected, or withdrawn",
+            ],
+            NoProposed: true
+        );
+        yield return new(
+            "a settled corpus passes under --no-proposed",
+            root =>
+            {
+                Replace(root, Four, "## Status\n\nProposed\n", "## Status\n\nWithdrawn\n");
+                Replace(root, Five, "## Status\n\nProposed\n", "## Status\n\nRejected\n");
+            },
+            [],
+            NoProposed: true
         );
         yield return new(
             "accepted body edit without a maintenance note fails",

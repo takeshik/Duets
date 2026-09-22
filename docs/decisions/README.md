@@ -29,7 +29,7 @@ Each rule in this file is of one of four kinds, and its kind alone decides what 
 | Writing | open records | [What an ADR records](#what-an-adr-records) and [One decision per record](#one-decision-per-record); the states a new record may start in ([Transitions](#transitions)); [Writing an ADR](#writing-an-adr), except that no section name appears twice; the title-derived filename and the naming of titles ([File naming and numbering](#file-naming-and-numbering)); that an open record carries no Maintenance Note ([Maintenance Note](#maintenance-note)); [Acceptance review](#acceptance-review) |
 | Change | records that the change modifies | the allowed status changes ([Transitions](#transitions)); how relation entries are established and kept ([Status and relation metadata](#status-and-relation-metadata)); [Body immutability](#body-immutability), with the editorial revision and the append-only Maintenance Note, which concern bodies that have left `Proposed`; for text an editorial revision adds, the rules on later ADRs and commit hashes in [References inside a body](#references-inside-a-body) |
 | Index | index rows that the change adds or modifies | [Index](#index), except what the standing kind holds for the index |
-| Standing | every record and every index row, always | the status vocabulary, the shape of the Status section and its relation entries, and their reciprocity ([Status and relation metadata](#status-and-relation-metadata)); the placement and shape of a Maintenance Note; that no section name appears twice; that links resolve and stay within the supported subset ([References inside a body](#references-inside-a-body)); numbering without gaps or reuse, and the heading matching number and filename ([File naming and numbering](#file-naming-and-numbering)); one index row per record, in ascending ADR order, with a non-empty abstract and a title that repeats the record's title and is struck through exactly when [Index](#index) says |
+| Standing | every record and every index row, always | the status vocabulary, the shape of the Status section and its relation entries, and their reciprocity ([Status and relation metadata](#status-and-relation-metadata)); `main` carries no `Proposed` record ([Transitions](#transitions)); the placement and shape of a Maintenance Note; that no section name appears twice; that links resolve and stay within the supported subset ([References inside a body](#references-inside-a-body)); numbering without gaps or reuse, and the heading matching number and filename ([File naming and numbering](#file-naming-and-numbering)); one index row per record, in ascending ADR order, with a non-empty abstract and a title that repeats the record's title and is struck through exactly when [Index](#index) says |
 
 Writing rules govern how a record is written, and a record is written only while it is open. Once
 it is closed, its body cannot change to meet a writing rule adopted later, so a closed record is
@@ -138,8 +138,8 @@ Deprecated -> Superseded
 Accepted + "Amended by" -> Accepted
 ```
 
-- A new ADR is created as `Proposed`. A record that is new in a change is `Proposed` or, with the
-  acceptance review performed, `Accepted`; it never appears first in any other state.
+- A new ADR is created as `Proposed`. A record that is new in a change is `Proposed`, `Accepted`,
+  `Rejected`, or `Withdrawn`; it never appears first in a state that presumes an accepted life.
 - `Accepted` requires an explicit acceptance review (see [Acceptance review](#acceptance-review))
   and the repository owner's approval. In a solo project the proposal and the acceptance may land
   in the same commit, but the review must have been performed and the approval must be explicit.
@@ -147,6 +147,10 @@ Accepted + "Amended by" -> Accepted
   which a record is drafted and corrected without condition. It does not make a review happen, and a
   record that passes through it within one commit is not thereby less reviewed than one that lingers
   there.
+- `main` carries no `Proposed` record. A proposal is settled before it reaches `main` and lands
+  there in the state it settled in, so the published log holds outcomes rather than drafts.
+  Drafting and review happen in commits that have not reached `main`;
+  `scripts/adr-check.cs --no-proposed` rejects a `Proposed` record.
 - Superseding or amending an earlier ADR never edits that ADR's body. The earlier ADR's Status
   metadata and index row are updated in the same operation that accepts the later ADR, so a
   proposal that is later rejected or withdrawn leaves no trace on the decision it would have

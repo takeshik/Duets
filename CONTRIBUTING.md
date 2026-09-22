@@ -82,13 +82,14 @@ a record that has left `Proposed`, no change to such a record's body unless the 
 a `## Maintenance Note` entry, keeps the sections the template names, and adds no reference to a
 later record, Maintenance Note entries never removed, reworded, or reordered, and relation entries
 kept once a record leaves `Proposed` and established only at acceptance against a record in the
-permitted state. Whether an editorial revision actually preserved the decision is a question for
-review, not for the check: it sees that a body changed and that a note was written, never whether
-the note is true. The base is read fail-closed: a record whose base Status cannot be read fails the
-change rules. It verifies structure only and never semantic correctness; `--self-test` runs its
-scenarios in a temporary repository. Both checks use only repository files and local Git metadata;
-they do not call AI services or the network. External links are excluded so transient network
-failures cannot make the required check nondeterministic.
+permitted state. `--no-proposed` additionally rejects any record still in `Proposed`. Whether an
+editorial revision actually preserved the decision is a question for review, not for the check: it
+sees that a body changed and that a note was written, never whether the note is true. The base is
+read fail-closed: a record whose base Status cannot be read fails the change rules. It verifies
+structure only and never semantic correctness; `--self-test` runs its scenarios in a temporary
+repository. Both checks use only repository files and local Git metadata; they do not call AI
+services or the network. External links are excluded so transient network failures cannot make the
+required check nondeterministic.
 
 ### Test ownership
 
