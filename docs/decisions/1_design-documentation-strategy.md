@@ -5,9 +5,11 @@
 Accepted
 
 - Amended by: [ADR-55](55_scale-architecture-documentation-by-purpose-and-module.md) — the singleton form and path of the architecture snapshot
+- Amended by: [ADR-56](56_adopt-an-adr-lifecycle-with-immutable-decisions-and-editorial-revision.md) — the append-only rule for decision records
 
 The three-layer model remains in force. ADR-55 expands its architecture layer from one file into a
-purpose-first documentation set with a repository-wide landing page.
+purpose-first documentation set with a repository-wide landing page. ADR-56 keeps decision records
+closed against rewriting what was decided, with a recorded editorial revision as the one exception.
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 - Amends: [ADR-1](1_design-documentation-strategy.md) — the append-only rule for decision records
 

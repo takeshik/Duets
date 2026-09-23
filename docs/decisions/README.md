@@ -7,7 +7,7 @@ is described by the [architecture documentation](../architecture/).
 
 This file is the single normative statement of how ADRs are written, reviewed, accepted, and
 changed. The template, the agent skills, and any checker refer to this file; they do not restate
-its rules.
+its rules. The decision to govern the log this way is recorded in [ADR-56](56_adopt-an-adr-lifecycle-with-immutable-decisions-and-editorial-revision.md).
 
 Related files:
 
