@@ -150,7 +150,8 @@ Accepted + "Amended by" -> Accepted
 - `main` carries no `Proposed` record. A proposal is settled before it reaches `main` and lands
   there in the state it settled in, so the published log holds outcomes rather than drafts.
   Drafting and review happen in commits that have not reached `main`;
-  `scripts/adr-check.cs --no-proposed` rejects a `Proposed` record.
+  `scripts/adr-check.cs --no-proposed` rejects a `Proposed` record, and CI runs it that way on every
+  push to `main`.
 - Superseding or amending an earlier ADR never edits that ADR's body. The earlier ADR's Status
   metadata and index row are updated in the same operation that accepts the later ADR, so a
   proposal that is later rejected or withdrawn leaves no trace on the decision it would have
@@ -412,7 +413,8 @@ filename, references to later ADRs, and the absence of a Maintenance Note on ope
 given a base revision, the change rules on closed records — whether a body changed without a new
 `## Maintenance Note` entry, whether it kept the sections the template names, whether it gained a
 reference to a later ADR, and whether relation entries were kept. Without a base revision the check
-can see only the current state, so it treats only `Proposed` records as open.
+can see only the current state, so it treats only `Proposed` records as open; CI gives it a base
+except on a manual run, on a tag, and on the first push of a branch.
 
 Semantic rules — whether the decision is single, the alternatives real, the context
 contemporaneous, the rationale sufficient, the consequences honest, the abstract informative, or an

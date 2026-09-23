@@ -73,6 +73,34 @@ jobs:
       - name: Check documentation
         run: dotnet run scripts/docs-check.cs
 
+      - name: Check ADR structure (no semantic validation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          # main carries no Proposed record; drafting and review happen before a push to it.
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            args+=(--no-proposed)
+          fi
+          base=""
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            base="${{ github.event.before }}"
+          fi
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            # No base exists (workflow_dispatch, tag, or the first push of a ref): static rules only.
+            dotnet run scripts/adr-check.cs -- ${args[@]+"${args[@]}"}
+          elif git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            dotnet run scripts/adr-check.cs -- --base "$base" ${args[@]+"${args[@]}"}
+          else
+            echo "The event names base $base but it is not reachable; refusing to skip the change rules." >&2
+            exit 1
+          fi
+
+      - name: Self-test ADR check
+        run: dotnet run scripts/adr-check.cs -- --self-test
+
       - name: Build
         run: dotnet build --no-restore -c Release --verbosity normal
 
