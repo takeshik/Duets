@@ -359,9 +359,9 @@ understand the decision stays in the ADR even when the owning document repeats i
 - Link ADRs by relative file path so links stay valid within the repository; an absolute path is
   an error.
 - Links use the Markdown subset stated in [CONTRIBUTING.md](../../CONTRIBUTING.md#build-format-and-test):
-  inline links with a single-token destination and no title, reference definitions, and reference
-  usages. Anything that starts like a link but falls outside that subset is an error, never
-  ignored.
+  inline links with a single-token destination and no title, reference definitions, reference
+  usages, and footnotes. Anything that starts like a link but falls outside that subset is an
+  error, never ignored.
 - Do not embed commit hashes; history rewrites invalidate them.
 
 ## Acceptance review

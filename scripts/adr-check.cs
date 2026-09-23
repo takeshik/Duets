@@ -867,6 +867,8 @@ internal sealed partial class AdrChecker(string root)
         var lines = record.Text.Split('\n');
         foreach (var (lineNumber, label) in MarkdownLinks.UndefinedReferences(lines))
             this.Error($"{path}:{lineNumber}: undefined reference label: [{label}]");
+        foreach (var (lineNumber, message) in MarkdownLinks.FootnoteErrors(lines))
+            this.Error($"{path}:{lineNumber}: {message}");
 
         foreach (var link in MarkdownLinks.Enumerate(lines))
         {
@@ -2389,6 +2391,44 @@ internal static class AdrSelfTest
                     "The fourth forces, see [out](../../../outside.md)."
                 ),
             ["local link escapes the repository"]
+        );
+        yield return new(
+            "footnote whose text holds a link passes",
+            root =>
+                Replace(
+                    root,
+                    Four,
+                    "The fourth forces.",
+                    $"The fourth forces.[^1]\n\n[^1]: Recorded in [ADR-1]({One})."
+                ),
+            []
+        );
+        yield return new(
+            "footnote text with a broken link fails",
+            root =>
+                Replace(
+                    root,
+                    Four,
+                    "The fourth forces.",
+                    "The fourth forces.[^1]\n\n[^1]: See [notes](notes.md)."
+                ),
+            ["local link target does not exist: notes.md"]
+        );
+        yield return new(
+            "footnote reference without a definition fails",
+            root => Replace(root, Four, "The fourth forces.", "The fourth forces.[^1]"),
+            ["footnote [^1] has no definition"]
+        );
+        yield return new(
+            "footnote definition that nothing references fails",
+            root =>
+                Replace(
+                    root,
+                    Four,
+                    "The fourth forces.",
+                    "The fourth forces.\n\n[^1]: An unused note."
+                ),
+            ["footnote definition [^1] is never referenced"]
         );
         yield return new(
             "link syntax inside a code span is not a link",

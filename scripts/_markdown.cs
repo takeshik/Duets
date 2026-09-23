@@ -83,9 +83,10 @@ internal sealed partial class FenceTracker
 /// destination is one non-empty token without whitespace, parentheses, or angle brackets
 /// (optionally wrapped in angle brackets), closed by ")" on the same line and without a title;
 /// reference definitions "[label]: target" alone on their line, without a title; full, collapsed,
-/// and shortcut reference usages. Code spans and backslash-escaped brackets are not links.
-/// Anything else that starts like an inline link, a definition, or a full or collapsed reference
-/// usage is reported as malformed rather than ignored.
+/// and shortcut reference usages; footnote references "[^label]" and footnote definitions
+/// "[^label]: text" whose text may itself hold links. Code spans and backslash-escaped brackets are
+/// not links. Anything else that starts like an inline link, a definition, or a full or collapsed
+/// reference usage is reported as malformed rather than ignored.
 /// </summary>
 internal static partial class MarkdownLinks
 {
@@ -207,6 +208,48 @@ internal static partial class MarkdownLinks
     }
 
     /// <summary>
+    /// Finds footnote references without a definition and footnote definitions that nothing
+    /// references; either is a footnote that does not render as written.
+    /// </summary>
+    public static IEnumerable<(int LineNumber, string Message)> FootnoteErrors(
+        IReadOnlyList<string> lines
+    )
+    {
+        var defined = new Dictionary<string, int>(StringComparer.Ordinal);
+        var used = new List<(int LineNumber, string Label)>();
+        var tracker = new FenceTracker();
+        for (var index = 0; index < lines.Count; index++)
+        {
+            if (tracker.Consume(lines[index]) || tracker.InFence)
+                continue;
+
+            var line = ScrubCode(lines[index]);
+            var definition = FootnoteDefinitionRegex().Match(line);
+            if (definition.Success)
+            {
+                defined.TryAdd(NormalizeLabel(definition.Groups["label"].Value), index + 1);
+                line = line[definition.Length..];
+            }
+
+            foreach (Match reference in FootnoteReferenceRegex().Matches(line))
+                used.Add((index + 1, reference.Groups["label"].Value));
+        }
+
+        foreach (var (lineNumber, label) in used)
+        {
+            if (!defined.ContainsKey(NormalizeLabel(label)))
+                yield return (lineNumber, $"footnote [^{label}] has no definition");
+        }
+
+        var referenced = used.Select(entry => NormalizeLabel(entry.Label)).ToHashSet();
+        foreach (var (label, lineNumber) in defined)
+        {
+            if (!referenced.Contains(label))
+                yield return (lineNumber, $"footnote definition [^{label}] is never referenced");
+        }
+    }
+
+    /// <summary>
     /// Resolves a link target relative to the file that contains it. Returns null for external
     /// targets, which are not checked; otherwise returns the diagnostic (or null when the target
     /// resolves) and the full path of the resolved local file or directory.
@@ -317,9 +360,18 @@ internal static partial class MarkdownLinks
         return (pathPart, fragment);
     }
 
-    // Code spans and backslash-escaped brackets are not link syntax; blank them out while keeping
-    // column positions stable.
+    // Code spans, backslash-escaped brackets, and footnote syntax are not link syntax; blank them
+    // out while keeping column positions stable. A footnote definition's text stays, so the links
+    // it holds are read like any other.
     private static string Scrub(string line)
+    {
+        var scrubbed = ScrubCode(line);
+        scrubbed = FootnoteDefinitionRegex()
+            .Replace(scrubbed, match => new string(' ', match.Length));
+        return FootnoteReferenceRegex().Replace(scrubbed, match => new string(' ', match.Length));
+    }
+
+    private static string ScrubCode(string line)
     {
         var scrubbed = CodeSpanRegex().Replace(line, match => new string(' ', match.Length));
         return EscapedBracketRegex().Replace(scrubbed, "  ");
@@ -439,6 +491,14 @@ internal static partial class MarkdownLinks
 
     [GeneratedRegex(@"^ {0,3}\[(?<label>[^\[\]]+)\]:\s*(?<target><[^>\r\n]+>|[^\s]+)\s*$")]
     private static partial Regex LinkDefinitionRegex();
+
+    // The label-and-colon prefix of a footnote definition, "[^label]:" at the start of its line.
+    [GeneratedRegex(@"^ {0,3}\[\^(?<label>[^\[\]\s]+)\]:")]
+    private static partial Regex FootnoteDefinitionRegex();
+
+    // A footnote reference "[^label]".
+    [GeneratedRegex(@"\[\^(?<label>[^\[\]\s]+)\]")]
+    private static partial Regex FootnoteReferenceRegex();
 
     [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.-]*:", RegexOptions.IgnoreCase)]
     private static partial Regex ExternalTargetRegex();

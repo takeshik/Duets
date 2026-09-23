@@ -64,7 +64,10 @@ The resolver supports a deliberate Markdown subset rather than full CommonMark: 
 destination is one token without spaces or parentheses (optionally in angle brackets), closed by
 `)` on the same line and without a title; reference definitions `[label]: target` on their own
 line; and full, collapsed, and shortcut reference usages, with labels matched case-insensitively.
-Code spans and backslash-escaped brackets are not links. Anything that starts like a link but
+Footnotes are a reference `[^label]` and a definition `[^label]: text` at the start of its own line,
+whose text may hold links of the kinds above; a footnote reference without a definition, or a
+definition that nothing references, is an error. Code spans and backslash-escaped brackets are not
+links. Anything that starts like a link but
 falls outside this subset is reported as an error rather than ignored, so a link the check cannot
 read cannot pass silently.
 ADR-specific validation is `scripts/adr-check.cs`, which checks the structural rules of

@@ -68,6 +68,8 @@ internal sealed partial class DocumentationChecker(string root)
 
         foreach (var (lineNumber, label) in MarkdownLinks.UndefinedReferences(lines))
             errors.Add($"{relativePath}:{lineNumber}: undefined reference label: [{label}]");
+        foreach (var (lineNumber, message) in MarkdownLinks.FootnoteErrors(lines))
+            errors.Add($"{relativePath}:{lineNumber}: {message}");
 
         // A reference usage takes its target from its definition, which is resolved on its own.
         foreach (var link in MarkdownLinks.Enumerate(lines))
