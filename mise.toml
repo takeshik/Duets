@@ -4,4 +4,4 @@ includes = [
 ]
 
 [tools]
-biome = "2.4.16"
+biome = "2.5.7"
